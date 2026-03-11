@@ -1,0 +1,1679 @@
+openapi: 3.0.3
+info:
+  title: DIAQNOSTIC API
+  version: 1.0.0
+paths:
+  /api/advice/:
+    get:
+      operationId: api_advice_retrieve
+      description: Returns the latest generated health insight snapshot for the authenticated
+        user. Includes risk levels for both the mother and the baby, as well as personalized
+        recommendations. This endpoint is typically used to populate the user's dashboard.
+      summary: Get health risks and recommendations
+      tags:
+      - api
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthInsight'
+          description: ''
+        '204':
+          description: No health insight data available for the user.
+  /api/air-exposure/:
+    get:
+      operationId: api_air_exposure_retrieve
+      description: Returns the most recent air quality and weather data based on the
+        user's recorded exposure logs.
+      summary: Get current air quality and weather data
+      tags:
+      - api
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AirExposureLog'
+          description: ''
+        '204':
+          description: No air exposure data available.
+  /api/auth/delete-account/:
+    delete:
+      operationId: api_auth_delete_account_destroy
+      description: Deletes the authenticated user's account from the system. This
+        action is irreversible.
+      summary: Delete current user account
+      tags:
+      - api
+      responses:
+        '204':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+  /api/auth/firebase/:
+    post:
+      operationId: api_auth_firebase_create
+      tags:
+      - api
+      responses:
+        '200':
+          description: No response body
+  /api/auth/google/:
+    post:
+      operationId: auth_google_sign_in
+      description: Accept Google **ID token** from Android app, verify it on the server,create
+        or link user, and issue your JWTs (access/refresh).
+      summary: Sign in with Google (Android)
+      tags:
+      - Auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleAuthRequest'
+            examples:
+              RequestSuccessful:
+                value:
+                  id_token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+                summary: Request successful
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GoogleAuthRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GoogleAuthRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleAuthResponse'
+              examples:
+                УспешныйОтвет:
+                  value:
+                    access: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
+                    refresh: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
+                    user:
+                      id: 123
+                      email: user@example.com
+                      name: Jane Doe
+                      avatar_url: https://lh3.googleusercontent.com/...
+                      provider: google
+                  summary: Успешный ответ
+          description: Authentication successful
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Incorrect request (missing id_token)
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                Error:InvalidAudience:
+                  value:
+                    detail: Invalid audience
+                  summary: 'Error: Invalid audience'
+          description: Token validation failed (aud/iss/expired/email_verified)
+  /api/auth/logout/:
+    post:
+      operationId: api_auth_logout_create
+      description: Logs out the authenticated user by blacklisting the provided refresh
+        token.
+      summary: Log out user and blacklist refresh token
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Logout'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Logout'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Logout'
+        required: true
+      responses:
+        '205':
+          content:
+            application/json:
+              schema: null
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/auth/password-change/:
+    post:
+      operationId: api_auth_password_change_create
+      description: Allows an authenticated user to change their password by providing
+        the current and new password.
+      summary: Change user password
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                old_password:
+                  type: string
+                  example: testpass123
+                new_password:
+                  type: string
+                  example: newpass456
+              required:
+              - old_password
+              - new_password
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+  /api/auth/register/:
+    post:
+      operationId: api_auth_register_create
+      description: Registers a new user. Requires a valid API key in the `X-API-Key`
+        header.
+      summary: Register a new user account
+      parameters:
+      - in: header
+        name: X-API-Key
+        schema:
+          type: string
+        description: API key for registration
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Register'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Register'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Register'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+  /api/auth/token/:
+    post:
+      operationId: api_auth_token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenObtainPair'
+          description: ''
+  /api/auth/token/refresh/:
+    post:
+      operationId: api_auth_token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoggingTokenRefresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoggingTokenRefresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LoggingTokenRefresh'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoggingTokenRefresh'
+          description: ''
+  /api/debug/air-exposure/recompute/:
+    post:
+      operationId: api_debug_air_exposure_recompute_create
+      description: (Опционально) Запуск серверного пересчёта из движений для текущего
+        юзера.
+      tags:
+      - api
+      responses:
+        '200':
+          description: No response body
+  /api/debug/air-exposure/upsert/:
+    post:
+      operationId: api_debug_air_exposure_upsert_create
+      description: |-
+        Отладочный upsert Exposure: создаёт свежую запись с заданными агрегатами.
+        Доступен только в DEBUG/dev/staging и только для staff.
+      tags:
+      - api
+      responses:
+        '200':
+          description: No response body
+  /api/exposure-per-weeks/:
+    get:
+      operationId: api_exposure_per_weeks_retrieve
+      description: Returns weekly air quality exposure levels for the current user.
+      summary: Get exposure levels per pregnancy week
+      tags:
+      - api
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WeeklyExposure'
+              examples:
+                ExampleOutput:
+                  value:
+                  - '12':
+                      level: moderate
+                    '13':
+                      level: unhealthy
+                    '14':
+                      level: clean
+                  summary: Example output
+          description: A dictionary where each key is the pregnancy week and value
+            is exposure level.
+  /api/exposure/history/:
+    get:
+      operationId: api_exposure_history_retrieve
+      description: Returns the user's integrated exposure score history for the last
+        N calendar days (default 7, up to 90). Missing days are simply absent from
+        the list.
+      summary: Exposure history (integrated score)
+      parameters:
+      - in: query
+        name: days
+        schema:
+          type: integer
+        description: Number of calendar days to return (default 7, min 1, max 90).
+      tags:
+      - Exposure
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExposureHistoryResponse'
+          description: ''
+  /api/info/current/:
+    get:
+      operationId: api_info_current_retrieve
+      tags:
+      - api
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdviceTemplate'
+          description: ''
+  /api/lifestyle/:
+    get:
+      operationId: api_lifestyle_retrieve
+      summary: Get current user lifestyle (auto-created if missing)
+      tags:
+      - Lifestyle
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserLifeStyle'
+          description: ''
+    put:
+      operationId: api_lifestyle_update
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLifeStyle'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserLifeStyle'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserLifeStyle'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserLifeStyle'
+          description: ''
+    patch:
+      operationId: api_lifestyle_partial_update
+      summary: Update current user lifestyle
+      tags:
+      - Lifestyle
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserLifeStyle'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserLifeStyle'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserLifeStyle'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserLifeStyle'
+          description: ''
+  /api/meta/choices/:
+    get:
+      operationId: api_meta_choices_retrieve
+      summary: Meta choices for dropdowns
+      tags:
+      - Meta
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetaChoicesResponseSchema'
+              examples:
+                Example:
+                  value:
+                    languages:
+                    - value: en
+                      label: English
+                    races:
+                    - value: caucasian
+                      label: Caucasian
+                    countries:
+                    - value: nigeria
+                      label: Nigeria
+                    work_types:
+                    - value: Desk
+                      label: Desk
+                    diet_types:
+                    - value: carnivore
+                      label: Carnivore
+                    cooking_methods:
+                    - value: gas
+                      label: Gas
+                    exposure_levels:
+                    - value: Clean
+                      label: Clean
+          description: ''
+  /api/movements/upload/:
+    post:
+      operationId: api_movements_upload_create
+      description: Allows uploading a CSV file with user location data (latitude,
+        longitude, timestamp). Each row in the file is parsed and stored as a Movement
+        object associated with the authenticated user. The endpoint accepts a `multipart/form-data`
+        request with a `file` field.
+      summary: Upload user movements via CSV
+      tags:
+      - api
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 'CSV file with columns: latitude, longitude, timestamp'
+              required:
+              - file
+      responses:
+        '201':
+          description: Movements uploaded successfully.
+        '400':
+          description: Invalid or missing CSV data.
+  /api/profile/:
+    get:
+      operationId: api_profile_retrieve
+      tags:
+      - api
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+    put:
+      operationId: api_profile_update
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+    patch:
+      operationId: api_profile_partial_update
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfile'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfile'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserProfile'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+          description: ''
+  /api/set-language/:
+    post:
+      operationId: api_set_language_create
+      description: Allows the user to update their preferred interface language. This
+        language will be used by the backend to localize responses like advice, messages,
+        etc.
+      summary: Set preferred language for current user
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                language:
+                  type: string
+                  enum:
+                  - en
+                  - fr
+                  - sw
+                  - pl
+                  description: Language code, e.g., 'en', 'fr', 'sw', 'ig'
+              required:
+              - language
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
+          description: ''
+  /api/summary/:
+    get:
+      operationId: api_summary_retrieve
+      description: Returns air quality, weather, exposure history, risk change and
+        recommendations for mother and baby.
+      summary: Get integrated summary
+      tags:
+      - api
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+          description: ''
+  /api/symptoms/baby/checklist/:
+    get:
+      operationId: api_symptoms_baby_checklist_retrieve
+      description: Baby symptoms checklist (id + name)
+      summary: Baby symptoms checklist (id + name)
+      tags:
+      - Symptoms – Baby
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChecklistResponseSchema'
+          description: ''
+  /api/symptoms/baby/selection/:
+    get:
+      operationId: api_symptoms_baby_selection_retrieve
+      summary: Get baby selection for a date
+      parameters:
+      - in: query
+        name: date
+        schema:
+          type: string
+        description: Calendar date (YYYY-MM-DD). Overrides recorded_at if both provided.
+      - in: query
+        name: recorded_at
+        schema:
+          type: string
+        description: ISO-8601 datetime. If timezone omitted, interpreted in server
+          TIME_ZONE.
+      tags:
+      - Symptoms – Baby
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymptomSelectionResponseSchema'
+          description: ''
+    post:
+      operationId: api_symptoms_baby_selection_create
+      summary: Replace baby selection for recorded_at day
+      tags:
+      - Symptoms – Baby
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SymptomSelectionRequestSchema'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SymptomSelectionRequestSchema'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SymptomSelectionRequestSchema'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymptomSelectionResponseSchema'
+          description: ''
+  /api/symptoms/mommy/checklist/:
+    get:
+      operationId: api_symptoms_mommy_checklist_retrieve
+      description: Mommy symptoms checklist (id + name)
+      summary: Mommy symptoms checklist (id + name)
+      tags:
+      - Symptoms – Mommy
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChecklistResponseSchema'
+              examples:
+                Checklist:
+                  value:
+                    symptoms:
+                    - id: 10
+                      name: Headache
+                    - id: 12
+                      name: Nausea
+          description: ''
+  /api/symptoms/mommy/selection/:
+    get:
+      operationId: api_symptoms_mommy_selection_retrieve
+      description: |-
+        Replace-all за день, определяемый:
+        - либо ?date=YYYY-MM-DD,
+        - либо recorded_at (из body/query),
+        - иначе сегодня в settings.TIME_ZONE.
+      summary: Get mommy selection for a date
+      parameters:
+      - in: query
+        name: date
+        schema:
+          type: string
+        description: Calendar date (YYYY-MM-DD). Overrides recorded_at if both provided.
+      - in: query
+        name: recorded_at
+        schema:
+          type: string
+        description: ISO-8601 datetime. If timezone omitted, interpreted in server
+          TIME_ZONE.
+      tags:
+      - Symptoms – Mommy
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymptomSelectionResponseSchema'
+          description: ''
+    post:
+      operationId: api_symptoms_mommy_selection_create
+      description: |-
+        Replace-all за день, определяемый:
+        - либо ?date=YYYY-MM-DD,
+        - либо recorded_at (из body/query),
+        - иначе сегодня в settings.TIME_ZONE.
+      summary: Replace mommy selection for recorded_at day
+      tags:
+      - Symptoms – Mommy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SymptomSelectionRequestSchema'
+            examples:
+              Request:
+                value:
+                  symptom_ids:
+                  - 10
+                  - 12
+                  recorded_at: '2025-09-01T08:30:00+03:00'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SymptomSelectionRequestSchema'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SymptomSelectionRequestSchema'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymptomSelectionResponseSchema'
+              examples:
+                Response:
+                  value:
+                    date: '2025-09-01'
+                    recorded_at: '2025-09-01T08:30:00+03:00'
+                    symptom_ids:
+                    - 10
+                    - 12
+          description: ''
+  /demo/api/user-lifestyles/:
+    post:
+      operationId: demo_api_user_lifestyles_create
+      description: Создать/обновить Lifestyle (OneToOne) по user (PK).
+      tags:
+      - demo
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /demo/api/users/:
+    post:
+      operationId: demo_api_users_create
+      description: |-
+        Создать пользователя (только для staff).
+        Принимает JSON полей DemoUserCreateSerializer.
+      tags:
+      - demo
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+components:
+  schemas:
+    AdviceTemplate:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        text:
+          type: string
+        category:
+          type: string
+          nullable: true
+          maxLength: 100
+      required:
+      - id
+      - text
+      - title
+    AirExposureLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        timestamp:
+          type: string
+          format: date-time
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        pm25:
+          type: number
+          format: double
+          nullable: true
+        pm10:
+          type: number
+          format: double
+          nullable: true
+        no2:
+          type: number
+          format: double
+          nullable: true
+        so2:
+          type: number
+          format: double
+          nullable: true
+        co:
+          type: number
+          format: double
+          nullable: true
+        o3:
+          type: number
+          format: double
+          nullable: true
+        aqi:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+        temperature:
+          type: number
+          format: double
+          nullable: true
+        humidity:
+          type: number
+          format: double
+          nullable: true
+        pressure:
+          type: number
+          format: double
+          nullable: true
+        uvi:
+          type: number
+          format: double
+          nullable: true
+        uvi_level:
+          type: string
+          nullable: true
+          maxLength: 32
+        wind_speed:
+          type: number
+          format: double
+          nullable: true
+        exposure_minutes:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+        activity_level:
+          type: string
+          nullable: true
+          maxLength: 32
+        indoor:
+          type: boolean
+      required:
+      - id
+      - latitude
+      - longitude
+      - timestamp
+    BlankEnum:
+      enum:
+      - ''
+    ChecklistItemSchema:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+      required:
+      - id
+      - name
+    ChecklistResponseSchema:
+      type: object
+      properties:
+        symptoms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChecklistItemSchema'
+      required:
+      - symptoms
+    ChoiceSchema:
+      type: object
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+      required:
+      - label
+      - value
+    CookingMethodEnum:
+      enum:
+      - wood
+      - charcoal
+      - gas
+      - electric
+      type: string
+      description: |-
+        * `wood` - Wood
+        * `charcoal` - Charcoal
+        * `gas` - Gas
+        * `electric` - Electric
+    CountryEnum:
+      enum:
+      - NG
+      - GH
+      - KE
+      - other
+      type: string
+      description: |-
+        * `NG` - Nigeria
+        * `GH` - Ghana
+        * `KE` - Kenya
+        * `other` - Other
+    DietTypeEnum:
+      enum:
+      - carnivore
+      - vegetarian
+      type: string
+      description: |-
+        * `carnivore` - Carnivore
+        * `vegetarian` - Vegetarian
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    ExposureHistoryItem:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        integrated_score:
+          type: number
+          format: double
+      required:
+      - date
+      - integrated_score
+    ExposureHistoryResponse:
+      type: object
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        days_requested:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExposureHistoryItem'
+      required:
+      - days_requested
+      - end_date
+      - items
+      - start_date
+    GoogleAuthRequest:
+      type: object
+      properties:
+        id_token:
+          type: string
+          writeOnly: true
+          description: Google ID token from Android app
+      required:
+      - id_token
+    GoogleAuthResponse:
+      type: object
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+        user:
+          $ref: '#/components/schemas/GoogleAuthUser'
+      required:
+      - access
+      - refresh
+      - user
+    GoogleAuthUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        provider:
+          type: string
+      required:
+      - email
+      - id
+      - name
+      - provider
+    HealthInsight:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        recommendations: {}
+        source:
+          type: string
+          maxLength: 32
+        trigger_event:
+          type: string
+          nullable: true
+          maxLength: 64
+        engine_version:
+          type: string
+          maxLength: 32
+      required:
+      - created_at
+      - id
+    LanguageEnum:
+      enum:
+      - en
+      - fr
+      - sw
+      - pl
+      type: string
+      description: |-
+        * `en` - English
+        * `fr` - French
+        * `sw` - Swahili
+        * `pl` - Polish
+    LoggingTokenRefresh:
+      type: object
+      description: |-
+        Сериализатор, который логирует payload refresh-токена
+        и аккуратно обрабатывает ситуацию, когда пользователь не найден.
+      properties:
+        refresh:
+          type: string
+        access:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - refresh
+    Logout:
+      type: object
+      properties:
+        refresh:
+          type: string
+      required:
+      - refresh
+    MetaChoicesResponseSchema:
+      type: object
+      properties:
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChoiceSchema'
+        races:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChoiceSchema'
+        countries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChoiceSchema'
+        work_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChoiceSchema'
+        diet_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChoiceSchema'
+        cooking_methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChoiceSchema'
+        exposure_levels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChoiceSchema'
+      required:
+      - cooking_methods
+      - countries
+      - diet_types
+      - exposure_levels
+      - languages
+      - races
+      - work_types
+    NullEnum:
+      enum:
+      - null
+    PatchedUserLifeStyle:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        average_sleep_hours:
+          type: number
+          format: double
+          nullable: true
+        work_type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/WorkTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        diet_type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/DietTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        cooking_method:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/CookingMethodEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        activity_duration_minutes:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+        user:
+          type: integer
+    PatchedUserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        current_pregnancy_week:
+          type: integer
+          readOnly: true
+        pregnancy_start_date:
+          type: string
+          format: date
+          readOnly: true
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        is_active:
+          type: boolean
+        name:
+          type: string
+          nullable: true
+          maxLength: 255
+        registered_at:
+          type: string
+          format: date-time
+          readOnly: true
+        language:
+          $ref: '#/components/schemas/LanguageEnum'
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+        height:
+          type: number
+          format: double
+          nullable: true
+        weight_pre_pregnancy:
+          type: number
+          format: double
+          nullable: true
+        race:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/RaceEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        country:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/CountryEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_first_pregnancy:
+          type: boolean
+          nullable: true
+        week_of_pregnancy:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+        tracking_enabled:
+          type: boolean
+        notifications_enabled:
+          type: boolean
+        auth_provider:
+          type: string
+          maxLength: 20
+        google_sub:
+          type: string
+          nullable: true
+          maxLength: 255
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 200
+    PollutantCompliance:
+      type: object
+      properties:
+        source:
+          type: string
+        version:
+          type: string
+        per_pollutant:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PollutantComplianceItem'
+      required:
+      - per_pollutant
+      - source
+      - version
+    PollutantComplianceItem:
+      type: object
+      properties:
+        value:
+          type: number
+          format: double
+          nullable: true
+        label:
+          type: string
+        unit:
+          type: string
+        avg_period_used:
+          type: string
+        value_source:
+          type: string
+        value_datetime:
+          type: string
+          nullable: true
+        limit:
+          type: number
+          format: double
+        limit_unit:
+          type: string
+        limit_avg_period:
+          type: string
+        compliance:
+          type: boolean
+          nullable: true
+        exceedance_pct:
+          type: number
+          format: double
+          nullable: true
+        approximate:
+          type: boolean
+      required:
+      - approximate
+      - avg_period_used
+      - compliance
+      - exceedance_pct
+      - label
+      - limit
+      - limit_avg_period
+      - limit_unit
+      - unit
+      - value
+      - value_datetime
+      - value_source
+    RaceEnum:
+      enum:
+      - caucasian
+      - african
+      - asian
+      - hispanic
+      - mixed
+      type: string
+      description: |-
+        * `caucasian` - Caucasian
+        * `african` - African
+        * `asian` - Asian
+        * `hispanic` - Hispanic
+        * `mixed` - Mixed
+    Register:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          minLength: 6
+      required:
+      - email
+      - password
+    RiskDelta:
+      type: object
+      properties:
+        mom:
+          type: number
+          format: double
+          nullable: true
+        baby:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - baby
+      - mom
+    SimpleExposure:
+      type: object
+      description: |-
+        Минимальный сериалайзер для Exposure.
+        Берём только гарантированные поля, чтобы избежать расхождений со схемой.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        timestamp:
+          type: string
+          format: date
+          readOnly: true
+        exposure_level:
+          type: number
+          format: double
+        risks: {}
+      required:
+      - exposure_level
+      - id
+      - timestamp
+    SummaryResponse:
+      type: object
+      description: |-
+        Гибкий ответ для /summary:
+        - aq_weather_uv: что вернёт update_air_exposure_log_with_weather (dict) — принимаем как JSON.
+        - mom_exposure: последняя экспозиция (может быть None).
+        - risks_delta: изменение уровня риска (float | null).
+        - recommendations: что вернёт snapshot.recommendations (list|dict) — принимаем как JSON.
+        - today_journey: структура маршрута/дня — тоже JSON (dict|list).
+      properties:
+        aq_weather_uv:
+          $ref: '#/components/schemas/AirExposureLog'
+        mom_exposure:
+          allOf:
+          - $ref: '#/components/schemas/SimpleExposure'
+          nullable: true
+        baby_exposure:
+          allOf:
+          - $ref: '#/components/schemas/SimpleExposure'
+          nullable: true
+        recommendations:
+          type: string
+          readOnly: true
+        today_journey:
+          $ref: '#/components/schemas/TodayJourney'
+        risks_delta:
+          $ref: '#/components/schemas/RiskDelta'
+        week_info: {}
+        exposure_history:
+          $ref: '#/components/schemas/ExposureHistoryResponse'
+        pollutant_compliance:
+          $ref: '#/components/schemas/PollutantCompliance'
+      required:
+      - aq_weather_uv
+      - baby_exposure
+      - exposure_history
+      - mom_exposure
+      - pollutant_compliance
+      - recommendations
+      - risks_delta
+      - today_journey
+      - week_info
+    SymptomSelectionRequestSchema:
+      type: object
+      properties:
+        symptom_ids:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+        recorded_at:
+          type: string
+          format: date-time
+          description: ISO-8601. If timezone is omitted, interpreted in server TIME_ZONE.
+      required:
+      - symptom_ids
+    SymptomSelectionResponseSchema:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        recorded_at:
+          type: string
+          format: date-time
+          nullable: true
+        symptom_ids:
+          type: array
+          items:
+            type: integer
+      required:
+      - date
+      - symptom_ids
+    TodayJourney:
+      type: object
+      description: |-
+        Поля, как ты указал:
+          - distance_m: округляем и возвращаем как число (float)
+          - distance_km: float
+          - points: список произвольных dict (оставляем как есть)
+      properties:
+        distance_m:
+          type: number
+          format: double
+        distance_km:
+          type: number
+          format: double
+      required:
+      - distance_km
+      - distance_m
+    TokenObtainPair:
+      type: object
+      properties:
+        email:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - email
+      - password
+      - refresh
+    UserLifeStyle:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        average_sleep_hours:
+          type: number
+          format: double
+          nullable: true
+        work_type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/WorkTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        diet_type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/DietTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        cooking_method:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/CookingMethodEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        activity_duration_minutes:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+        user:
+          type: integer
+      required:
+      - id
+      - user
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        current_pregnancy_week:
+          type: integer
+          readOnly: true
+        pregnancy_start_date:
+          type: string
+          format: date
+          readOnly: true
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        is_active:
+          type: boolean
+        name:
+          type: string
+          nullable: true
+          maxLength: 255
+        registered_at:
+          type: string
+          format: date-time
+          readOnly: true
+        language:
+          $ref: '#/components/schemas/LanguageEnum'
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+        height:
+          type: number
+          format: double
+          nullable: true
+        weight_pre_pregnancy:
+          type: number
+          format: double
+          nullable: true
+        race:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/RaceEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        country:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/CountryEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_first_pregnancy:
+          type: boolean
+          nullable: true
+        week_of_pregnancy:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+          nullable: true
+        tracking_enabled:
+          type: boolean
+        notifications_enabled:
+          type: boolean
+        auth_provider:
+          type: string
+          maxLength: 20
+        google_sub:
+          type: string
+          nullable: true
+          maxLength: 255
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 200
+      required:
+      - current_pregnancy_week
+      - email
+      - id
+      - pregnancy_start_date
+      - registered_at
+    WeeklyExposure:
+      type: object
+      properties:
+        pregnancy_week:
+          type: integer
+        exposure_level:
+          type: string
+      required:
+      - exposure_level
+      - pregnancy_week
+    WorkTypeEnum:
+      enum:
+      - Desk
+      - Standing
+      - Physical
+      - Care
+      - Field
+      - Domestic
+      - Night Shift
+      type: string
+      description: |-
+        * `Desk` - Desk
+        * `Standing` - Standing
+        * `Physical` - Physical
+        * `Care` - Care
+        * `Field` - Field
+        * `Domestic` - Domestic
+        * `Night Shift` - Night Shift
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    tokenAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Token-based authentication with required prefix "Token"

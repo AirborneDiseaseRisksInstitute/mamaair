@@ -1,0 +1,29 @@
+{
+  "migIndex": 1,
+  "data": [
+    {
+      "path": "src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Black.ttf",
+      "sha1": "011236572e9360dbfba7f5895fcd7e6cbde59a89"
+    },
+    {
+      "path": "src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Bold.ttf",
+      "sha1": "7632dbf157a3dd5fd857f5028e45001bd83c8018"
+    },
+    {
+      "path": "src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-ExtraBold.ttf",
+      "sha1": "658b4c335093ade32d8e1b8e0e119a2782824e33"
+    },
+    {
+      "path": "src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Light.ttf",
+      "sha1": "6aef01a475a79a7e7369172759c618a9ac64d496"
+    },
+    {
+      "path": "src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Medium.ttf",
+      "sha1": "ad6c0d7c9035f7737d8b17fe73b77fd19b097c56"
+    },
+    {
+      "path": "src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Regular.ttf",
+      "sha1": "33fd30446179bedc8f5a2a59f83857e0e7567090"
+    }
+  ]
+}

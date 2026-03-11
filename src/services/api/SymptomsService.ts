@@ -1,0 +1,37 @@
+import api from './client';
+
+export const SymptomsService = {
+  getBabyChecklist: async () => {
+    const response = await api.get('/symptoms/baby/checklist/');
+    return response.data;
+  },
+
+  getBabySelection: async (date?: string, recorded_at?: string) => {
+    const response = await api.get('/symptoms/baby/selection/', { 
+      params: { date, recorded_at } 
+    });
+    return response.data;
+  },
+
+  saveBabySelection: async (data: any) => {
+    const response = await api.post('/symptoms/baby/selection/', data);
+    return response.data;
+  },
+
+  getMommyChecklist: async () => {
+    const response = await api.get('/symptoms/mommy/checklist/');
+    return response.data;
+  },
+
+  getMommySelection: async (date?: string, recorded_at?: string) => {
+    const response = await api.get('/symptoms/mommy/selection/', { 
+      params: { date, recorded_at } 
+    });
+    return response.data;
+  },
+
+  saveMommySelection: async (data: any) => {
+    const response = await api.post('/symptoms/mommy/selection/', data);
+    return response.data;
+  },
+};

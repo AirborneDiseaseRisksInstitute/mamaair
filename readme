@@ -1,0 +1,7 @@
+Suggested commands
+
+- Android:
+  - cd android && ./gradlew bundleRelease
+- iOS:
+  - cd ios && pod install
+  - Open ios/MamaAir.xcworkspace in Xcode, set Signing Team, then Archive via Organizer.
