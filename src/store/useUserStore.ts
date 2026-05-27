@@ -118,7 +118,10 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }));
   },
   setBirthday: (birthday) => {
-    const dateString = birthday ? birthday.toISOString().split('T')[0] : null;
+    // Use LOCAL date — toISOString() shifts by timezone (e.g. midnight in UTC+3 → previous day in UTC)
+    const dateString = birthday
+      ? `${birthday.getFullYear()}-${String(birthday.getMonth() + 1).padStart(2, '0')}-${String(birthday.getDate()).padStart(2, '0')}`
+      : null;
     if (dateString) {
       userStorage.set('user_birthday', dateString);
     } else {

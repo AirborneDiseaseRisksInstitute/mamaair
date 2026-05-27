@@ -27,7 +27,9 @@ export class IndoorOutdoorClassifier {
   private lastApiCheckLocation: { latitude: number; longitude: number } | null = null;
   private speedBuffer: number[] = [];
   private stateHistory: LocationState[] = [];
-  private lastApiBasedState: LocationState = 'Unknown';
+  private lastApiBasedState: LocationState = 'Outdoor';
+  private apiFailCount = 0;
+  private readonly MAX_API_FAILS = 3; // Stop calling API after 3 consecutive failures
 
   // Constants for "sufficient time/distance"
   private readonly MIN_TIME_BETWEEN_API_CALLS = 60 * 1000; // 60 seconds
@@ -49,8 +51,8 @@ export class IndoorOutdoorClassifier {
   }
 
   private async getRawState(location: Coords): Promise<LocationState> {
-    // 1. Check Accuracy
-    if (location.accuracy > 80.0) {
+    // 1. Check Accuracy (100m threshold — 80m is common in urban areas)
+    if (location.accuracy > 100.0) {
       return 'Unknown';
     }
 
@@ -72,17 +74,19 @@ export class IndoorOutdoorClassifier {
       return 'Outdoor';
     }
 
-    // Check if we should call API
-    if (this.shouldCallApi(location)) {
+    // Check if we should call API (skip if too many failures)
+    if (this.apiFailCount < this.MAX_API_FAILS && this.shouldCallApi(location)) {
       try {
         const apiData = await this.callHereApi(location);
+        this.apiFailCount = 0; // Reset on success
         const newState = this.applyApiRules(location, apiData);
         this.lastApiBasedState = newState;
         this.lastApiCheckTime = Date.now();
         this.lastApiCheckLocation = { latitude: location.latitude, longitude: location.longitude };
         return newState;
       } catch (error) {
-        console.error('HERE API Call failed', error);
+        this.apiFailCount++;
+        console.error(`HERE API Call failed (${this.apiFailCount}/${this.MAX_API_FAILS})`, error);
         return this.lastApiBasedState;
       }
     }
@@ -129,7 +133,7 @@ export class IndoorOutdoorClassifier {
 
   private async callHereApi(location: Coords): Promise<ApiResult> {
     const url = `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${location.latitude},${location.longitude}&limit=1&lang=en-US&apikey=${this.HERE_API_KEY}`;
-    const response = await axios.get(url);
+    const response = await axios.get(url, { timeout: 5000 });
     const item = response.data.items?.[0];
 
     if (!item) {
@@ -176,10 +180,16 @@ export class IndoorOutdoorClassifier {
       return 'Outdoor';
     }
     
-    // Default if no rule matches?
-    // The rules don't cover the gap between 35m and 55m, or other combinations.
-    // I'll default to Unknown or maintain last state.
-    // Given the strict rules, if nothing matches, Unknown is safest.
+    // Gap between 35m and 55m:
+    // If near a building with good accuracy → likely Indoor
+    if (isBuilding && distance <= this.THRESHOLDS.outdoorDistance && location.accuracy <= this.THRESHOLDS.goodAccuracy) {
+      return 'Indoor';
+    }
+    // Not a building → likely Outdoor
+    if (!isBuilding) {
+      return 'Outdoor';
+    }
+    // Ambiguous: near building but poor accuracy
     return 'Unknown';
   }
 
@@ -204,8 +214,13 @@ export class IndoorOutdoorClassifier {
   }
 
   private getMajorityVote(): LocationState {
-    if (this.stateHistory.length === 0) return 'Unknown';
-    
+    if (this.stateHistory.length === 0) return 'Outdoor';
+
+    // Fast convergence: use latest raw state until we have enough history
+    if (this.stateHistory.length < 3) {
+      return this.stateHistory[this.stateHistory.length - 1];
+    }
+
     const counts: Record<string, number> = { Indoor: 0, Outdoor: 0, Unknown: 0 };
     for (const state of this.stateHistory) {
       counts[state]++;
@@ -214,14 +229,20 @@ export class IndoorOutdoorClassifier {
     let maxCount = 0;
     let majorityState: LocationState = 'Unknown';
 
-    // Prioritize Outdoor/Indoor over Unknown if tie?
-    // Simple max check
+    // Prioritize Indoor/Outdoor over Unknown
     for (const state of ['Indoor', 'Outdoor', 'Unknown'] as LocationState[]) {
         if (counts[state] > maxCount) {
             maxCount = counts[state];
             majorityState = state;
         }
     }
+
+    // Tie-breaker: prefer non-Unknown state
+    if (majorityState === 'Unknown') {
+      if (counts['Indoor'] === maxCount) return 'Indoor';
+      if (counts['Outdoor'] === maxCount) return 'Outdoor';
+    }
+
     return majorityState;
   }
 

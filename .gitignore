@@ -148,3 +148,4 @@ android/build.gradle
 android/gradlew
 android/settings.gradle
 android/gradle/init.gradle
+.claude/

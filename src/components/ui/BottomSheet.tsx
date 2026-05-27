@@ -313,6 +313,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
                     backgroundColor: 'transparent',
                   },
                 ]}
+                onLayout={handleContentLayout}
               >
                 {showHandle && (
                   <View style={styles.handleContainer}>
@@ -344,50 +345,6 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
               </View>
             </Animated.View>
           )}
-          
-          {/* Hidden view for measuring actual content height */}
-          <View
-            style={styles.measurementContainer}
-            onLayout={handleContentLayout}
-            pointerEvents="none"
-        >
-          <View
-            style={[
-              styles.content,
-              {
-                backgroundColor: theme.colors.background,
-              },
-            ]}
-          >
-            {showHandle && (
-              <View style={styles.handleContainer}>
-                <View
-                  style={[
-                    styles.handle,
-                    { backgroundColor: theme.colors.neutral300 },
-                  ]}
-                />
-              </View>
-            )}
-            {title && (
-              <View style={styles.titleContainer}>
-                {typeof title === 'string' ? (
-                  <Text
-                    style={[
-                      styles.titleText,
-                      { color: theme.colors.textPrimary },
-                    ]}
-                   allowFontScaling={false}>
-                    {title}
-                  </Text>
-                ) : (
-                  title
-                )}
-              </View>
-            )}
-            <View style={styles.childrenContainer}>{children}</View>
-            </View>
-          </View>
         </View>
       </View>
     </Modal>
@@ -486,12 +443,6 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 200,
     maxHeight: SCREEN_HEIGHT * 0.9,
-  },
-  measurementContainer: {
-    position: 'absolute',
-    opacity: 0,
-    width: '100%',
-    bottom: 0,
   },
   handleContainer: {
     alignItems: 'center',

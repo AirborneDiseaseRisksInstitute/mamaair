@@ -20,6 +20,9 @@ import { SVG_ICONS, WAVE_BACKGROUND_SVG, DIET_SVG, RUNNING_SVG, BEHAVIOUR_SVG, M
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { SummaryService, type SummaryResponse } from '../services/api/SummaryService';
 import { LifestyleService } from '../services/api/LifestyleService';
+import { DailyCheckinService } from '../services/api/DailyCheckinService';
+import { TaskCompletionService } from '../services/api/TaskCompletionService';
+import { useTasksStore } from '../store/useTasksStore';
 
 const ICON_SIZE = 48;
 const ICON_STROKE_WIDTH = 1.5;
@@ -189,25 +192,34 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
   const theme = useTheme();
   const { showToast } = useToast();
   const { profile } = useUserStore();
+  const tasks = useTasksStore(s => s.tasks);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [lifestyle, setLifestyle] = useState<any | null>(null);
   const [_loading, setLoading] = useState(false);
   const [_error, setError] = useState<string | null>(null);
+  const [completedTasks, setCompletedTasks] = useState<string[]>([]);
   const currentWeek = summary?.week_info?.week || profile.pregnancyWeek || 19;
   const insets = useSafeAreaInsets();
+
+  const todayDateStr = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoading(true);
-        const [summaryData, lifestyleData] = await Promise.all([
+        const [summaryData, lifestyleData, taskData] = await Promise.all([
           SummaryService.getSummary(),
-          LifestyleService.getLifestyle()
+          LifestyleService.getLifestyle(),
+          TaskCompletionService.getCompletions(todayDateStr).catch(() => ({ date: todayDateStr, tasks: [] })),
         ]);
         if (mounted) {
           setSummary(summaryData);
           setLifestyle(lifestyleData);
+          setCompletedTasks(taskData.tasks || []);
         }
       } catch {
         if (mounted) setError('Failed to load data.');
@@ -216,6 +228,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
       }
     })();
     return () => { mounted = false; };
+  }, [todayDateStr]);
+
+  useEffect(() => {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    DailyCheckinService.checkin(dateStr).catch((err) =>
+      console.warn('[TodayScreen] Daily check-in failed:', err)
+    );
   }, []);
 
   const handleDelayTask = (taskTitle: string) => {
@@ -245,6 +265,25 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
     });
   };
 
+  const handleTaskToggle = (taskId: string, checked: boolean) => {
+    const previous = completedTasks;
+    const updatedTasks = checked
+      ? [...completedTasks, taskId]
+      : completedTasks.filter(t => t !== taskId);
+    setCompletedTasks(updatedTasks);
+    // Revert UI on POST failure so user sees real synced state and can retry.
+    // Without revert, server keeps old state but UI shows checked → next session loses the change.
+    TaskCompletionService.upsertCompletions(todayDateStr, updatedTasks).catch((err) => {
+      console.warn('[TodayScreen] Task completion save failed:', err);
+      setCompletedTasks(previous);
+      showToast({
+        type: 'error',
+        title: 'Sync failed',
+        message: 'Tap the task again to retry.',
+      });
+    });
+  };
+
   // Get current date info
   const today = new Date();
   const dateString = today.toLocaleDateString('en-GB', {
@@ -257,6 +296,32 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
     day: 'numeric',
     month: 'long',
   });
+
+  // Compute weekly task scores from summary.task_completions
+  const weeklyScores = useMemo(() => {
+    // task_completions is an array of { date, tasks: string[] } — one entry per day
+    const days = summary?.task_completions || [];
+
+    const taskTypeMap = new Map(tasks.map(t => [t.id, t.type]));
+    const counts = { diet: 0, activity: 0, behaviour: 0 };
+
+    days.forEach((day) => {
+      day.tasks.forEach((taskId) => {
+        const type = taskTypeMap.get(taskId);
+        if (type) counts[type]++;
+      });
+    });
+
+    const dietTotal = tasks.filter(t => t.type === 'diet').length * 7;
+    const activityTotal = tasks.filter(t => t.type === 'activity').length * 7;
+    const behaviourTotal = tasks.filter(t => t.type === 'behaviour').length * 7;
+
+    return {
+      diet: `${counts.diet}/${dietTotal}`,
+      activity: `${counts.activity}/${activityTotal}`,
+      behaviour: `${counts.behaviour}/${behaviourTotal}`,
+    };
+  }, [summary?.task_completions, tasks]);
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -639,7 +704,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
         {/* Date Section */}
         <View style={styles.dateSection}>
           <Text style={styles.dateText} allowFontScaling={false}>{dateString}</Text>
-          <Text style={styles.dayWeekText} allowFontScaling={false}>Day 4 / Week {currentWeek}</Text>
+          <Text style={styles.dayWeekText} allowFontScaling={false}>Week {currentWeek}</Text>
         </View>
 
         {/* Wave Cards Section */}
@@ -727,15 +792,15 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
           <View style={styles.headerBadges}>
             <View style={[styles.badge, styles.badgeGreen]}>
               <SvgXml xml={DIET_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextGreen]} allowFontScaling={false}>1/5</Text>
+              <Text style={[styles.badgeText, styles.badgeTextGreen]} allowFontScaling={false}>{weeklyScores.diet}</Text>
             </View>
             <View style={[styles.badge, styles.badgeYellow]}>
               <SvgXml xml={RUNNING_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextYellow]} allowFontScaling={false}>2/6</Text>
+              <Text style={[styles.badgeText, styles.badgeTextYellow]} allowFontScaling={false}>{weeklyScores.activity}</Text>
             </View>
             <View style={[styles.badge, styles.badgeRed]}>
               <SvgXml xml={BEHAVIOUR_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextRed]} allowFontScaling={false}>5/5</Text>
+              <Text style={[styles.badgeText, styles.badgeTextRed]} allowFontScaling={false}>{weeklyScores.behaviour}</Text>
             </View>
           </View>
 
@@ -781,63 +846,17 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
         </View>
 
         <View style={styles.tasksContainer}>
-
-        <TaskCard
-          type="behaviour"
-          title="Cooking Smoke Period"
-          description="Charcoal smoke peaks between 18:00–19:00.\nImprove airflow or take a break outdoors."
-          buttons={[
-            {
-              label: 'Set Reminder',
-              onPress: () => openReminderPicker('Cooking Smoke Period'),
-              variant: 'reminder',
-            },
-          ]}
-          onCheck={(checked) => console.log('Task checked:', checked)}
-        />
-
-         
-
-<TaskCard
-          type="diet"
-          title="Drink Water"
-          description="Charcoal smoke peaks between 18:00–19:00.\nImprove airflow or take a break outdoors."
-          buttons={[
-            {
-              label: 'Delay my water',
-              onPress: () => handleDelayTask('Drink Water'),
-              variant: 'delay',
-            },
-            {
-              label: 'Set Reminder',
-              onPress: () => openReminderPicker('Drink Water'),
-              variant: 'reminder',
-            },
-          ]}
-          onCheck={(checked) => console.log('Task checked:', checked)}
-        />
-
-<TaskCard
-          type="activity"
-          title="Morning Walk Shift"
-          description="06:30–07:15 walk: 15 high-risk minutes (dust pockets along road)."
-          buttons={[
-            {
-              label: 'Delay my walk',
-              onPress: () => handleDelayTask('Morning Walk Shift'),
-              variant: 'delay',
-            },
-            {
-              label: 'Set Reminder',
-              onPress: () => openReminderPicker('Morning Walk Shift'),
-              variant: 'reminder',
-            },
-          ]}
-          onCheck={(checked) => console.log('Task checked:', checked)}
-        />
-
-
-</View>
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              type={task.type}
+              title={task.title}
+              description={task.description}
+              initialChecked={completedTasks.includes(task.id)}
+              onCheck={(checked) => handleTaskToggle(task.id, checked)}
+            />
+          ))}
+        </View>
 
         {/* Health Risks Card */}
         <View style={styles.healthRisksCard}>
@@ -880,7 +899,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
             </View>
             <View style={[styles.riskTag, styles.riskTagMother]}>
               <Text style={styles.riskTagText} allowFontScaling={false}>
-                {(summary?.mom_exposure?.exposure_level || 0)}/8 Exposure Level
+                {Number(summary?.mom_exposure?.exposure_level || 0).toFixed(2)}/8 Exposure Level
               </Text>
             </View>
           </View>
@@ -902,7 +921,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
             </View>
             <View style={[styles.riskTag, styles.riskTagBaby]}>
               <Text style={styles.riskTagText} allowFontScaling={false}>
-                {(summary?.baby_exposure?.exposure_level || 0)}/8 Exposure Level
+                {Number(summary?.baby_exposure?.exposure_level || 0).toFixed(2)}/8 Exposure Level
               </Text>
             </View>
           </View>
@@ -911,8 +930,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
 
       {/* FAB */}
       <FloatingActionButton
-        onApply={(data: { moods: string[]; symptoms: string[]; waterAmount: number }) => {
-          // Handle apply with data
+        onApply={(data: { moods: string[]; symptoms: number[]; waterAmount: number }) => {
           console.log('Applied data:', data);
         }}
       />

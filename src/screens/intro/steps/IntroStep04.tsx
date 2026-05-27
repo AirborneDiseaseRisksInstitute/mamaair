@@ -12,12 +12,12 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 interface IntroStep04Props { onNext?: () => void; onBack?: () => void; }
 type Language = 'english' | 'french' | 'yoruba' | 'swahili' | 'arabic';
 
-const LANGUAGES: Array<{ id: Language; label: string; iconSvg: string }> = [
-  { id: 'english', label: 'English', iconSvg: ENGLISH_FLAG_SVG },
-  { id: 'french', label: 'French', iconSvg: FRENCH_FLAG_SVG },
-  { id: 'yoruba', label: 'Yoruba', iconSvg: YORUBA_FLAG_SVG },
-  { id: 'swahili', label: 'Swahili', iconSvg: SWAHILI_FLAG_SVG },
-  { id: 'arabic', label: 'Arabic', iconSvg: ARABIC_FLAG_SVG },
+const LANGUAGES: Array<{ id: Language; label: string; iconSvg: string; available: boolean }> = [
+  { id: 'english', label: 'English', iconSvg: ENGLISH_FLAG_SVG, available: true },
+  { id: 'french', label: 'French', iconSvg: FRENCH_FLAG_SVG, available: false },
+  { id: 'yoruba', label: 'Yoruba', iconSvg: YORUBA_FLAG_SVG, available: false },
+  { id: 'swahili', label: 'Swahili', iconSvg: SWAHILI_FLAG_SVG, available: false },
+  { id: 'arabic', label: 'Arabic', iconSvg: ARABIC_FLAG_SVG, available: false },
 ];
 
 export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
@@ -45,7 +45,7 @@ export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
           <Text style={styles.pickLanguageText} allowFontScaling={false}>Pick your language</Text>
           <View style={styles.optionsContainer}>
             {LANGUAGES.map((language) => (
-              <RadioOption key={language.id} iconSvg={language.iconSvg} label={language.label} selected={selectedLanguage === language.id} onPress={() => setSelectedLanguageLocal(language.id)} />
+              <RadioOption key={language.id} iconSvg={language.iconSvg} label={language.available ? language.label : `${language.label} (coming soon)`} selected={selectedLanguage === language.id} onPress={() => setSelectedLanguageLocal(language.id)} disabled={!language.available} />
             ))}
           </View>
         </View>

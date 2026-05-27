@@ -47,3 +47,14 @@
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
+
+# Custom MotionGate native module — RN finds it via reflection
+-keep class com.mamaair.motion.** { *; }
+
+# Preserve @ReactMethod annotated methods
+-keep @com.facebook.react.bridge.ReactMethod class * { *; }
+-keepclassmembers class * { @com.facebook.react.bridge.ReactMethod *; }
+
+# React Native native modules — keep extending classes intact
+-keep class * extends com.facebook.react.bridge.ReactContextBaseJavaModule { *; }
+-keep class * extends com.facebook.react.ReactPackage { *; }

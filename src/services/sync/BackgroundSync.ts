@@ -1,10 +1,14 @@
 import BackgroundFetch from 'react-native-background-fetch';
-import RNFS from 'react-native-fs';
+import Geolocation from '@react-native-community/geolocation';
 import { databaseService } from '../database/DatabaseService';
 import { MovementsService } from '../api/MovementsService';
+import { IndoorOutdoorClassifier } from '../logic/IndoorOutdoorClassifier';
 import { storage } from '../../store/useAuthStore';
+import { appLogger } from '../logger/AppLogger';
 
 class BackgroundSync {
+  private isSyncing = false;
+
   async init() {
     await BackgroundFetch.configure(
       {
@@ -16,6 +20,7 @@ class BackgroundSync {
       },
       async (taskId) => {
         console.log('[BackgroundFetch] taskId: ', taskId);
+        await this.captureBackupLocation();
         await this.performSync();
         BackgroundFetch.finish(taskId);
       },
@@ -25,52 +30,119 @@ class BackgroundSync {
     );
   }
 
-  async performSync() {
-    console.log('[BackgroundSync] Starting sync...');
-    const locations = databaseService.getAllLocations();
+  /**
+   * Backup: get a single GPS fix and save to DB.
+   * Used as safety net when foreground service is killed by aggressive OEMs.
+   */
+  private async captureBackupLocation(): Promise<void> {
+    const token = storage.getString('auth_token');
+    if (!token) return; // Not authenticated — skip
 
-    if (locations.length === 0) {
-      console.log('[BackgroundSync] No locations to upload.');
+    return new Promise((resolve) => {
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const { latitude, longitude, accuracy, speed } = position.coords;
+            const timestamp = position.timestamp;
+            const classifier = IndoorOutdoorClassifier.getInstance();
+            const state = await classifier.classify({
+              latitude, longitude, accuracy, speed: speed || 0,
+            });
+
+            if (state !== 'Indoor') {
+              databaseService.insertLocation({
+                latitude, longitude, accuracy,
+                speed: speed || 0,
+                timestamp,
+                isOutdoor: state === 'Outdoor' ? 1 : 0,
+              });
+              appLogger.info('Sync', `Backup GPS fix saved (${state})`);
+            } else {
+              appLogger.info('Sync', 'Backup GPS fix: Indoor — skipped');
+            }
+          } catch (err: any) {
+            appLogger.error('Sync', `Backup location classify error: ${err?.message}`);
+          }
+          resolve();
+        },
+        (error) => {
+          appLogger.warn('Sync', `Backup GPS fix failed: ${error.message}`);
+          resolve();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      );
+    });
+  }
+
+  /** Public wrapper for headless task access */
+  async captureBackupLocationHeadless(): Promise<void> {
+    return this.captureBackupLocation();
+  }
+
+  async performSync() {
+    // Prevent concurrent syncs from racing on getAllLocations / deleteLocations.
+    // Three triggers can fire at once: HomeScreen 60s timer, 15min interval, BackgroundFetch.
+    if (this.isSyncing) {
+      appLogger.info('Sync', 'Already syncing — skipping concurrent call');
       return;
     }
+    this.isSyncing = true;
 
     try {
-      // Generate CSV
-      // Headers: latitude,longitude,timestamp
-      const header = 'latitude,longitude,timestamp\n';
-      const rows = locations
-        .map((loc) => {
-            const isoTime = new Date(loc.timestamp).toISOString();
-            return `${loc.latitude},${loc.longitude},${isoTime}`;
-        })
-        .join('\n');
+      appLogger.info('Sync', 'Starting sync...');
 
-      const csvContent = header + rows;
-      const path = `${RNFS.DocumentDirectoryPath}/movements.csv`;
+      let locations: ReturnType<typeof databaseService.getAllLocations>;
+      try {
+        locations = databaseService.getAllLocations();
+      } catch (dbError: any) {
+        appLogger.error('Sync', `DB access failed: ${dbError?.message}`);
+        return;
+      }
 
-      await RNFS.writeFile(path, csvContent, 'utf8');
+      appLogger.info('Sync', `Found ${locations.length} locations in DB`);
 
-      // Upload
-      await MovementsService.uploadMovements(path);
+      if (locations.length === 0) {
+        return;
+      }
 
-      // On Success
-      console.log('[BackgroundSync] Upload successful.');
-      
-      // Delete uploaded rows
-      // Ideally we should delete only the ones we fetched.
-      // Since getAllLocations returns all, we can delete all or by ID.
-      // To be safe against race conditions (new points added during upload), we should delete by ID.
-      const ids = locations.map(l => l.id!).filter(id => id !== undefined);
-      databaseService.deleteLocations(ids);
+      const token = storage.getString('auth_token');
+      if (!token) {
+        appLogger.error('Sync', 'No auth token — skipping upload');
+        return;
+      }
 
-      // Update Last Upload Time
-      storage.set('last_upload_time', Date.now());
+      // Timestamp must include local timezone offset, NOT UTC.
+      // Backend buckets exposure by date — late-evening events for users west of UTC
+      // would otherwise appear under "tomorrow", causing "yesterday's data is gone" complaints.
+      const formatLocalISO = (ms: number) => {
+        const d = new Date(ms);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const offsetMin = -d.getTimezoneOffset();
+        const sign = offsetMin >= 0 ? '+' : '-';
+        const oh = pad(Math.floor(Math.abs(offsetMin) / 60));
+        const om = pad(Math.abs(offsetMin) % 60);
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${oh}:${om}`;
+      };
+      const movements = locations.map((loc) => ({
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        timestamp: formatLocalISO(loc.timestamp),
+      }));
 
-      // Cleanup file
-      await RNFS.unlink(path);
+      try {
+        const response = await MovementsService.uploadMovementsJson(movements);
+        appLogger.info('Sync', `Upload SUCCESS: ${JSON.stringify(response)}`);
 
-    } catch (error) {
-      console.error('[BackgroundSync] Sync failed', error);
+        // Only delete locations after confirmed upload — preserves data on failure
+        const ids = locations.map(l => l.id!).filter(id => id !== undefined);
+        databaseService.deleteLocations(ids);
+        storage.set('last_upload_time', Date.now());
+      } catch (error: any) {
+        appLogger.error('Sync', `Upload FAILED: ${error?.message}`);
+        // Locations stay in DB for next sync attempt
+      }
+    } finally {
+      this.isSyncing = false;
     }
   }
 }
@@ -85,6 +157,7 @@ export const BackgroundSyncHeadlessTask = async (event: any) => {
         BackgroundFetch.finish(taskId);
         return;
     }
+    await backgroundSync.captureBackupLocationHeadless();
     await backgroundSync.performSync();
     BackgroundFetch.finish(taskId);
 };

@@ -28,4 +28,5 @@ export { ToastProvider, useToast } from './Toast';
 export { UpgradeSubscription } from './UpgradeSubscription';
 export { AccessLocationBottomSheet } from './AccessLocationBottomSheet';
 export { NotificationTimeSettings } from './NotificationTimeSettings';
+export { OEMAutostartGuide } from './OEMAutostartGuide';
 

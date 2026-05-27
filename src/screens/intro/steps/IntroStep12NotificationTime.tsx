@@ -4,6 +4,7 @@ import { useTheme, spacing } from '../../../theme';
 import { OrangeHalo, BackButton, ProgressBar, IntroTitleBox, NotificationTimeSettings } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
 import { FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { rescheduleNotifications } from '../../../services/notifications/NotificationScheduler';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -59,6 +60,7 @@ export const IntroStep12NotificationTime: React.FC<IntroStep12NotificationTimePr
             days={daysStr}
             onSave={(from, to, days) => {
               setNotifTime(from, to, days);
+              rescheduleNotifications();
               onNext?.();
             }}
             showSaveButton={true}

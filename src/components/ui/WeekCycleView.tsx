@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Image, Text, Dimensions, Animated, TouchableOpacity } from 'react-native';
-import Svg, { Circle, G, ForeignObject, Path, Defs, ClipPath, Mask, Rect, Pattern } from "react-native-svg";
+import Svg, { Circle, G, Path, Defs, ClipPath, Mask, Rect, Pattern } from "react-native-svg";
 import { SvgXml } from 'react-native-svg';
 import { useTheme } from '../../theme';
 import { SVG_ICONS, WAVE_BACKGROUND_SVG, DIET_SVG } from '../../utils/svgIcons';
@@ -22,16 +22,64 @@ const DOT_RADIUS = DOT_SIZE / 2;
 const ICON_SIZE = responsiveUtils.getWeekCycleIconSize();
 const ICON_STROKE_WIDTH = 1.5;
 
-// Helper function to increase stroke-width in SVG
+// Helper function to increase stroke-width in SVG (memoized — strings are immutable module constants)
+const strokeWidthCache = new Map<string, string>();
 const increaseStrokeWidth = (svgXml: string, strokeWidth: number): string => {
-  // Replace stroke-width in SVG string
-  return svgXml.replace(
+  const key = `${svgXml.length}|${strokeWidth}|${svgXml.charCodeAt(0)}`;
+  const cached = strokeWidthCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = svgXml.replace(
     /stroke-width="([^"]*)"/g,
     `stroke-width="${strokeWidth}"`
   ).replace(
     /stroke-width='([^']*)'/g,
     `stroke-width='${strokeWidth}'`
   );
+  strokeWidthCache.set(key, result);
+  return result;
+};
+
+// Wave background paths parsed once at module load — was being re-parsed on every IconWithWave render
+const WAVE_PATHS_CACHED: Array<{ d: string; fill: string }> = (() => {
+  const matches = WAVE_BACKGROUND_SVG.match(/<path[^>]*d="([^"]*)"[^>]*fill="([^"]*)"[^>]*>/g);
+  if (!matches) return [];
+  return matches.map(m => {
+    const dMatch = m.match(/d="([^"]*)"/);
+    const fillMatch = m.match(/fill="([^"]*)"/);
+    return {
+      d: dMatch ? dMatch[1] : '',
+      fill: fillMatch ? fillMatch[1] : '#FF6900',
+    };
+  }).filter(p => p.d);
+})();
+
+// Cache parsed SVG path data per (svgXml string identity) — eliminates 60Hz regex storm
+interface ParsedSvg {
+  viewBox: number[];
+  iconPathData: Array<{ d: string; stroke?: string; fill: string; strokeWidth?: string }>;
+}
+const parsedSvgCache = new Map<string, ParsedSvg>();
+const parseSvg = (svgXml: string): ParsedSvg => {
+  const cached = parsedSvgCache.get(svgXml);
+  if (cached) return cached;
+  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
+  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, 100, 100];
+  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
+  const iconPathData = pathMatches ? pathMatches.map(m => {
+    const dMatch = m.match(/d="([^"]*)"/);
+    const strokeMatch = m.match(/stroke="([^"]*)"/);
+    const fillMatch = m.match(/fill="([^"]*)"/);
+    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
+    return {
+      d: dMatch ? dMatch[1] : '',
+      stroke: strokeMatch ? strokeMatch[1] : undefined,
+      fill: fillMatch ? fillMatch[1] : 'transparent',
+      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
+    };
+  }).filter(p => p.d) : [];
+  const result = { viewBox, iconPathData };
+  parsedSvgCache.set(svgXml, result);
+  return result;
 };
 
 // Helper function to change SVG colors to white
@@ -70,27 +118,13 @@ const StaticIconWithFill: React.FC<{
   percentage: number;
   uniqueId: string;
 }> = ({ svgXml, width, height, percentage, uniqueId }) => {
-  // Extract viewBox from icon SVG
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, width, height];
+  // Cached parse — runs once per unique SVG string
+  const parsed = parseSvg(svgXml);
+  const viewBox = parsed.viewBox.length >= 4 ? parsed.viewBox : [0, 0, width, height];
   const svgWidth = viewBox[2] || width;
   const svgHeight = viewBox[3] || height;
   const fillHeight = (svgHeight * percentage) / 100;
-
-  // Extract icon paths for use in mask
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData = pathMatches ? pathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const strokeMatch = m.match(/stroke="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      stroke: strokeMatch ? strokeMatch[1] : undefined,
-      fill: fillMatch ? fillMatch[1] : 'transparent',
-      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-    };
-  }).filter(p => p.d) : [];
+  const iconPathData = parsed.iconPathData;
 
   return (
     <View style={{ width, height }}>
@@ -194,37 +228,14 @@ const IconWithWave: React.FC<{
     };
   }, [waveAnim, waveWidth]);
 
-  // Extract viewBox from icon SVG
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, width, height];
+  // Cached SVG parse — runs once per unique string, eliminates 60Hz regex storm during wave animation
+  const parsed = parseSvg(svgXml);
+  const viewBox = parsed.viewBox.length >= 4 ? parsed.viewBox : [0, 0, width, height];
   const svgWidth = viewBox[2] || width;
   const svgHeight = viewBox[3] || height;
   const fillHeight = (svgHeight * percentage) / 100;
-
-  // Extract icon paths for use in mask
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData = pathMatches ? pathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const strokeMatch = m.match(/stroke="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      stroke: strokeMatch ? strokeMatch[1] : undefined,
-      fill: fillMatch ? fillMatch[1] : 'transparent',
-      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-    };
-  }).filter(p => p.d) : [];
-  
-  const wavePathMatches = WAVE_BACKGROUND_SVG.match(/<path[^>]*d="([^"]*)"[^>]*fill="([^"]*)"[^>]*>/g);
-  const wavePaths = wavePathMatches ? wavePathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      fill: fillMatch ? fillMatch[1] : '#FF6900',
-    };
-  }).filter(p => p.d) : [];
+  const iconPathData = parsed.iconPathData;
+  const wavePaths = WAVE_PATHS_CACHED;
 
   return (
     <View style={{ width, height }}>
@@ -396,7 +407,16 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
     const centerOffset = MAIN_RADIUS + padding;
 
     const angleStep = 360 / TOTAL_DOTS;
-    const dotNodes = [];
+    // Circles drawn inside the SVG.
+    const dotCircles: React.ReactNode[] = [];
+    // Icons rendered as absolutely-positioned overlay Views on top of the SVG.
+    // We used to nest <View><Svg/></View> inside <ForeignObject> inside <Svg>; on Android
+    // react-native-svg's ForeignObject crashes the UI thread when many copies of this
+    // structure are recycled by FlatList (40 weeks × 11 dots → up to 440 nested SVGs).
+    // ColorOS / MIUI hit this much harder than the emulator. Pulling icons out of the
+    // SVG fixes the crash with no visual change.
+    const iconOverlays: React.ReactNode[] = [];
+    const iconRadius = ICON_SIZE / 2;
 
     for (let i = 0; i < TOTAL_DOTS; i++) {
       const angleRad = ((-90 + i * angleStep) * Math.PI) / 180;
@@ -407,55 +427,59 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
 
       // Check if an icon exists for this index
       const iconData = iconMap[i];
-      
+
       if (iconData && SVG_ICONS[iconData.iconPath]) {
-        // If icon exists, render SVG
         const svgXml = SVG_ICONS[iconData.iconPath];
-        // Increase stroke-width for better visibility
         const svgXmlWithThickerStroke = increaseStrokeWidth(svgXml, ICON_STROKE_WIDTH);
-        const iconRadius = ICON_SIZE / 2;
         const percentage = iconData.percentage || 0;
-        
-        dotNodes.push(
-          <ForeignObject 
-            key={i}
-            x={cx - iconRadius} 
-            y={cy - iconRadius} 
-            width={ICON_SIZE} 
-            height={ICON_SIZE}
+
+        let iconNode: React.ReactNode;
+        if (percentage > 0) {
+          iconNode = isActive ? (
+            <IconWithWave
+              svgXml={svgXmlWithThickerStroke}
+              width={ICON_SIZE}
+              height={ICON_SIZE}
+              percentage={percentage}
+              uniqueId={`icon-${i}`}
+            />
+          ) : (
+            <StaticIconWithFill
+              svgXml={svgXmlWithThickerStroke}
+              width={ICON_SIZE}
+              height={ICON_SIZE}
+              percentage={percentage}
+              uniqueId={`icon-${i}`}
+            />
+          );
+        } else {
+          iconNode = (
+            <SvgXml
+              xml={svgXmlWithThickerStroke}
+              width={ICON_SIZE}
+              height={ICON_SIZE}
+            />
+          );
+        }
+
+        iconOverlays.push(
+          <View
+            key={`icon-overlay-${i}`}
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: cx - iconRadius,
+              top: cy - iconRadius,
+              width: ICON_SIZE,
+              height: ICON_SIZE,
+            }}
           >
-            {percentage > 0 ? (
-              // Use animated wave only for active week, static fill for inactive weeks
-              isActive ? (
-                <IconWithWave
-                  svgXml={svgXmlWithThickerStroke}
-                  width={ICON_SIZE}
-                  height={ICON_SIZE}
-                  percentage={percentage}
-                  uniqueId={`icon-${i}`}
-                />
-              ) : (
-                <StaticIconWithFill
-                  svgXml={svgXmlWithThickerStroke}
-                  width={ICON_SIZE}
-                  height={ICON_SIZE}
-                  percentage={percentage}
-                  uniqueId={`icon-${i}`}
-                />
-              )
-            ) : (
-              <SvgXml 
-                xml={svgXmlWithThickerStroke} 
-                width={ICON_SIZE} 
-                height={ICON_SIZE}
-              />
-            )}
-          </ForeignObject>
+            {iconNode}
+          </View>
         );
       } else {
-        // If icon doesn't exist, render circle
-        dotNodes.push(
-          <Circle 
+        dotCircles.push(
+          <Circle
             key={i}
             cx={cx}
             cy={cy}
@@ -467,19 +491,21 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
     }
 
     return (
-      <Svg width={svgSize} height={svgSize} viewBox={`0 0 ${svgSize} ${svgSize}`}>
-        {/* border circle stroke perfectly centered */}
-        <Circle
-          cx={centerOffset}
-          cy={centerOffset}
-          r={MAIN_RADIUS - BORDER_WIDTH / 2} 
-          stroke="#FFC299"
-          strokeWidth={BORDER_WIDTH}
-          fill="transparent"
-        />
-
-        <G>{dotNodes}</G>
-      </Svg>
+      <View style={{ width: svgSize, height: svgSize, position: 'relative' }}>
+        <Svg width={svgSize} height={svgSize} viewBox={`0 0 ${svgSize} ${svgSize}`}>
+          {/* border circle stroke perfectly centered */}
+          <Circle
+            cx={centerOffset}
+            cy={centerOffset}
+            r={MAIN_RADIUS - BORDER_WIDTH / 2}
+            stroke="#FFC299"
+            strokeWidth={BORDER_WIDTH}
+            fill="transparent"
+          />
+          <G>{dotCircles}</G>
+        </Svg>
+        {iconOverlays}
+      </View>
     );
   };
 
@@ -847,7 +873,7 @@ const styles = StyleSheet.create({
   weekSection: {
     position: 'relative',
     width:'50%',
-    height: 6 * 20 + 30 * 7, // Height based on equal spacing (7 days, 6 gaps)
+    height: 6 * 26 + 30 * 7, // Height based on equal spacing (7 days × 30px + 6 gaps × 26px)
   },
   weekDaysContainer: {
     position: 'relative',
@@ -1027,8 +1053,39 @@ export const WeekCycleView = React.memo(WeekCycleViewComponent, (prevProps, next
     prevProps.onStartPress === nextProps.onStartPress &&
     prevProps.onImagePress === nextProps.onImagePress &&
     prevProps.isActive === nextProps.isActive &&
-    JSON.stringify(prevProps.circleIcons) === JSON.stringify(nextProps.circleIcons) &&
-    JSON.stringify(prevProps.weekDays) === JSON.stringify(nextProps.weekDays) &&
-    prevProps.centerImage === nextProps.centerImage
+    prevProps.centerImage === nextProps.centerImage &&
+    shallowDayArrayEqual(prevProps.weekDays, nextProps.weekDays) &&
+    shallowCircleIconsEqual(prevProps.circleIcons, nextProps.circleIcons)
   );
 });
+
+// Replaces JSON.stringify comparator that allocated large strings every render.
+// Compares only the primitive flags that drive UI rendering.
+function shallowDayArrayEqual(a: any[] | undefined, b: any[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const da = a[i];
+    const db = b[i];
+    if (da === db) continue;
+    if (
+      da.day !== db.day ||
+      da.isActive !== db.isActive ||
+      da.isStartDay !== db.isStartDay ||
+      da.isMissed !== db.isMissed
+    ) return false;
+  }
+  return true;
+}
+function shallowCircleIconsEqual(a: any[] | undefined, b: any[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a && !b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ca = a[i];
+    const cb = b[i];
+    if (ca === cb) continue;
+    if (ca.index !== cb.index || ca.iconPath !== cb.iconPath || ca.percentage !== cb.percentage) return false;
+  }
+  return true;
+}

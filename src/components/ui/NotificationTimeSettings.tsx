@@ -6,9 +6,6 @@ import { ReminderTimePicker } from './ReminderTimePicker';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-const toPickerHour = (h: number) => (h === 0 ? 24 : h);
-const fromPickerHour = (h: number) => (h === 24 ? 0 : h);
-const toPickerMinute = (m: number) => (m === 0 ? 1 : m);
 const formatTime = (h: number, m: number) =>
   `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 
@@ -165,24 +162,41 @@ export const NotificationTimeSettings: React.FC<NotificationTimeSettingsProps> =
         visible={fromPickerVisible}
         onClose={() => setFromPickerVisible(false)}
         onConfirm={(h, m) => {
-          setFromH(fromPickerHour(h));
+          setFromH(h);
           setFromM(m);
+          // If From becomes >= To, push To forward by 1 hour
+          const fromTotal = h * 60 + m;
+          const toTotal = toH * 60 + toM;
+          if (fromTotal >= toTotal) {
+            const newTo = Math.min(fromTotal + 60, 23 * 60 + 59);
+            setToH(Math.floor(newTo / 60));
+            setToM(newTo % 60);
+          }
           setFromPickerVisible(false);
         }}
-        initialHour={toPickerHour(fromH)}
-        initialMinute={toPickerMinute(fromM)}
+        initialHour={fromH}
+        initialMinute={fromM}
         taskTitle="From"
       />
       <ReminderTimePicker
         visible={toPickerVisible}
         onClose={() => setToPickerVisible(false)}
         onConfirm={(h, m) => {
-          setToH(fromPickerHour(h));
-          setToM(m);
+          // If To <= From, don't allow it — push To to From + 1 min
+          const fromTotal = fromH * 60 + fromM;
+          const toTotal = h * 60 + m;
+          if (toTotal <= fromTotal) {
+            const newTo = Math.min(fromTotal + 1, 23 * 60 + 59);
+            setToH(Math.floor(newTo / 60));
+            setToM(newTo % 60);
+          } else {
+            setToH(h);
+            setToM(m);
+          }
           setToPickerVisible(false);
         }}
-        initialHour={toPickerHour(toH)}
-        initialMinute={toPickerMinute(toM)}
+        initialHour={toH}
+        initialMinute={toM}
         taskTitle="To"
       />
     </>

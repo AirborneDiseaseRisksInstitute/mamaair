@@ -38,6 +38,7 @@ import { PlanBirthdayScreen } from '../screens/PlanBirthdayScreen';
 import { RemindersScreen } from '../screens/RemindersScreen';
 
 import { AuthLoadingScreen } from '../screens/AuthLoadingScreen';
+import DebugLogsScreen from '../screens/DebugLogsScreen';
 import { DEV_MODE } from '../config/dev';
 import { useUserStore } from '../store/useUserStore';
 
@@ -75,6 +76,7 @@ export type RootStackParamList = {
   PlanBirthday: undefined;
   Ads: undefined;
   BabyStatus: undefined;
+  DebugLogs: undefined;
   SignIn: undefined;
   SignUp: undefined;
   ForgotPassword: undefined;
@@ -93,14 +95,14 @@ const getNextIntroStep = (currentStepIndex: number): keyof RootStackParamList =>
     if (!profile.name || !profile.email) return 'IntroStep02';
   }
   
-  // Step 3: Birthday
+  // Step 3: Birthday + Height/Weight (all on IntroStep03)
   if (currentStepIndex < 3) {
-    if (!profile.birthday) return 'IntroStep03';
+    if (!profile.birthday || !profile.height || !profile.weight) return 'IntroStep03';
   }
-  
-  // Step 4: Height/Weight
+
+  // Step 4: Language
   if (currentStepIndex < 4) {
-    if (!profile.height || !profile.weight) return 'IntroStep04';
+    if (!profile.language) return 'IntroStep04';
   }
   
   // Step 5: Country/Language
@@ -412,11 +414,13 @@ export const Navigation: React.FC = () => {
         </Stack.Screen>
         <Stack.Screen name="Home">
           {({ navigation }) => (
-            <HomeScreen 
+            <HomeScreen
               onNavigateToToday={() => navigation.navigate('Today')}
               onNavigateToProfile={() => navigation.navigate('UserProfile')}
               onNavigateToBabyStatus={() => navigation.navigate('BabyStatus')}
+              onNavigateToBabyTwin={() => navigation.navigate('BabyTwin')}
               onNavigateToPlanBirthday={() => navigation.navigate('PlanBirthday')}
+              onNavigateToDebugLogs={() => navigation.navigate('DebugLogs')}
             />
           )}
         </Stack.Screen>
@@ -439,6 +443,7 @@ export const Navigation: React.FC = () => {
               onNavigateToReminders={() => navigation.navigate('Reminders')}
               onNavigateToPrivacySettings={() => navigation.navigate('PrivacySettings')}
               onNavigateToPlanBirthday={() => navigation.navigate('PlanBirthday')}
+              onNavigateToDebugLogs={() => navigation.navigate('DebugLogs')}
               onLogout={() => {
                 navigation.reset({
                   index: 0,
@@ -516,11 +521,12 @@ export const Navigation: React.FC = () => {
         </Stack.Screen>
         <Stack.Screen name="BabyStatus">
           {({ navigation }) => (
-            <BabyStatusScreen 
+            <BabyStatusScreen
               onBack={() => navigation.goBack()}
             />
           )}
         </Stack.Screen>
+        <Stack.Screen name="DebugLogs" component={DebugLogsScreen} options={{ headerShown: true, title: 'Debug Logs' }} />
         <Stack.Screen name="SignIn">
           {({ navigation }) => (
             <SignInScreen

@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,37 +18,17 @@ import { useTheme, spacing } from '../theme';
 import { BackButton } from '../components/ui';
 import { SVG_ICONS, WAVE_BACKGROUND_SVG } from '../utils/svgIcons';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { useUserStore } from '../store/useUserStore';
+import { SummaryService } from '../services/api/SummaryService';
+import { WEEK_DESCRIPTIONS } from '../data/weekDescriptions';
+import { BABY_SYSTEM_DEFS, computeBabySystems } from '../data/babySystems';
+import type { BabySystemDef, BabySystem } from '../data/babySystems';
 
 interface BabyTwinScreenProps {
   onBack?: () => void;
 }
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// Baby system data
-interface BabySystem {
-  id: string;
-  name: string;
-  iconKey: string;
-  percentage: number;
-  increment: number;
-  isActive: boolean;
-  startInWeeks?: number;
-}
-
-const BABY_SYSTEMS: BabySystem[] = [
-  { id: 'cardiovascular', name: 'Cardiovascular', iconKey: 'heartSystem.svg', percentage: 75, increment: 3, isActive: true },
-  { id: 'nervous', name: 'Nervous', iconKey: 'brainSystem.svg', percentage: 24, increment: 4, isActive: true },
-  { id: 'sensory', name: 'Sensory', iconKey: 'senseSystem.svg', percentage: 50, increment: 0, isActive: false, startInWeeks: 2 },
-  { id: 'digestive', name: 'Digestive', iconKey: 'digestiveSystem.svg', percentage: 55, increment: 6, isActive: true },
-  { id: 'reproductive', name: 'Reproductive', iconKey: 'reproductiveSystem.svg', percentage: 66, increment: 12, isActive: true },
-  { id: 'musculoskeletal', name: 'Musculoskeletal', iconKey: 'boneSystem.svg', percentage: 18, increment: 8, isActive: true },
-  { id: 'endocrine', name: 'Endocrine', iconKey: 'endocrineSystem.svg', percentage: 32, increment: 0, isActive: false, startInWeeks: 4 },
-  { id: 'respiratory', name: 'Respiratory', iconKey: 'respiratorySystem.svg', percentage: 100, increment: 0, isActive: true },
-  { id: 'integumentary', name: 'Integumentary', iconKey: 'integumentarySystem.svg', percentage: 14, increment: 4, isActive: true },
-  { id: 'immune', name: 'Immune', iconKey: 'immuneSystem.svg', percentage: 100, increment: 0, isActive: true },
-  { id: 'urinary', name: 'Urinary', iconKey: 'urinary.svg', percentage: 85, increment: 1, isActive: true },
-];
 
 const ICON_SIZE = 40;
 const ICON_STROKE_WIDTH = 1.5;
@@ -294,9 +274,36 @@ const IconWithWave: React.FC<{
   );
 };
 
+const getOrdinalSuffix = (n: number) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+};
+
 export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
   const theme = useTheme();
-  const progress = 5; // 5% progress
+  const { profile } = useUserStore();
+  const currentWeek = profile.pregnancyWeek || 19;
+  const BABY_SYSTEMS = useMemo(() => computeBabySystems(currentWeek), [currentWeek]);
+  const [weekDescription, setWeekDescription] = useState<string>(
+    WEEK_DESCRIPTIONS[currentWeek] || 'Your baby continues to grow and develop.'
+  );
+
+  useEffect(() => {
+    SummaryService.getSummary()
+      .then((summary) => {
+        if (summary.week_info?.text) {
+          setWeekDescription(summary.week_info.text);
+        }
+      })
+      .catch(() => {}); // Keep fallback description
+  }, []);
+  // Average progress across active baby systems (was hardcoded 5%)
+  const progress = useMemo(() => {
+    const active = BABY_SYSTEMS.filter(s => s.isActive);
+    if (!active.length) return 0;
+    return Math.round(active.reduce((sum, s) => sum + s.percentage, 0) / active.length);
+  }, [BABY_SYSTEMS]);
   const maxContentHeight = SCREEN_HEIGHT * 0.3;
   const size = Math.min(140, maxContentHeight * 0.8); // Smaller circular progress
   const strokeWidth = 8;
@@ -637,13 +644,13 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
               color={theme.colors.orange500}
               style={styles.weekIcon}
             />
-            <Text style={styles.weekText} allowFontScaling={false}>19th Week</Text>
+            <Text style={styles.weekText} allowFontScaling={false}>{currentWeek}{getOrdinalSuffix(currentWeek)} Week</Text>
           </View>
         </View>
 
         {/* Description Text */}
         <Text style={styles.descriptionText} allowFontScaling={false}>
-          A delicate layer begins to form, the skin and its soft covering start to protect the growing life within.
+          {weekDescription}
         </Text>
 
         {/* Baby System Progress Card */}

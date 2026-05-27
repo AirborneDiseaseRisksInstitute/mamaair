@@ -1,6 +1,16 @@
-import { QuickSQLiteConnection, open } from 'react-native-quick-sqlite';
+import { storage } from '../../store/useAuthStore';
 
-const DB_NAME = 'mamaair.sqlite';
+// react-native-quick-sqlite (v8.2.7) is officially deprecated by margelo and
+// incompatible with React Native 0.83's bridgeless mode — its JSI host objects
+// install on the legacy bridge path, racing with the bridgeless runtime
+// lifecycle. The result is a hard native SIGSEGV the first time a write hits
+// the connection (in our case: first GPS fix → insertLocation, which matches
+// every crash report we have from real devices).
+//
+// MMKV is already used elsewhere in this app and is fully bridgeless-native
+// (via react-native-nitro-modules). Backing the LocationPoint store with MMKV
+// removes the broken dependency entirely while keeping the public API
+// identical — no other call site needs to change.
 
 export interface LocationPoint {
   id?: number;
@@ -12,40 +22,37 @@ export interface LocationPoint {
   isOutdoor: number; // 1 for true, 0 for false
 }
 
+const POINTS_KEY = 'location_points_v1';
+const NEXT_ID_KEY = 'location_points_next_id_v1';
+
+function readAll(): LocationPoint[] {
+  const raw = storage.getString(POINTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as LocationPoint[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAll(points: LocationPoint[]) {
+  storage.set(POINTS_KEY, JSON.stringify(points));
+}
+
+function nextId(): number {
+  const current = storage.getNumber(NEXT_ID_KEY) || 0;
+  const id = current + 1;
+  storage.set(NEXT_ID_KEY, id);
+  return id;
+}
+
 class DatabaseService {
-  private db: QuickSQLiteConnection;
-
-  constructor() {
-    this.db = open({ name: DB_NAME });
-    this.init();
-  }
-
-  private init() {
-    try {
-      this.db.execute(`
-        CREATE TABLE IF NOT EXISTS LocationPoints (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          latitude REAL,
-          longitude REAL,
-          accuracy REAL,
-          speed REAL,
-          timestamp INTEGER,
-          isOutdoor INTEGER
-        );
-      `);
-      console.log('Database initialized successfully');
-    } catch (e) {
-      console.error('Failed to initialize database', e);
-    }
-  }
-
   public insertLocation(point: LocationPoint) {
     try {
-      this.db.execute(
-        `INSERT INTO LocationPoints (latitude, longitude, accuracy, speed, timestamp, isOutdoor)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [point.latitude, point.longitude, point.accuracy, point.speed, point.timestamp, point.isOutdoor]
-      );
+      const points = readAll();
+      points.push({ ...point, id: nextId() });
+      writeAll(points);
     } catch (e) {
       console.error('Failed to insert location', e);
     }
@@ -53,15 +60,7 @@ class DatabaseService {
 
   public getAllLocations(): LocationPoint[] {
     try {
-      const result = this.db.execute('SELECT * FROM LocationPoints');
-      if (!result || !result.rows) return [];
-      
-      const items: LocationPoint[] = [];
-      const len = result.rows.length;
-      for (let i = 0; i < len; i++) {
-        items.push(result.rows.item(i) as LocationPoint);
-      }
-      return items;
+      return readAll();
     } catch (e) {
       console.error('Failed to get locations', e);
       return [];
@@ -71,19 +70,20 @@ class DatabaseService {
   public deleteLocations(ids: number[]) {
     if (ids.length === 0) return;
     try {
-      const placeholders = ids.map(() => '?').join(',');
-      this.db.execute(`DELETE FROM LocationPoints WHERE id IN (${placeholders})`, ids);
+      const toDelete = new Set(ids);
+      const remaining = readAll().filter((p) => p.id === undefined || !toDelete.has(p.id));
+      writeAll(remaining);
     } catch (e) {
       console.error('Failed to delete locations', e);
     }
   }
-  
+
   public deleteAllLocations() {
-      try {
-          this.db.execute('DELETE FROM LocationPoints');
-      } catch (e) {
-          console.error('Failed to delete all locations', e);
-      }
+    try {
+      storage.set(POINTS_KEY, '[]');
+    } catch (e) {
+      console.error('Failed to delete all locations', e);
+    }
   }
 }
 

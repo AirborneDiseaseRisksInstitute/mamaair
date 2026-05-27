@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import notifee from '@notifee/react-native';
 import { useAuthStore } from '../store/useAuthStore';
 import { useUserStore } from '../store/useUserStore';
 import { AuthService } from '../services/api/AuthService';
@@ -16,6 +17,21 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
   const { setProfile, setAgreementAccepted } = useUserStore();
 
   useEffect(() => {
+    // Stop any stale tracker foreground service from previous session/install.
+    // cancelNotification alone does NOT stop the FGS — it only removes the UI;
+    // notifee re-promotes the notification on the next displayNotification call.
+    (async () => {
+      try {
+        await notifee.stopForegroundService();
+      } catch {}
+      try {
+        await notifee.cancelNotification('tracker_notification');
+      } catch {}
+      try {
+        await notifee.setBadgeCount(0);
+      } catch {}
+    })();
+
     const checkAuthStatus = async () => {
       // 1. Check for token
       if (!token) {
@@ -26,7 +42,6 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
       try {
         // 2. Fetch Profile from API
         const profileData = await AuthService.getProfile();
-        console.log('Profile data fetched:', profileData);
 
         // 2.1 Fetch Lifestyle from API
         let lifestyleData: any = {};
@@ -92,7 +107,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
             diet: lifestyleData.diet_type,
             cookingMethod: cookingMethodReverseMap[lifestyleData.cooking_method] || lifestyleData.cooking_method,
             activeHours: lifestyleData.activity_duration_minutes ? lifestyleData.activity_duration_minutes / 60 : undefined,
-            ventilation: lifestyleData.ventilation || ventilationReverseMap[lifestyleData.ventilation_level],
+            ventilation: ventilationReverseMap[lifestyleData.ventilation_level] || ventilationReverseMap[lifestyleData.ventilation] || lifestyleData.ventilation,
             timeSpent: lifestyleData.time_spent,
             timeOfDay: lifestyleData.time_of_day,
             // Extra fields stored in lifestyle but used in frontend profile state
@@ -153,8 +168,12 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         // ... (omitted for brevity)
 
         // 5. Navigation Decision
-        // Check if user has completed all necessary onboarding steps (including new fields)
-        const isOnboardingComplete = 
+        // Primary check: agreementAccepted is set when user completes the full intro flow.
+        // It's persisted locally via MMKV, so it survives app restarts.
+        // Secondary check: if all profile fields are present (e.g. restored from server on new device).
+        const localAgreement = useUserStore.getState().profile.agreementAccepted;
+
+        const isProfileComplete =
             mergedProfile.pregnancyWeek &&
             mergedProfile.timezone &&
             mergedProfile.timeSpent &&
@@ -163,27 +182,38 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
             mergedProfile.cookingMethod &&
             mergedProfile.ventilation;
 
-        if (isOnboardingComplete) {
-             console.log('User has complete profile data, skipping intro...');
-             setAgreementAccepted(true);
+        if (localAgreement || isProfileComplete) {
+             console.log('User has completed onboarding, skipping intro...');
+             if (!localAgreement) {
+               setAgreementAccepted(true);
+             }
              onComplete('Home');
              return;
         }
-        
-        // If we have pregnancy week but NO agreement, maybe we can shortcut to Step 14?
-        // That would be cool but requires changing onComplete to accept a specific step.
-        // onComplete type is (target: 'Home' | 'Intro' | 'Auth').
-        
-        // For now, let's stick to standard flow but rely on Pre-fill.
-        // BUT, if the user explicitly wants to "not show again", maybe they consider "Pregnancy Week" as done?
-        // Let's rely on Agreement for now to be legally safe, but ensuring Sync happens above fixes the data loss.
-        
+
         onComplete('Intro');
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to fetch profile:', error);
-        // If 401, token invalid
-        logout();
-        onComplete('Auth');
+
+        const status = error?.response?.status;
+        if (status === 401 || status === 403) {
+          // Token is truly invalid — clear everything and re-authenticate
+          logout();
+          onComplete('Auth');
+          return;
+        }
+
+        // Network error, timeout, 500, etc. — don't wipe user data.
+        // If we have a locally completed onboarding, go straight to Home.
+        const localAgreement = useUserStore.getState().profile.agreementAccepted;
+        if (localAgreement) {
+          console.log('API failed but user has local onboarding data, going Home');
+          onComplete('Home');
+        } else {
+          // No local data and no server data — must re-authenticate
+          logout();
+          onComplete('Auth');
+        }
       }
     };
 

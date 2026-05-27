@@ -82,8 +82,8 @@ android {
         applicationId "com.mamaair"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 30
+        versionName "2.3"
         manifestPlaceholders = [usesCleartextTraffic: false]
     }
     signingConfigs {
@@ -99,11 +99,17 @@ android {
                 storePassword MYAPP_UPLOAD_STORE_PASSWORD
                 keyAlias MYAPP_UPLOAD_KEY_ALIAS
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-            } else {
+            } else if (project.hasProperty('ALLOW_DEBUG_RELEASE_SIGNING')) {
+                // Local-only fallback (CI must always supply real keystore)
                 storeFile file('debug.keystore')
                 storePassword 'android'
                 keyAlias 'androiddebugkey'
                 keyPassword 'android'
+            } else {
+                throw new GradleException(
+                    "Release keystore not configured. Set MYAPP_UPLOAD_STORE_FILE in gradle.properties, " +
+                    "or pass -PALLOW_DEBUG_RELEASE_SIGNING=true for local debug-signed release builds."
+                )
             }
         }
     }
@@ -120,11 +126,19 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "MamaAir-${defaultConfig.versionCode}.apk"
+        }
+    }
 }
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // Activity Recognition Transition API + Significant Motion (motion-gated tracking)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

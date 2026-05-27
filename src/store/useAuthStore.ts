@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { createMMKV } from 'react-native-mmkv';
+import notifee from '@notifee/react-native';
 import { useUserStore } from './useUserStore';
+import { locationTracker } from '../services/tracking/LocationTracker';
 
 export const storage = createMMKV();
 
@@ -30,6 +32,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token: accessToken, refreshToken });
   },
   logout: () => {
+    // Stop location tracking + foreground service (cancelNotification alone keeps FGS alive)
+    locationTracker.stopTracking();
+    notifee.stopForegroundService().catch(() => {});
+    notifee.cancelNotification('tracker_notification').catch(() => {});
+
     storage.remove('auth_token');
     storage.remove('auth_refresh_token');
     set({ token: null, refreshToken: null });

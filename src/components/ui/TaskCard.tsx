@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ export type TaskType = 'diet' | 'activity' | 'behaviour';
 interface TaskButton {
   label: string;
   onPress: () => void;
-  variant?: 'delay' | 'reminder';
+  variant?: 'skip' | 'delay' | 'reminder';
 }
 
 interface TaskCardProps {
@@ -57,6 +57,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const theme = useTheme();
   const [checked, setChecked] = useState(initialChecked);
   const config = iconConfig[type];
+
+  // Sync local state when initialChecked prop changes after async fetch.
+  // Without this, TaskCard captures the initial false at mount time and never updates,
+  // causing previously-completed tasks to appear unchecked the next session.
+  useEffect(() => {
+    setChecked(initialChecked);
+  }, [initialChecked]);
 
   const handleCheck = () => {
     const newChecked = !checked;
@@ -130,6 +137,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       borderRadius: 8,
       gap: spacing('xs'),
     },
+    skipButton: {
+      backgroundColor: '#FFF0E6',
+    },
     delayButton: {
       backgroundColor: '#FFF9E6',
     },
@@ -140,6 +150,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       fontSize: 14,
       fontFamily: theme.typography.fontFamily.medium,
     },
+    skipButtonText: {
+      color: '#FF6900',
+    },
     delayButtonText: {
       color: '#FF9800',
     },
@@ -148,31 +161,37 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     },
   }), [theme, checked, config]);
 
-  const getButtonStyle = (variant?: 'delay' | 'reminder') => {
+  const getButtonStyle = (variant?: 'skip' | 'delay' | 'reminder') => {
+    if (variant === 'skip') {
+      return styles.skipButton;
+    }
     if (variant === 'delay') {
       return styles.delayButton;
     }
     if (variant === 'reminder') {
       return styles.reminderButton;
     }
-    return styles.delayButton; // default
+    return styles.skipButton; // default
   };
 
-  const getButtonTextStyle = (variant?: 'delay' | 'reminder') => {
+  const getButtonTextStyle = (variant?: 'skip' | 'delay' | 'reminder') => {
+    if (variant === 'skip') {
+      return styles.skipButtonText;
+    }
     if (variant === 'delay') {
       return styles.delayButtonText;
     }
     if (variant === 'reminder') {
       return styles.reminderButtonText;
     }
-    return styles.delayButtonText; // default
+    return styles.skipButtonText; // default
   };
 
-  const getButtonIcon = (variant?: 'delay' | 'reminder') => {
+  const getButtonIcon = (variant?: 'skip' | 'delay' | 'reminder') => {
     if (variant === 'reminder') {
       return faBell;
     }
-    return faClock; // default to delay
+    return faClock; // default
   };
 
   return (

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -28,9 +28,11 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
 import { useTheme, spacing } from '../theme';
-import { BackButton, BottomSheet, Input, Button, FixedButtonContainer } from '../components/ui';
+import { BackButton, BottomSheet, Input, Button, FixedButtonContainer, OEMAutostartGuide } from '../components/ui';
+import { detectOEM, needsAutostartGuide } from '../services/tracking/OEMAutostartHelper';
 import { useUserStore } from '../store/useUserStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { SummaryService, SummaryResponse } from '../services/api/SummaryService';
 import { FIXED_BUTTON_AREA_HEIGHT, ms } from '../utils/responsive';
 import { responsiveUtils } from '../utils/responsiveUtils';
 
@@ -50,19 +52,21 @@ interface UserProfileScreenProps {
   onNavigateToReminders?: () => void;
   onNavigateToPrivacySettings?: () => void;
   onNavigateToPlanBirthday?: () => void;
+  onNavigateToDebugLogs?: () => void;
   onLogout?: () => void;
 }
 
-export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({ 
-  onBack, 
-  onNavigateToBabyTwin, 
-  onNavigateToMotherTwin, 
+export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
+  onBack,
+  onNavigateToBabyTwin,
+  onNavigateToMotherTwin,
   onNavigateToRefer,
   onNavigateToAppSettings,
   onNavigateToReminders,
   onNavigateToPrivacySettings,
   onNavigateToPlanBirthday,
-  onLogout 
+  onNavigateToDebugLogs,
+  onLogout
 }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -76,6 +80,30 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const [isDataConsentChecked, setIsDataConsentChecked] = useState(false);
   const [isAgreementAccepted, setIsAgreementAccepted] = useState(false);
   const [isSuccessDialogVisible, setIsSuccessDialogVisible] = useState(false);
+  const [isOemGuideVisible, setIsOemGuideVisible] = useState(false);
+  const oemNeedsGuide = useMemo(() => needsAutostartGuide(detectOEM()), []);
+
+  // Pull exposure levels from /summary/ so the twin cards reflect real data
+  // instead of the hardcoded 36% placeholder. Backend reports exposure_level on
+  // a 0-8 scale (matches TodayScreen progress bars and MotherTwinScreen donut).
+  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    SummaryService.getSummary()
+      .then((data) => { if (mounted) setSummary(data); })
+      .catch((err) => console.warn('[Profile] summary fetch failed:', err?.message));
+    return () => { mounted = false; };
+  }, []);
+  const motherPercent = useMemo(() => {
+    const lvl = summary?.mom_exposure?.exposure_level;
+    if (typeof lvl !== 'number') return null;
+    return Math.round((lvl / 8) * 100);
+  }, [summary]);
+  const babyPercent = useMemo(() => {
+    const lvl = summary?.baby_exposure?.exposure_level;
+    if (typeof lvl !== 'number') return null;
+    return Math.round((lvl / 8) * 100);
+  }, [summary]);
   
   const defaultPhotoSource = require('../assets/images/addPhoto.png');
   const profilePhotoSource = profile.photo ? { uri: profile.photo } : defaultPhotoSource;
@@ -859,7 +887,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
 </View>
               <View style={styles.percentageBadge}>
-                <Text style={styles.percentageText} allowFontScaling={false}>36%</Text>
+                <Text style={styles.percentageText} allowFontScaling={false}>
+                  {motherPercent != null ? `${motherPercent}%` : '—'}
+                </Text>
               </View>
             </View>
             <Text style={styles.digitalTwinTitle} allowFontScaling={false}>Mother's Digital twin</Text>
@@ -885,7 +915,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
 </View>
               <View style={styles.percentageBadge}>
-                <Text style={styles.percentageText} allowFontScaling={false}>36%</Text>
+                <Text style={styles.percentageText} allowFontScaling={false}>
+                  {babyPercent != null ? `${babyPercent}%` : '—'}
+                </Text>
               </View>
             </View>
             <Text style={styles.babyTwinTitle} allowFontScaling={false}>Baby's Digital twin</Text>
@@ -1009,15 +1041,64 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
           <View style={styles.menuDivider} />
 
-          <TouchableOpacity 
+          <TouchableOpacity
+            style={styles.menuItem}
+            activeOpacity={0.7}
+            onPress={onNavigateToDebugLogs}
+          >
+            <View style={styles.menuIcon}>
+              <FontAwesomeIcon
+                icon={faGear as any}
+                size={20}
+                color={theme.colors.textPrimary}
+              />
+            </View>
+            <Text style={styles.menuText} allowFontScaling={false}>Debug Logs</Text>
+            <FontAwesomeIcon
+              icon={faChevronRight as any}
+              size={14}
+              color={theme.colors.textSecondary}
+              style={styles.menuChevron}
+            />
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
+          {oemNeedsGuide && (
+            <>
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => setIsOemGuideVisible(true)}
+              >
+                <View style={styles.menuIcon}>
+                  <FontAwesomeIcon
+                    icon={faShield as any}
+                    size={20}
+                    color={theme.colors.textPrimary}
+                  />
+                </View>
+                <Text style={styles.menuText} allowFontScaling={false}>Background activity</Text>
+                <FontAwesomeIcon
+                  icon={faChevronRight as any}
+                  size={14}
+                  color={theme.colors.textSecondary}
+                  style={styles.menuChevron}
+                />
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+            </>
+          )}
+
+          <TouchableOpacity
             style={styles.menuItem}
             activeOpacity={0.7}
             onPress={onNavigateToRefer}
           >
             <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faGift as any} 
-                size={20} 
+              <FontAwesomeIcon
+                icon={faGift as any}
+                size={20}
                 color={theme.colors.textPrimary}
               />
             </View>
@@ -1225,7 +1306,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             <View style={styles.healthRequestHeaderSpacer} />
             <View style={styles.healthRequestHeaderCenter}>
               <Text style={styles.healthRequestTitle} allowFontScaling={false}>Healthcare request</Text>
-              <Text style={styles.healthRequestSubtitle} allowFontScaling={false}>Day 4 / 19th Week</Text>
+              <Text style={styles.healthRequestSubtitle} allowFontScaling={false}>Week {profile.pregnancyWeek || '—'}</Text>
             </View>
             <TouchableOpacity
               style={styles.healthRequestCloseButton}
@@ -1495,6 +1576,11 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      <OEMAutostartGuide
+        visible={isOemGuideVisible}
+        onClose={() => setIsOemGuideVisible(false)}
+      />
     </SafeAreaView>
   );
 };

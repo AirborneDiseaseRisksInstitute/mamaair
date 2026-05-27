@@ -19,10 +19,10 @@ interface ReminderTimePickerProps {
   taskTitle?: string;
 }
 
-const hourOptions = Array.from({ length: 24 }, (_, i) => i + 1);
+const hourOptions = Array.from({ length: 24 }, (_, i) => i);
 const hourLabels = hourOptions.map((h) => (h < 10 ? `0${h}` : `${h}`));
 
-const minuteOptions = Array.from({ length: 59 }, (_, i) => i + 1);
+const minuteOptions = Array.from({ length: 60 }, (_, i) => i);
 const minuteLabels = minuteOptions.map((m) => (m < 10 ? `0${m}` : `${m}`));
 
 const ITEM_HEIGHT = 56;
@@ -263,8 +263,9 @@ const styles = StyleSheet.create({
   },
   selectedIndicator: {
     backgroundColor: 'transparent',
-    borderTopWidth: 0,
-    borderBottomWidth: 0,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
   },
   actionsContainer: {
     flexDirection: 'row',

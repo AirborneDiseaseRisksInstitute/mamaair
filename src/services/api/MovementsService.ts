@@ -1,19 +1,26 @@
 import api from './client';
+import { appLogger } from '../logger/AppLogger';
+
+interface MovementPoint {
+  latitude: number;
+  longitude: number;
+  timestamp: string; // ISO 8601
+}
 
 export const MovementsService = {
-  uploadMovements: async (filePath: string) => {
-    const formData = new FormData();
-    formData.append('file', {
-      uri: `file://${filePath}`,
-      name: 'movements.csv',
-      type: 'text/csv',
-    } as any);
+  // New JSON endpoint (no file/FormData hassle)
+  uploadMovementsJson: async (movements: MovementPoint[]) => {
+    appLogger.info('Upload', `Uploading ${movements.length} points as JSON`);
 
-    const response = await api.post('/movements/upload/', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
+    try {
+      const response = await api.post('/movements/upload/json/', {
+        movements,
+      }, { timeout: 30000 });
+      appLogger.info('Upload', `SUCCESS status=${response.status}`);
+      return response.data;
+    } catch (error: any) {
+      appLogger.error('Upload', `FAILED: ${error?.message} status=${error?.response?.status} data=${JSON.stringify(error?.response?.data)}`);
+      throw error;
+    }
   },
 };

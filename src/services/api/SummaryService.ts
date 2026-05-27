@@ -28,6 +28,14 @@ export interface SummaryResponse {
   exposure_history?: any;
   pollutant_compliance?: any;
   snapshot_id?: number;
+  daily_checkins?: string[];
+  daily_exposure_level?: string | null;
+  task_completions?: Array<{
+    date: string;
+    tasks: string[];
+  }>;
+  water?: Record<string, any>; // Schema unspecified — backend confirms field exists
+  snapshot_created_at?: string;
 }
 
 export const SummaryService = {

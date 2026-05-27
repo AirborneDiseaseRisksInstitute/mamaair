@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -9,6 +10,11 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Trigger notifications (scheduled daily tips). On Android 12+ exact alarms require
+         either SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM. We declare SCHEDULE_EXACT_ALARM
+         (user-revocable) and fall back to inexact via notifee's alarmManager.allowWhileIdle
+         path when not granted — see NotificationScheduler.ts. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
       android:name=".MainApplication"
@@ -19,6 +25,15 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <!-- Notifee foreground service for location tracking.
+           Force foregroundServiceType=location only (some upstream merges inject "shortService"
+           which has 3-min runtime cap and would break continuous tracking on Android 14+). -->
+      <service
+        android:name="app.notifee.core.ForegroundService"
+        android:foregroundServiceType="location"
+        android:exported="false"
+        tools:replace="android:foregroundServiceType" />
+
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

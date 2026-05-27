@@ -140,7 +140,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
           <SvgXml xml={WEATHER_SVG} width={40} height={40} />
         </View>
         <Text style={styles.headerText} allowFontScaling={false}>
-          Exposure: Unhealthy (Level {level}/{maxLevel})
+          Exposure: Unhealthy (Level {typeof level === 'number' ? level.toFixed(2) : level}/{maxLevel})
         </Text>
         <View style={styles.chevronButton}>
           <FontAwesomeIcon

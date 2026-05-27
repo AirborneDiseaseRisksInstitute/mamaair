@@ -4,6 +4,7 @@ import { useTheme, spacing } from '../theme';
 import { BackButton, NotificationTimeSettings } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { rescheduleNotifications } from '../services/notifications/NotificationScheduler';
 
 interface NotificationTimeScreenProps {
   onBack?: () => void;
@@ -72,6 +73,7 @@ export const NotificationTimeScreen: React.FC<NotificationTimeScreenProps> = ({ 
           days={profile.notifDays ?? '1111111'}
           onSave={(from, to, days) => {
             setNotifTime(from, to, days);
+            rescheduleNotifications();
             onBack?.();
           }}
           showSaveButton={true}

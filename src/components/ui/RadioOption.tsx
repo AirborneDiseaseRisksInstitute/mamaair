@@ -10,6 +10,7 @@ interface RadioOptionProps {
   label: string;
   selected: boolean;
   onPress: () => void;
+  disabled?: boolean;
 }
 
 const SHADOW_OFFSET = 4;
@@ -21,14 +22,15 @@ export const RadioOption: React.FC<RadioOptionProps> = ({
   label,
   selected,
   onPress,
+  disabled = false,
 }) => {
   const theme = useTheme();
   const translateY = useRef(new Animated.Value(0)).current;
   const shadowOpacity = useRef(new Animated.Value(1)).current;
 
-  const borderColor = selected ? theme.colors.selectedOption : theme.colors.neutral200;
-  const shadowColor = selected ? theme.colors.selectedOption : theme.colors.neutral200;
-  const textColor = selected ? theme.colors.selectedOption : theme.colors.textPrimary;
+  const borderColor = disabled ? '#E0E0E0' : selected ? theme.colors.selectedOption : theme.colors.neutral200;
+  const shadowColor = disabled ? '#E0E0E0' : selected ? theme.colors.selectedOption : theme.colors.neutral200;
+  const textColor = disabled ? '#B0B0B0' : selected ? theme.colors.selectedOption : theme.colors.textPrimary;
   const textFontFamily = selected ? theme.typography.fontFamily.bold : theme.typography.fontFamily.regular;
 
   const handlePressIn = () => {
@@ -78,10 +80,10 @@ export const RadioOption: React.FC<RadioOptionProps> = ({
       
       {/* Option Container */}
       <Pressable
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={styles.pressable}
+        onPress={disabled ? undefined : onPress}
+        onPressIn={disabled ? undefined : handlePressIn}
+        onPressOut={disabled ? undefined : handlePressOut}
+        style={[styles.pressable, disabled && { opacity: 0.5 }]}
       >
         <Animated.View
           style={[

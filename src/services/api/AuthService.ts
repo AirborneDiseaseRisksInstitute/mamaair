@@ -7,7 +7,6 @@ export interface LoginResponse {
 
 export const AuthService = {
   login: async (email: string, password: string): Promise<LoginResponse> => {
-    console.log(`Logging in with email: ${email}`, password);
     const response = await api.post<LoginResponse>('/auth/token/', {
       email,
       password,
@@ -65,13 +64,11 @@ export const AuthService = {
 
   putProfile: async (data: any) => {
     const response = await api.put('/profile/', data);
-    console.log('putProfile response', response);
     return response.data;
   },
 
   putLifestyle: async (data: any) => {
     const response = await api.put('/lifestyle/', data);
-    console.log('putLifestyle response', response);
     return response.data;
   },
 };

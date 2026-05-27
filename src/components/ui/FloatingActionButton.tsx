@@ -14,7 +14,7 @@ import { Symptoms } from './Symptoms';
 interface FloatingActionButtonProps {
   onApply?: (data: {
     moods: string[];
-    symptoms: string[];
+    symptoms: number[];
     waterAmount: number;
   }) => void;
 }
@@ -53,7 +53,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
 
   const handleApply = (data: {
     moods: string[];
-    symptoms: string[];
+    symptoms: number[];
     waterAmount: number;
   }) => {
     onApply?.(data);

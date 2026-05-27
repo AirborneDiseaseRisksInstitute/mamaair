@@ -20,7 +20,7 @@ interface StartFirstDayProps { onNext?: () => void; }
 export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
   const theme = useTheme();
   const [isLoading, setIsLoading] = useState(false);
-  const { profile } = useUserStore();
+  const { profile, setAgreementAccepted } = useUserStore();
 
   const buttonText = useMemo(() => {
     const week = profile.pregnancyWeek;
@@ -45,11 +45,12 @@ export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
   }), [theme]);
 
   const handleNext = useCallback(() => {
+    setAgreementAccepted(true);
     setIsLoading(true);
     requestAnimationFrame(() => {
       setTimeout(() => { onNext?.(); setTimeout(() => setIsLoading(false), 100); }, 100);
     });
-  }, [onNext]);
+  }, [onNext, setAgreementAccepted]);
 
   return (
     <SafeAreaView style={styles.container}>
