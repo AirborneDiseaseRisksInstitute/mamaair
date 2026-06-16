@@ -18,6 +18,8 @@ import { useTheme, spacing } from '../theme';
 import { BackButton } from '../components/ui';
 import { SVG_ICONS, WAVE_BACKGROUND_SVG } from '../utils/svgIcons';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { useUserStore } from '../store/useUserStore';
+import { getCurrentPregnancyWeek, getOrdinal } from '../utils/pregnancyUtils';
 
 interface BabyTwinScreenProps {
   onBack?: () => void;
@@ -296,6 +298,9 @@ const IconWithWave: React.FC<{
 
 export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
   const theme = useTheme();
+  const { profile } = useUserStore();
+  const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate);
+  const weekLabel = currentWeek ? `${getOrdinal(currentWeek)} Week` : '–';
   const progress = 5; // 5% progress
   const maxContentHeight = SCREEN_HEIGHT * 0.3;
   const size = Math.min(140, maxContentHeight * 0.8); // Smaller circular progress
@@ -637,7 +642,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
               color={theme.colors.orange500}
               style={styles.weekIcon}
             />
-            <Text style={styles.weekText} allowFontScaling={false}>19th Week</Text>
+            <Text style={styles.weekText} allowFontScaling={false}>{weekLabel}</Text>
           </View>
         </View>
 

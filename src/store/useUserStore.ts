@@ -15,6 +15,7 @@ interface UserProfile {
   area: string | null;
   timezone: string | null; // IANA timezone e.g. Africa/Nairobi
   pregnancyWeek: number | null; // current pregnancy week (1-40)
+  pregnancyWeekSetDate: string | null; // ISO date string of when pregnancyWeek was recorded
   pregnancyNumber: string | null; // first, second, third, moreThan3
   timeSpent: string | null;
   timeOfDay: string | null;
@@ -79,6 +80,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     area: userStorage.getString('user_area') || null,
     timezone: userStorage.getString('user_timezone') || null,
     pregnancyWeek: userStorage.getNumber('user_pregnancy_week') || null,
+    pregnancyWeekSetDate: userStorage.getString('user_pregnancy_week_set_date') || null,
     pregnancyNumber: userStorage.getString('user_pregnancy_number') || null,
     timeSpent: userStorage.getString('user_time_spent') || null,
     timeOfDay: userStorage.getString('user_time_of_day') || null,
@@ -177,13 +179,16 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }));
   },
   setPregnancyWeek: (week) => {
+    const today = new Date().toISOString().split('T')[0];
     if (week !== null) {
       userStorage.set('user_pregnancy_week', week);
+      userStorage.set('user_pregnancy_week_set_date', today);
     } else {
       userStorage.remove('user_pregnancy_week');
+      userStorage.remove('user_pregnancy_week_set_date');
     }
     set((state) => ({
-      profile: { ...state.profile, pregnancyWeek: week },
+      profile: { ...state.profile, pregnancyWeek: week, pregnancyWeekSetDate: week !== null ? today : null },
     }));
   },
   setPregnancyNumber: (n) => {
@@ -312,6 +317,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (profileData.area) userStorage.set('user_area', profileData.area);
     if (profileData.timezone) userStorage.set('user_timezone', profileData.timezone);
     if (profileData.pregnancyWeek) userStorage.set('user_pregnancy_week', profileData.pregnancyWeek);
+    if (profileData.pregnancyWeekSetDate) userStorage.set('user_pregnancy_week_set_date', profileData.pregnancyWeekSetDate);
     if (profileData.pregnancyNumber) userStorage.set('user_pregnancy_number', profileData.pregnancyNumber);
     if (profileData.timeSpent) userStorage.set('user_time_spent', profileData.timeSpent);
     if (profileData.timeOfDay) userStorage.set('user_time_of_day', profileData.timeOfDay);
@@ -347,6 +353,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     userStorage.remove('user_area');
     userStorage.remove('user_timezone');
     userStorage.remove('user_pregnancy_week');
+    userStorage.remove('user_pregnancy_week_set_date');
     userStorage.remove('user_pregnancy_number');
     userStorage.remove('user_time_spent');
     userStorage.remove('user_time_of_day');
@@ -376,6 +383,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         area: null,
         timezone: null,
         pregnancyWeek: null,
+        pregnancyWeekSetDate: null,
         pregnancyNumber: null,
         timeSpent: null,
         timeOfDay: null,

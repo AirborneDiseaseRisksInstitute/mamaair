@@ -5,6 +5,7 @@ import { useUserStore } from '../store/useUserStore';
 import { AuthService } from '../services/api/AuthService';
 import { LifestyleService } from '../services/api/LifestyleService';
 import { useTheme } from '../theme';
+import { DEV_BYPASS_AUTH, DEV_EMAIL, DEV_PASSWORD } from '../config/dev';
 
 interface AuthLoadingScreenProps {
   onComplete: (target: 'Home' | 'Intro' | 'Auth') => void;
@@ -12,13 +13,30 @@ interface AuthLoadingScreenProps {
 
 export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete }) => {
   const theme = useTheme();
-  const { token, logout } = useAuthStore();
+  const { token, logout, setTokens } = useAuthStore();
   const { setProfile, setAgreementAccepted } = useUserStore();
 
   useEffect(() => {
     const checkAuthStatus = async () => {
+      let activeToken = token;
+
+      // DEV MODE: auto-login to bypass the login UI (useful for Genymotion)
+      if (DEV_BYPASS_AUTH && !activeToken) {
+        try {
+          console.log('[DEV] Auto-logging in with dev credentials...');
+          const response = await AuthService.login(DEV_EMAIL, DEV_PASSWORD);
+          setTokens(response.access, response.refresh);
+          activeToken = response.access;
+          console.log('[DEV] Auto-login successful');
+        } catch (e) {
+          console.error('[DEV] Auto-login failed:', e);
+          onComplete('Auth');
+          return;
+        }
+      }
+
       // 1. Check for token
-      if (!token) {
+      if (!activeToken) {
         onComplete('Auth');
         return;
       }
@@ -127,6 +145,10 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         updateIfMissing('timezone', mappedProfile.timezone);
         // updateIfMissing('area', mappedProfile.area); // Not in profile response?
         updateIfMissing('pregnancyWeek', mappedProfile.pregnancyWeek);
+        // If we got a pregnancy week but have no set date, use today so week advancement starts counting now
+        if (mergedProfile.pregnancyWeek && !mergedProfile.pregnancyWeekSetDate) {
+          mergedProfile.pregnancyWeekSetDate = new Date().toISOString().split('T')[0];
+        }
         // Photo is handled separately usually, but if server sends URL:
         updateIfMissing('photo', mappedProfile.avatar_url || mappedProfile.photo);
 

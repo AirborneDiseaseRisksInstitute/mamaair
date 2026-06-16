@@ -8,6 +8,7 @@ import { BackButton } from '../components/ui';
 import { SVG_ICONS, WAVE_BACKGROUND_SVG, MOTHER_RISK_SVG, BABY_RISK_SVG, BEHAVIOUR_SVG, RUNNING_SVG, DIET_SVG } from '../utils/svgIcons';
 import { WEEKS_DATA } from './HomeScreen';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 
 interface BabyStatusScreenProps {
   onBack?: () => void;
@@ -180,7 +181,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
   const theme = useTheme();
   const { profile } = useUserStore();
 
-  const activeWeek = profile.pregnancyWeek || 1;
+  const activeWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1;
   const weekIndex = Math.max(0, Math.min(WEEKS_DATA.length - 1, activeWeek - 1));
   const weekData = WEEKS_DATA[weekIndex];
   const circleIcons = weekData?.circleIcons || [];

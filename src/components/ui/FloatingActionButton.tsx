@@ -13,14 +13,18 @@ import { Symptoms } from './Symptoms';
 
 interface FloatingActionButtonProps {
   onApply?: (data: {
-    moods: string[];
-    symptoms: string[];
-    waterAmount: number;
+    mood_ids: number[];
+    feeling_ids: number[];
+    water_amount: number;
   }) => void;
+  initialMoodIds?: number[];
+  initialFeelingIds?: number[];
 }
 
 export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   onApply,
+  initialMoodIds = [],
+  initialFeelingIds = [],
 }) => {
   const theme = useTheme();
   const [isBottomSheetVisible, setIsBottomSheetVisible] = useState(false);
@@ -47,14 +51,12 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
     },
   }), [theme, FAB_SIZE]);
 
-  const handleClose = () => {
-    setIsBottomSheetVisible(false);
-  };
+  const handleClose = () => setIsBottomSheetVisible(false);
 
   const handleApply = (data: {
-    moods: string[];
-    symptoms: string[];
-    waterAmount: number;
+    mood_ids: number[];
+    feeling_ids: number[];
+    water_amount: number;
   }) => {
     onApply?.(data);
     setIsBottomSheetVisible(false);
@@ -66,14 +68,14 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
         style={[StyleSheet.absoluteFill, { zIndex: 99999, elevation: 99999 }]}
         pointerEvents="box-none"
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.fab}
           activeOpacity={0.7}
           onPress={() => setIsBottomSheetVisible(true)}
         >
-          <FontAwesomeIcon 
-            icon={faPlus as any} 
-            size={ms(20)} 
+          <FontAwesomeIcon
+            icon={faPlus as any}
+            size={ms(20)}
             color="#FFF"
           />
         </TouchableOpacity>
@@ -87,6 +89,8 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
         <Symptoms
           onClose={handleClose}
           onApply={handleApply}
+          initialMoodIds={initialMoodIds}
+          initialFeelingIds={initialFeelingIds}
         />
       </BottomSheet>
     </>

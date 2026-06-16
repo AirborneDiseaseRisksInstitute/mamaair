@@ -34,4 +34,19 @@ export const SymptomsService = {
     const response = await api.post('/symptoms/mommy/selection/', data);
     return response.data;
   },
+
+  getMommyStatistics: async (params: { date?: string; start_date?: string; end_date?: string }) => {
+    const response = await api.get('/symptoms/mommy/statistics/', { params });
+    return response.data;
+  },
+
+  getMommyStatisticsClasses: async (params: { date?: string; start_date?: string; end_date?: string }) => {
+    const response = await api.get('/symptoms/mommy/statistics/classes/', { params });
+    return response.data;
+  },
+
+  getBabyStatisticsClasses: async (params: { date?: string; start_date?: string; end_date?: string }) => {
+    const response = await api.get('/symptoms/baby/statistics/classes/', { params });
+    return response.data;
+  },
 };

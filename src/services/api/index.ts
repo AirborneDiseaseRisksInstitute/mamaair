@@ -9,4 +9,8 @@ export * from './InfoService';
 export * from './LanguageService';
 export * from './SummaryService';
 export * from './SymptomsService';
+export * from './DailyTasksService';
+export * from './WellbeingService';
+export * from './TaskCompletionService';
+export * from './DailyCheckinService';
 export { default as api } from './client';

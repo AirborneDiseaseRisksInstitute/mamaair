@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { 
+import {
   faPencil,
   faCalendar,
   faGear,
@@ -24,15 +24,30 @@ import {
   faRightFromBracket,
   faTimes,
   faShield,
-  faCheck
+  faCheck,
+  faCamera,
+  faUser,
 } from '@fortawesome/free-solid-svg-icons';
+import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
-import { useTheme, spacing } from '../theme';
-import { BackButton, BottomSheet, Input, Button, FixedButtonContainer } from '../components/ui';
+import { useTheme, spacing, radius } from '../theme';
+import {
+  BackButton,
+  BottomSheet,
+  BottomSheetOption,
+  Button,
+  DatePicker,
+  Dropdown,
+  FixedButtonContainer,
+  HeightWeightPicker,
+  Input,
+} from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { FIXED_BUTTON_AREA_HEIGHT, ms } from '../utils/responsive';
+import { FIXED_BUTTON_AREA_HEIGHT, ms, vs } from '../utils/responsive';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { KENYA_FLAG_SVG, YORUBA_FLAG_SVG, OTHERS_FLAG_SVG } from '../utils/svgIcons';
+import { AdsScreen } from './AdsScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEALTH_CARD_PADDING = 16 * 2;
@@ -66,8 +81,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { profile } = useUserStore();
+  const { profile, setPhoto, setName, setCountry, setArea, setWeight, setHeight, setBirthday } = useUserStore();
   const { logout } = useAuthStore();
+  const [showBabyTwinAds, setShowBabyTwinAds] = useState(false);
   const [isEditSheetVisible, setIsEditSheetVisible] = useState(false);
   const [isHealthServiceSheetVisible, setIsHealthServiceSheetVisible] = useState(false);
   const [isHealthRequestSheetVisible, setIsHealthRequestSheetVisible] = useState(false);
@@ -76,7 +92,96 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const [isDataConsentChecked, setIsDataConsentChecked] = useState(false);
   const [isAgreementAccepted, setIsAgreementAccepted] = useState(false);
   const [isSuccessDialogVisible, setIsSuccessDialogVisible] = useState(false);
-  
+
+  // Photo picker sheet
+  const [isPhotoSheetVisible, setIsPhotoSheetVisible] = useState(false);
+
+  // Edit sub-sheets
+  const [isCountrySheetVisible, setIsCountrySheetVisible] = useState(false);
+  const [isAreaSheetVisible, setIsAreaSheetVisible] = useState(false);
+  const [isHWPickerVisible, setIsHWPickerVisible] = useState(false);
+  const [isBirthdayPickerVisible, setIsBirthdayPickerVisible] = useState(false);
+
+  // Edit local state - mirrors profile, flushed to store on Save
+  const [editName, setEditName] = useState<string>('');
+  const [editCountry, setEditCountry] = useState<string>('');
+  const [editArea, setEditArea] = useState<string>('');
+  const [editHeight, setEditHeight] = useState<number | null>(null);
+  const [editWeight, setEditWeight] = useState<number | null>(null);
+  const [editBirthday, setEditBirthday] = useState<Date | null>(null);
+
+  type Country = 'kenya' | 'nigeria' | 'others';
+  type AreaType = 'urban' | 'peri-urban' | 'rural';
+
+  const COUNTRIES: Array<{ id: Country; label: string; iconSvg: string }> = [
+    { id: 'kenya', label: 'Kenya', iconSvg: KENYA_FLAG_SVG },
+    { id: 'nigeria', label: 'Nigeria', iconSvg: YORUBA_FLAG_SVG },
+    { id: 'others', label: 'Others', iconSvg: OTHERS_FLAG_SVG },
+  ];
+  const AREA_TYPES: Array<{ id: AreaType; label: string }> = [
+    { id: 'urban', label: 'Urban' },
+    { id: 'peri-urban', label: 'Peri-Urban' },
+    { id: 'rural', label: 'Rural' },
+  ];
+
+  const openEditSheet = () => {
+    setEditName(profile.name || '');
+    setEditCountry(profile.country || '');
+    setEditArea(profile.area || '');
+    setEditHeight(profile.height);
+    setEditWeight(profile.weight);
+    setEditBirthday(profile.birthday ? new Date(profile.birthday) : null);
+    setIsEditSheetVisible(true);
+  };
+
+  const handleSaveProfile = () => {
+    if (editName.trim()) setName(editName.trim());
+    if (editCountry) setCountry(editCountry);
+    if (editArea) setArea(editArea);
+    if (editHeight) setHeight(editHeight);
+    if (editWeight) setWeight(editWeight);
+    if (editBirthday) setBirthday(editBirthday);
+    setIsEditSheetVisible(false);
+  };
+
+  const handlePickPhotoCamera = () => {
+    setIsPhotoSheetVisible(false);
+    launchCamera(
+      { mediaType: 'photo', quality: 0.8, cameraType: 'front', presentationStyle: 'fullScreen' },
+      (r) => { if (!r.didCancel && !r.errorCode && r.assets?.[0]?.uri) setPhoto(r.assets[0].uri); },
+    );
+  };
+
+  const handlePickPhotoLibrary = () => {
+    setIsPhotoSheetVisible(false);
+    launchImageLibrary(
+      { mediaType: 'photo', quality: 0.8, selectionLimit: 1, presentationStyle: 'fullScreen' },
+      (r) => { if (!r.didCancel && !r.errorCode && r.assets?.[0]?.uri) setPhoto(r.assets[0].uri); },
+    );
+  };
+
+  const formatHeightWeight = (): string => {
+    if (editHeight && editWeight) return `${editHeight} cm  •  ${editWeight} kg`;
+    if (profile.height && profile.weight) return `${profile.height} cm  •  ${profile.weight} kg`;
+    return '';
+  };
+
+  const formatDate = (date: Date): string => {
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${m}/${d}/${date.getFullYear()}`;
+  };
+
+  // Calculate expected due date from pregnancyWeek recorded during registration
+  const calculatedDueDate = useMemo(() => {
+    if (!profile.pregnancyWeek || !profile.pregnancyWeekSetDate) return null;
+    const setDate = new Date(profile.pregnancyWeekSetDate);
+    const weeksRemaining = 40 - profile.pregnancyWeek;
+    const due = new Date(setDate.getTime() + weeksRemaining * 7 * 24 * 60 * 60 * 1000);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[due.getMonth()]} ${due.getDate()}, ${due.getFullYear()}`;
+  }, [profile.pregnancyWeek, profile.pregnancyWeekSetDate]);
+
   const defaultPhotoSource = require('../assets/images/addPhoto.png');
   const profilePhotoSource = profile.photo ? { uri: profile.photo } : defaultPhotoSource;
 
@@ -126,12 +231,26 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     },
     profileImageContainer: {
       marginRight: spacing('md'),
+      position: 'relative',
     },
     profileImage: {
       width: 80,
       height: 80,
       borderRadius: 40,
       resizeMode: 'cover',
+    },
+    photoEditBadge: {
+      position: 'absolute',
+      bottom: 0,
+      right: 0,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: theme.colors.orange500,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 2,
+      borderColor: '#fff',
     },
     profileInfo: {
       flex: 1,
@@ -308,10 +427,15 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       marginRight: spacing('md'),
     },
     menuText: {
-      flex: 1,
       fontSize: 16,
       fontFamily: theme.typography.fontFamily.regular,
       color: theme.colors.textPrimary,
+    },
+    menuSubText: {
+      fontSize: 12,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.orange500,
+      marginTop: 2,
     },
     menuChevron: {
       marginLeft: spacing('sm'),
@@ -322,14 +446,79 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       marginLeft: spacing('md'),
     },
     editSheetScrollContent: {
-      paddingBottom: 100, // Space for fixed button
-      paddingHorizontal: spacing('md'),
+      paddingBottom: spacing('xl'),
     },
     inputSpacing: {
       height: spacing('md'),
     },
     bottomSpacing: {
       height: spacing('xl'),
+    },
+    editSectionTitle: {
+      fontSize: 14,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.textSecondary,
+      marginBottom: spacing('sm'),
+      marginTop: spacing('md'),
+    },
+    editFieldRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing('md'),
+      paddingHorizontal: spacing('md'),
+      backgroundColor: '#fff',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.neutral200,
+      marginBottom: spacing('sm'),
+    },
+    editFieldLabel: {
+      flex: 1,
+      fontSize: 16,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textPrimary,
+    },
+    editFieldValue: {
+      fontSize: 14,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+      marginRight: spacing('sm'),
+    },
+    editPickerInputWrapper: {
+      position: 'relative',
+      width: '100%',
+      marginBottom: spacing('sm'),
+    },
+    editPickerShadow: {
+      position: 'absolute',
+      height: vs(54),
+      borderRadius: radius('md'),
+      backgroundColor: theme.colors.neutral300,
+      top: 4,
+      left: 0,
+      right: 0,
+    },
+    editPickerInput: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing('md'),
+      height: vs(54),
+      backgroundColor: theme.colors.background,
+      borderRadius: radius('md'),
+      borderWidth: 1,
+      borderColor: theme.colors.neutral300,
+    },
+    editPickerText: {
+      flex: 1,
+      fontSize: 16,
+      fontFamily: theme.typography.fontFamily.regular,
+      marginLeft: spacing('sm'),
+    },
+    editInputTitle: {
+      fontSize: 16,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.textPrimary,
+      marginBottom: spacing('sm'),
     },
     healthServiceSheetHeader: {
       flexDirection: 'row',
@@ -795,20 +984,27 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       >
         <View style={styles.profileCard}>
           <View style={styles.profileHeader}>
-            <View style={styles.profileImageContainer}>
+            <TouchableOpacity
+              style={styles.profileImageContainer}
+              activeOpacity={0.8}
+              onPress={() => setIsPhotoSheetVisible(true)}
+            >
               <Image
                 source={profilePhotoSource}
                 style={styles.profileImage}
               />
-            </View>
+              <View style={styles.photoEditBadge}>
+                <FontAwesomeIcon icon={faCamera as any} size={10} color="#fff" />
+              </View>
+            </TouchableOpacity>
             <View style={styles.profileInfo}>
               <Text style={styles.profileName} allowFontScaling={false}>{profile.name || 'Mary'}</Text>
               <Text style={styles.profileEmail} allowFontScaling={false}>{profile.email || 'mary@gmail.com'}</Text>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.editButton}
               activeOpacity={0.7}
-              onPress={() => setIsEditSheetVisible(true)}
+              onPress={openEditSheet}
             >
               <FontAwesomeIcon 
                 icon={faPencil as any} 
@@ -870,10 +1066,10 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         </TouchableOpacity>
 
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.babyTwinCard}
           activeOpacity={0.7}
-          onPress={onNavigateToBabyTwin}
+          onPress={() => setShowBabyTwinAds(true)}
         >
           <View style={styles.digitalTwinHeader}>
             <View style={styles.digitalTwinImageContainer}>
@@ -894,22 +1090,27 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         </TouchableOpacity>
 
         <View style={styles.settingsCard}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.menuItem}
             activeOpacity={0.7}
             onPress={onNavigateToPlanBirthday}
           >
             <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faCalendar as any} 
-                size={20} 
+              <FontAwesomeIcon
+                icon={faCalendar as any}
+                size={20}
                 color={theme.colors.textPrimary}
               />
             </View>
-            <Text style={styles.menuText} allowFontScaling={false}>Baby birthday</Text>
-            <FontAwesomeIcon 
-              icon={faChevronRight as any} 
-              size={14} 
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuText} allowFontScaling={false}>Baby birthday</Text>
+              {calculatedDueDate ? (
+                <Text style={styles.menuSubText} allowFontScaling={false}>{calculatedDueDate}</Text>
+              ) : null}
+            </View>
+            <FontAwesomeIcon
+              icon={faChevronRight as any}
+              size={14}
               color={theme.colors.textSecondary}
               style={styles.menuChevron}
             />
@@ -1057,71 +1258,127 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         onClose={() => setIsEditSheetVisible(false)}
         showHandle={true}
       >
-        <ScrollView 
+        <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.editSheetScrollContent}
         >
+          {/* Name */}
+          <Text style={styles.editInputTitle} allowFontScaling={false}>Name</Text>
           <Input
-            title="Country"
-            placeholder="Enter country"
+            title=""
+            placeholder="Enter name"
             type="text"
-            value={profile.country || ''}
-            onChangeText={() => {}}
+            value={editName}
+            onChangeText={setEditName}
           />
-          
+
           <View style={styles.inputSpacing} />
-          
-          <Input
-            title="Area"
-            placeholder="Enter area"
-            type="text"
-            value={profile.area || ''}
-            onChangeText={() => {}}
+
+          {/* Country */}
+          <Text style={styles.editInputTitle} allowFontScaling={false}>Country</Text>
+          <Dropdown
+            label="Select country"
+            value={COUNTRIES.find(c => c.id === editCountry)?.label || null}
+            onPress={() => setIsCountrySheetVisible(true)}
           />
-          
-          <View style={styles.inputSpacing} />
-          
-          <Input
-            title="Age"
-            placeholder="Enter age"
-            type="number"
-            value={profile.birthday || ''}
-            onChangeText={() => {}}
+
+          {/* Area */}
+          <Text style={styles.editInputTitle} allowFontScaling={false}>Area</Text>
+          <Dropdown
+            label="Select area type"
+            value={AREA_TYPES.find(a => a.id === editArea)?.label || null}
+            onPress={() => setIsAreaSheetVisible(true)}
           />
-          
-          <View style={styles.inputSpacing} />
-          
-          <Input
-            title="Weight"
-            placeholder="Enter weight"
-            type="number"
-            value={profile.weight ? profile.weight.toString() : ''}
-            onChangeText={() => {}}
-          />
-          
-          <View style={styles.inputSpacing} />
-          
-          <Input
-            title="Height"
-            placeholder="Enter height"
-            type="number"
-            value={profile.height ? profile.height.toString() : ''}
-            onChangeText={() => {}}
-          />
-          
-          <View style={styles.bottomSpacing} />
+
+          {/* Height & Weight */}
+          <Text style={styles.editInputTitle} allowFontScaling={false}>Height & Weight</Text>
+          <TouchableOpacity style={styles.editPickerInputWrapper} onPress={() => setIsHWPickerVisible(true)} activeOpacity={0.7}>
+            <View style={styles.editPickerShadow} />
+            <View style={styles.editPickerInput}>
+              <FontAwesomeIcon icon={faUser as any} size={ms(18)} color={theme.colors.neutral600} />
+              <Text
+                style={[styles.editPickerText, { color: formatHeightWeight() ? theme.colors.textPrimary : theme.colors.neutral400 }]}
+                allowFontScaling={false}
+              >
+                {formatHeightWeight() || 'Select height and weight'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Birthday */}
+          <Text style={styles.editInputTitle} allowFontScaling={false}>Birthday</Text>
+          <TouchableOpacity style={styles.editPickerInputWrapper} onPress={() => setIsBirthdayPickerVisible(true)} activeOpacity={0.7}>
+            <View style={styles.editPickerShadow} />
+            <View style={styles.editPickerInput}>
+              <FontAwesomeIcon icon={faCalendar as any} size={ms(18)} color={theme.colors.neutral600} />
+              <Text
+                style={[styles.editPickerText, { color: (editBirthday || profile.birthday) ? theme.colors.textPrimary : theme.colors.neutral400 }]}
+                allowFontScaling={false}
+              >
+                {editBirthday ? formatDate(editBirthday) : profile.birthday ? formatDate(new Date(profile.birthday)) : 'mm/dd/yyyy'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={{ marginTop: spacing('md') }}>
+            <Button title="Save" onPress={handleSaveProfile} />
+          </View>
+          <View style={{ height: insets.bottom + spacing('lg') }} />
         </ScrollView>
-        
-        <FixedButtonContainer>
-          <Button
-            title="Save"
-            onPress={() => {
-              // Save the profile data
-              setIsEditSheetVisible(false);
-            }}
-          />
-        </FixedButtonContainer>
+      </BottomSheet>
+
+      {/* Country picker */}
+      <BottomSheet visible={isCountrySheetVisible} onClose={() => setIsCountrySheetVisible(false)}>
+        <View style={{ paddingBottom: spacing('xl') * 2 }}>
+          {COUNTRIES.map((c) => (
+            <BottomSheetOption
+              key={c.id}
+              label={c.label}
+              selected={editCountry === c.id}
+              onPress={() => { setEditCountry(c.id); setIsCountrySheetVisible(false); }}
+            />
+          ))}
+        </View>
+      </BottomSheet>
+
+      {/* Area type picker */}
+      <BottomSheet visible={isAreaSheetVisible} onClose={() => setIsAreaSheetVisible(false)}>
+        <View style={{ paddingBottom: spacing('xl') * 2 }}>
+          {AREA_TYPES.map((a) => (
+            <BottomSheetOption
+              key={a.id}
+              label={a.label}
+              selected={editArea === a.id}
+              onPress={() => { setEditArea(a.id); setIsAreaSheetVisible(false); }}
+            />
+          ))}
+        </View>
+      </BottomSheet>
+
+      {/* Height & Weight picker */}
+      <HeightWeightPicker
+        visible={isHWPickerVisible}
+        onClose={() => setIsHWPickerVisible(false)}
+        onConfirm={(h, w) => { setEditHeight(h); setEditWeight(w); setIsHWPickerVisible(false); }}
+        initialHeight={editHeight || profile.height || 165}
+        initialWeight={editWeight || profile.weight || 65}
+      />
+
+      {/* Birthday picker */}
+      <DatePicker
+        visible={isBirthdayPickerVisible}
+        onClose={() => setIsBirthdayPickerVisible(false)}
+        onConfirm={(date) => { setEditBirthday(date); setIsBirthdayPickerVisible(false); }}
+        initialDate={editBirthday || (profile.birthday ? new Date(profile.birthday) : undefined)}
+      />
+
+      {/* Photo source picker */}
+      <BottomSheet visible={isPhotoSheetVisible} onClose={() => setIsPhotoSheetVisible(false)} title="Select Photo">
+        <View style={{ paddingBottom: spacing('xl') * 2 }}>
+          <BottomSheetOption label="Take Photo" selected={false} onPress={handlePickPhotoCamera} />
+          <BottomSheetOption label="Choose from Library" selected={false} onPress={handlePickPhotoLibrary} />
+        </View>
       </BottomSheet>
 
       <BottomSheet
@@ -1494,6 +1751,19 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             </Text>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={showBabyTwinAds}
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <AdsScreen
+          onClose={() => {
+            setShowBabyTwinAds(false);
+            onNavigateToBabyTwin?.();
+          }}
+        />
       </Modal>
     </SafeAreaView>
   );

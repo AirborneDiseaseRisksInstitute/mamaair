@@ -1,9 +1,14 @@
 /**
  * Development Mode Configuration
  *
- * Set DEV_MODE to true to skip authentication and go directly to IntroStep01
- * This is useful for development and testing purposes.
- *
- * IMPORTANT: Set this to false before production builds!
+ * IMPORTANT: Set all flags to false before production builds!
  */
-export const DEV_MODE = false; // Set to true to skip sign in and go directly to IntroStep01
+
+// Skip sign in and go directly to IntroStep01
+export const DEV_MODE = true;
+
+// Auto-login with credentials below and go directly to the app (bypasses login UI entirely)
+// Useful for Genymotion emulator where manual sign-in is problematic
+export const DEV_BYPASS_AUTH = false;
+export const DEV_EMAIL = 'alireza@gmail.com'; // your test account email
+export const DEV_PASSWORD = '12345678'; // your test account password

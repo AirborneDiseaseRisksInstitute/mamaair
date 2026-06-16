@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createMMKV } from 'react-native-mmkv';
 import { useUserStore } from './useUserStore';
+import { AuthService } from '../services/api/AuthService';
 
 export const storage = createMMKV();
 
@@ -30,6 +31,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token: accessToken, refreshToken });
   },
   logout: () => {
+    const refresh = storage.getString('auth_refresh_token');
+    if (refresh) {
+      // fire-and-forget: blacklist token on server, don't block local logout
+      AuthService.logout(refresh).catch(() => {});
+    }
     storage.remove('auth_token');
     storage.remove('auth_refresh_token');
     set({ token: null, refreshToken: null });

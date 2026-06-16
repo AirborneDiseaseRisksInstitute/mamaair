@@ -20,6 +20,13 @@ import { SVG_ICONS, WAVE_BACKGROUND_SVG, DIET_SVG, RUNNING_SVG, BEHAVIOUR_SVG, M
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { SummaryService, type SummaryResponse } from '../services/api/SummaryService';
 import { LifestyleService } from '../services/api/LifestyleService';
+import { DailyTasksService, type DailyTask } from '../services/api/DailyTasksService';
+import { WellbeingService } from '../services/api/WellbeingService';
+import { TaskCompletionService } from '../services/api/TaskCompletionService';
+import { DailyCheckinService } from '../services/api/DailyCheckinService';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+
+const getTodayDate = (): string => new Date().toLocaleDateString('en-CA');
 
 const ICON_SIZE = 48;
 const ICON_STROKE_WIDTH = 1.5;
@@ -191,23 +198,37 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
   const { profile } = useUserStore();
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [lifestyle, setLifestyle] = useState<any | null>(null);
+  const [dailyTasks, setDailyTasks] = useState<DailyTask[]>([]);
+  const [completedTaskCodes, setCompletedTaskCodes] = useState<string[]>([]);
+  const [wellbeingMoodIds, setWellbeingMoodIds] = useState<number[]>([]);
+  const [wellbeingFeelingIds, setWellbeingFeelingIds] = useState<number[]>([]);
   const [_loading, setLoading] = useState(false);
   const [_error, setError] = useState<string | null>(null);
-  const currentWeek = summary?.week_info?.week || profile.pregnancyWeek || 19;
+  const currentWeek = summary?.week_info?.week || getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 19;
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
     let mounted = true;
+    const todayDate = getTodayDate();
     (async () => {
       try {
         setLoading(true);
-        const [summaryData, lifestyleData] = await Promise.all([
+        const [summaryData, lifestyleData, tasksData, completedData, wellbeingLog] = await Promise.all([
           SummaryService.getSummary(),
-          LifestyleService.getLifestyle()
+          LifestyleService.getLifestyle(),
+          DailyTasksService.getDailyTasks(),
+          TaskCompletionService.getCompleted(todayDate),
+          WellbeingService.getLog(todayDate),
         ]);
         if (mounted) {
           setSummary(summaryData);
           setLifestyle(lifestyleData);
+          setDailyTasks(tasksData);
+          setCompletedTaskCodes(completedData);
+          if (wellbeingLog) {
+            setWellbeingMoodIds(wellbeingLog.mood_ids);
+            setWellbeingFeelingIds(wellbeingLog.feeling_ids);
+          }
         }
       } catch {
         if (mounted) setError('Failed to load data.');
@@ -215,6 +236,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
         if (mounted) setLoading(false);
       }
     })();
+    // Ensure daily check-in exists for today (fire-and-forget)
+    DailyCheckinService.ensureCheckin(todayDate);
     return () => { mounted = false; };
   }, []);
 
@@ -509,6 +532,27 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
       flexDirection:'column',
       flex:1,
     },
+    categorySection: {
+      marginTop: spacing('lg'),
+    },
+    categoryHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing('sm'),
+      marginBottom: spacing('xs'),
+    },
+    categoryIconCircle: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    categoryTitle: {
+      fontSize: responsiveUtils.getFixedFontSize(16),
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.textPrimary,
+    },
     healthRisksCard: {
       backgroundColor: '#FFF',
       borderRadius: 12,
@@ -781,63 +825,34 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
         </View>
 
         <View style={styles.tasksContainer}>
-
-        <TaskCard
-          type="behaviour"
-          title="Cooking Smoke Period"
-          description="Charcoal smoke peaks between 18:00–19:00.\nImprove airflow or take a break outdoors."
-          buttons={[
-            {
-              label: 'Set Reminder',
-              onPress: () => openReminderPicker('Cooking Smoke Period'),
-              variant: 'reminder',
-            },
-          ]}
-          onCheck={(checked) => console.log('Task checked:', checked)}
-        />
-
-         
-
-<TaskCard
-          type="diet"
-          title="Drink Water"
-          description="Charcoal smoke peaks between 18:00–19:00.\nImprove airflow or take a break outdoors."
-          buttons={[
-            {
-              label: 'Delay my water',
-              onPress: () => handleDelayTask('Drink Water'),
-              variant: 'delay',
-            },
-            {
-              label: 'Set Reminder',
-              onPress: () => openReminderPicker('Drink Water'),
-              variant: 'reminder',
-            },
-          ]}
-          onCheck={(checked) => console.log('Task checked:', checked)}
-        />
-
-<TaskCard
-          type="activity"
-          title="Morning Walk Shift"
-          description="06:30–07:15 walk: 15 high-risk minutes (dust pockets along road)."
-          buttons={[
-            {
-              label: 'Delay my walk',
-              onPress: () => handleDelayTask('Morning Walk Shift'),
-              variant: 'delay',
-            },
-            {
-              label: 'Set Reminder',
-              onPress: () => openReminderPicker('Morning Walk Shift'),
-              variant: 'reminder',
-            },
-          ]}
-          onCheck={(checked) => console.log('Task checked:', checked)}
-        />
-
-
-</View>
+          {dailyTasks.length > 0 ? (
+            dailyTasks.map((task) => (
+              <View key={task.code} style={styles.categorySection}>
+                <TaskCard
+                  type="behaviour"
+                  hideIcon
+                  title={task.title}
+                  initialChecked={completedTaskCodes.includes(task.code)}
+                  buttons={[
+                    {
+                      label: 'Set Reminder',
+                      onPress: () => openReminderPicker(task.title),
+                      variant: 'reminder',
+                    },
+                  ]}
+                  onCheck={(checked) => {
+                    const todayDate = getTodayDate();
+                    const updated = checked
+                      ? [...completedTaskCodes, task.code]
+                      : completedTaskCodes.filter(c => c !== task.code);
+                    setCompletedTaskCodes(updated);
+                    TaskCompletionService.saveCompleted(todayDate, updated).catch(() => {});
+                  }}
+                />
+              </View>
+            ))
+          ) : null}
+        </View>
 
         {/* Health Risks Card */}
         <View style={styles.healthRisksCard}>
@@ -911,9 +926,18 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
 
       {/* FAB */}
       <FloatingActionButton
-        onApply={(data: { moods: string[]; symptoms: string[]; waterAmount: number }) => {
-          // Handle apply with data
-          console.log('Applied data:', data);
+        initialMoodIds={wellbeingMoodIds}
+        initialFeelingIds={wellbeingFeelingIds}
+        onApply={(data) => {
+          const todayDate = getTodayDate();
+          WellbeingService.saveLog({
+            date: todayDate,
+            mood_ids: data.mood_ids,
+            feeling_ids: data.feeling_ids,
+            water_amount: data.water_amount,
+          }).catch(() => {});
+          setWellbeingMoodIds(data.mood_ids);
+          setWellbeingFeelingIds(data.feeling_ids);
         }}
       />
 

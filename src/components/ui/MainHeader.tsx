@@ -13,6 +13,7 @@ import { useTheme, spacing } from '../../theme';
 import { DIET_SVG, RUNNING_SVG, BEHAVIOUR_SVG } from '../../utils/svgIcons';
 import { useUserStore } from '../../store/useUserStore';
 import { responsiveUtils } from '../../utils/responsiveUtils';
+import { getCurrentPregnancyWeek } from '../../utils/pregnancyUtils';
 
 interface HeaderIcon {
   type: 'food' | 'exercise' | 'heart';
@@ -28,9 +29,9 @@ interface MainHeaderProps {
 export const MainHeader: React.FC<MainHeaderProps> = ({
   weekNumber = '19th Week',
   icons = [
-    { type: 'food', count: 1 },
-    { type: 'exercise', count: 2 },
-    { type: 'heart', count: 5 },
+    { type: 'food', count: 0 },
+    { type: 'exercise', count: 0 },
+    { type: 'heart', count: 0 },
   ],
   onProfilePress,
 }) => {
@@ -38,7 +39,8 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
   const { profile } = useUserStore();
   const defaultPhotoSource = require('../../assets/images/addPhoto.png');
   const profilePhotoSource = profile.photo ? { uri: profile.photo } : defaultPhotoSource;
-  const displayWeek = profile.pregnancyWeek ? `Week ${profile.pregnancyWeek}` : weekNumber;
+  const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate);
+  const displayWeek = currentWeek ? `Week ${currentWeek}` : weekNumber;
 
   const iconConfig = {
     food: {
@@ -159,14 +161,16 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
                 width={config.size} 
                 height={config.size}
               />
-              <View style={[styles.badge, { backgroundColor: config.badgeColor }]}>
-                <Text 
-                  style={styles.badgeText}
-                  allowFontScaling={false}
-                >
-                  {item.count}
-                </Text>
-              </View>
+              {item.count > 0 && (
+                <View style={[styles.badge, { backgroundColor: config.badgeColor }]}>
+                  <Text
+                    style={styles.badgeText}
+                    allowFontScaling={false}
+                  >
+                    {item.count}
+                  </Text>
+                </View>
+              )}
             </View>
           );
         })}

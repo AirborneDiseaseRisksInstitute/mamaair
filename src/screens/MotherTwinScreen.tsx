@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,12 @@ import {
 } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faCalendar, faLink, faChartLine, faChevronDown, faCheck, faCrosshairs } from '@fortawesome/free-solid-svg-icons';
-import Svg, { Circle, Defs, LinearGradient, Stop, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { PieChart, LineChart } from 'react-native-gifted-charts';
 import { useTheme, spacing } from '../theme';
 import { BackButton, BottomSheet, BottomSheetOption } from '../components/ui';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { SymptomsService } from '../services/api/SymptomsService';
 
 const WEEK_OPTIONS = Array.from({ length: 40 }, (_, i) => i + 1);
 
@@ -36,31 +37,31 @@ const DAYS_DATA = [
   { day: 'Tuesday', color: '#FFB74D', progress: '2/5', completed: true },
 ];
 
-// Symptoms tracker data
-const SYMPTOM_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
-type SymptomDay = typeof SYMPTOM_DAYS[number];
-
-const SYMPTOM_FILTERS = [
-  { id: 'all', label: 'All', colors: ['#FFB6C1', '#FFE4B5', '#87CEEB', '#98FB98', '#DDA0DD'] },
-  { id: 'dizziness', label: 'Dizziness', color: '#E8B4D8' },
-  { id: 'nausea1', label: 'Nausea', color: '#F5E6A3' },
-  { id: 'nausea2', label: 'Nausea', color: '#C5A3E8' },
-  { id: 'mood', label: 'Mood Swings', color: '#A3E8D8' },
+// Symptom class colors
+// Class 1: Acute & Emergency (Red), Class 2: Systemic (Gray), Class 3: Fetal Activity (Orange), Class 4: Lifestyle (Blue)
+const SYMPTOM_CLASSES = [
+  { id: 'class1', label: 'Emergency', color: '#E53935' },
+  { id: 'class2', label: 'Systemic', color: '#757575' },
+  { id: 'class3', label: 'Fetal', color: '#F9AA01' },
+  { id: 'class4', label: 'Lifestyle', color: '#1E88E5' },
 ];
 
-// Area chart data for symptoms
-const SYMPTOM_CHART_DATA_PURPLE = [
-  { value: 10 }, { value: 25 }, { value: 45 }, { value: 35 }, { value: 55 }, { value: 40 }, { value: 30 },
-];
-const SYMPTOM_CHART_DATA_PINK = [
-  { value: 5 }, { value: 15 }, { value: 30 }, { value: 20 }, { value: 35 }, { value: 25 }, { value: 15 },
-];
-const SYMPTOM_CHART_DATA_TEAL = [
-  { value: 8 }, { value: 12 }, { value: 25 }, { value: 18 }, { value: 22 }, { value: 30 }, { value: 20 },
-];
-const SYMPTOM_CHART_DATA_YELLOW = [
-  { value: 3 }, { value: 8 }, { value: 15 }, { value: 25 }, { value: 40 }, { value: 55 }, { value: 35 },
-];
+const WEEK_DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const EMPTY_WEEK_DATA = Array(7).fill({ value: 0 });
+
+// Returns Monday and Sunday of the current week as YYYY-MM-DD strings
+function getCurrentWeekRange(): { start: string; end: string } {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun … 6=Sat
+  const diffToMonday = (day === 0 ? -6 : 1 - day);
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  return { start: fmt(monday), end: fmt(sunday) };
+}
 
 interface MotherTwinScreenProps {
   onBack?: () => void;
@@ -72,12 +73,56 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
   const theme = useTheme();
   const progress = 36; // 36% progress
   const [activeTab, setActiveTab] = useState<StatTab>('Nutrition');
-  const [activeSymptomDay, setActiveSymptomDay] = useState<SymptomDay>('Monday');
-  const [activeSymptomFilter, setActiveSymptomFilter] = useState('all');
+  const [activeSymptomClass, setActiveSymptomClass] = useState<string | null>(null);
   const [statsWeek, setStatsWeek] = useState(1);
-  const [symptomsWeek, setSymptomsWeek] = useState(1);
   const [statsWeekSheetVisible, setStatsWeekSheetVisible] = useState(false);
-  const [symptomsWeekSheetVisible, setSymptomsWeekSheetVisible] = useState(false);
+  const [symptomChartData, setSymptomChartData] = useState<{
+    class1: { value: number }[];
+    class2: { value: number }[];
+    class3: { value: number }[];
+    class4: { value: number }[];
+  }>({
+    class1: [...EMPTY_WEEK_DATA],
+    class2: [...EMPTY_WEEK_DATA],
+    class3: [...EMPTY_WEEK_DATA],
+    class4: [...EMPTY_WEEK_DATA],
+  });
+
+  useEffect(() => {
+    const { start } = getCurrentWeekRange();
+
+    // Build the 7 dates of the current week (Mon–Sun)
+    const weekDates = Array(7).fill(null).map((_, i) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      return d.toISOString().split('T')[0];
+    });
+
+    // One request per day — response shape:
+    // { start_date, end_date, classes: [{ symptom_class, class_name, color_flag, quantity, symptoms }] }
+    Promise.all(
+      weekDates.map((date) =>
+        SymptomsService.getMommyStatisticsClasses({ start_date: date, end_date: date })
+          .catch(() => null)
+      )
+    ).then((results) => {
+      const c1: { value: number }[] = [];
+      const c2: { value: number }[] = [];
+      const c3: { value: number }[] = [];
+      const c4: { value: number }[] = [];
+
+      results.forEach((res) => {
+        const classes: { symptom_class: number; quantity: number }[] = res?.classes ?? [];
+        const qty = (cls: number) => classes.find((c) => c.symptom_class === cls)?.quantity ?? 0;
+        c1.push({ value: qty(1) });
+        c2.push({ value: qty(2) });
+        c3.push({ value: qty(3) });
+        c4.push({ value: qty(4) });
+      });
+
+      setSymptomChartData({ class1: c1, class2: c2, class3: c3, class4: c4 });
+    });
+  }, []);
   const maxContentHeight = SCREEN_HEIGHT * 0.3;
   const size = Math.min(140, maxContentHeight * 0.8); // Smaller circular progress
   const strokeWidth = 8;
@@ -485,164 +530,54 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       lineHeight: 20,
       marginBottom: spacing('md'),
     },
-    symptomsWeekDropdown: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      alignSelf: 'flex-start',
-      borderWidth: 1,
-      borderColor: theme.colors.neutral300,
-      borderRadius: 8,
-      paddingHorizontal: spacing('sm'),
-      paddingVertical: 6,
-      marginBottom: spacing('md'),
-    },
-    symptomsWeekText: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textPrimary,
-      marginRight: spacing('xs'),
-    },
-    symptomsDayTabs: {
-      flexDirection: 'row',
-      marginBottom: spacing('md'),
-    },
-    symptomsDayTabsScroll: {
-      flexDirection: 'row',
-      gap: spacing('sm'),
-    },
-    symptomsDayTab: {
-      paddingHorizontal: spacing('md'),
-      paddingVertical: spacing('sm'),
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: theme.colors.neutral300,
-      backgroundColor: '#fff',
-    },
-    symptomsDayTabActive: {
-      backgroundColor: theme.colors.orange100,
-      borderColor: theme.colors.orange500,
-    },
-    symptomsDayTabText: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-    },
-    symptomsDayTabTextActive: {
-      color: theme.colors.orange500,
-      fontFamily: theme.typography.fontFamily.bold,
-    },
     symptomsChartContainer: {
-      marginBottom: spacing('md'),
+      marginBottom: spacing('sm'),
       overflow: 'hidden',
       borderRadius: 12,
     },
-    symptomsTimeline: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      height: 30,
-      marginTop: spacing('sm'),
-    },
-    symptomsTimelineLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#FFF5F5',
-      paddingHorizontal: spacing('sm'),
-      paddingVertical: 4,
-      borderRadius: 8,
-    },
-    symptomsTimelineDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-      backgroundColor: '#FF6B6B',
-      marginRight: 3,
-    },
-    symptomsTimelineBar: {
-      flex: 1,
-      height: 8,
-      backgroundColor: theme.colors.neutral200,
-      borderRadius: 4,
-      marginHorizontal: spacing('sm'),
-      position: 'relative',
-    },
-    symptomsTimelineProgress: {
-      position: 'absolute',
-      left: 0,
-      top: 0,
-      bottom: 0,
-      width: '60%',
-      backgroundColor: '#FFB74D',
-      borderRadius: 4,
-    },
-    symptomsTimelineSun: {
-      position: 'absolute',
-      left: '50%',
-      top: -4,
-    },
-    symptomsTimelineMarker: {
-      position: 'absolute',
-      right: '30%',
-      top: -8,
-      bottom: -8,
-    },
-    symptomsTimelineMarkerTriangle: {
-      width: 0,
-      height: 0,
-      borderLeftWidth: 6,
-      borderRightWidth: 6,
-      borderBottomWidth: 10,
-      borderLeftColor: 'transparent',
-      borderRightColor: 'transparent',
-      borderBottomColor: theme.colors.orange500,
-    },
-    symptomsTimelineMarkerLine: {
-      width: 2,
-      height: 24,
-      backgroundColor: theme.colors.orange500,
-      alignSelf: 'center',
-    },
-    symptomsTimelineMarkerDot: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: theme.colors.orange500,
-      justifyContent: 'center',
-      alignItems: 'center',
-      alignSelf: 'center',
-    },
-    symptomsTimelineMarkerText: {
-      fontSize: 10,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: '#fff',
-    },
-    symptomsFilters: {
+    symptomsXAxisRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginTop: spacing('md'),
+      paddingHorizontal: 2,
+      marginBottom: spacing('md'),
     },
-    symptomsFilterItem: {
-      alignItems: 'center',
-    },
-    symptomsFilterCircle: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      marginBottom: spacing('xs'),
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    symptomsFilterCircleActive: {
-      borderWidth: 2,
-      borderColor: theme.colors.orange500,
-    },
-    symptomsFilterLabel: {
+    symptomsXAxisLabel: {
       fontSize: 11,
       fontFamily: theme.typography.fontFamily.regular,
       color: theme.colors.textSecondary,
       textAlign: 'center',
+      flex: 1,
     },
-    symptomsFilterLabelActive: {
-      color: theme.colors.orange500,
+    symptomsLegend: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing('sm'),
+      marginTop: spacing('xs'),
+    },
+    symptomsLegendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing('sm'),
+      paddingVertical: 6,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: theme.colors.neutral200,
+    },
+    symptomsLegendItemActive: {
+      borderWidth: 1.5,
+    },
+    symptomsLegendDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      marginRight: spacing('xs'),
+    },
+    symptomsLegendLabel: {
+      fontSize: 12,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+    },
+    symptomsLegendLabelActive: {
       fontFamily: theme.typography.fontFamily.bold,
     },
   }), [theme]);
@@ -913,54 +848,15 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
               Your symptoms are slightly improving this week. Today your fatigue is lower than yesterday.
             </Text>
 
-            {/* Week Dropdown */}
-            <TouchableOpacity
-              style={styles.symptomsWeekDropdown}
-              activeOpacity={0.7}
-              onPress={() => setSymptomsWeekSheetVisible(true)}
-            >
-              <Text style={styles.symptomsWeekText} allowFontScaling={false}>Week {symptomsWeek}</Text>
-              <FontAwesomeIcon 
-                icon={faChevronDown as any} 
-                size={12} 
-                color={theme.colors.textPrimary}
-              />
-            </TouchableOpacity>
-
-            {/* Day Tabs */}
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.symptomsDayTabs}
-              contentContainerStyle={styles.symptomsDayTabsScroll}
-            >
-              {SYMPTOM_DAYS.slice(0, 4).map((day) => (
-                <TouchableOpacity
-                  key={day}
-                  style={[
-                    styles.symptomsDayTab,
-                    activeSymptomDay === day && styles.symptomsDayTabActive,
-                  ]}
-                  onPress={() => setActiveSymptomDay(day)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[
-                    styles.symptomsDayTabText,
-                    activeSymptomDay === day && styles.symptomsDayTabTextActive,
-                  ]} allowFontScaling={false}>
-                    {day}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Area Chart */}
+            {/* Area Chart — 4 classes, current week day by day
+                Render order: bottom→top = Lifestyle→Systemic→Fetal→Emergency
+                so the most critical class (red) is always visible on top */}
             <View style={styles.symptomsChartContainer}>
               <LineChart
-                data={SYMPTOM_CHART_DATA_PURPLE}
-                data2={SYMPTOM_CHART_DATA_PINK}
-                data3={SYMPTOM_CHART_DATA_TEAL}
-                data4={SYMPTOM_CHART_DATA_YELLOW}
+                data={symptomChartData.class4}
+                data2={symptomChartData.class2}
+                data3={symptomChartData.class3}
+                data4={symptomChartData.class1}
                 width={Dimensions.get('window').width - 80}
                 height={180}
                 curved
@@ -968,86 +864,55 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 hideDataPoints
                 hideYAxisText
                 hideAxesAndRules
-                color1="#C5A3E8"
-                color2="#E8B4D8"
-                color3="#A3E8D8"
-                color4="#F5E6A3"
-                startFillColor1="#C5A3E880"
-                startFillColor2="#E8B4D880"
-                startFillColor3="#A3E8D880"
-                startFillColor4="#F5E6A380"
-                endFillColor1="#C5A3E820"
-                endFillColor2="#E8B4D820"
-                endFillColor3="#A3E8D820"
-                endFillColor4="#F5E6A320"
+                color1="#1E88E5"
+                color2="#757575"
+                color3="#F9AA01"
+                color4="#E53935"
+                startFillColor1="#1E88E550"
+                startFillColor2="#75757540"
+                startFillColor3="#F9AA0150"
+                startFillColor4="#E5393560"
+                endFillColor1="#1E88E515"
+                endFillColor2="#75757515"
+                endFillColor3="#F9AA0115"
+                endFillColor4="#E5393520"
                 initialSpacing={0}
                 endSpacing={0}
                 thickness={2}
               />
-
-              {/* Timeline */}
-              <View style={styles.symptomsTimeline}>
-                <View style={styles.symptomsTimelineLeft}>
-                  <View style={styles.symptomsTimelineDot} />
-                  <View style={styles.symptomsTimelineDot} />
-                  <View style={styles.symptomsTimelineDot} />
-                </View>
-                <View style={styles.symptomsTimelineBar}>
-                  <View style={styles.symptomsTimelineProgress} />
-                  <View style={styles.symptomsTimelineMarker}>
-                    <View style={styles.symptomsTimelineMarkerLine} />
-                    <View style={styles.symptomsTimelineMarkerDot}>
-                      <Text style={styles.symptomsTimelineMarkerText} allowFontScaling={false}>24</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
             </View>
 
-            {/* Symptom Filters */}
-            <View style={styles.symptomsFilters}>
-              {SYMPTOM_FILTERS.map((filter) => (
-                <TouchableOpacity
-                  key={filter.id}
-                  style={styles.symptomsFilterItem}
-                  onPress={() => setActiveSymptomFilter(filter.id)}
-                  activeOpacity={0.7}
-                >
-                  {filter.id === 'all' ? (
-                    <View style={[
-                      styles.symptomsFilterCircle,
-                      activeSymptomFilter === filter.id && styles.symptomsFilterCircleActive,
-                    ]}>
-                      <Svg width={44} height={44}>
-                        <Defs>
-                          <LinearGradient id="rainbowGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <Stop offset="0%" stopColor="#FFB6C1" />
-                            <Stop offset="25%" stopColor="#FFE4B5" />
-                            <Stop offset="50%" stopColor="#87CEEB" />
-                            <Stop offset="75%" stopColor="#98FB98" />
-                            <Stop offset="100%" stopColor="#DDA0DD" />
-                          </LinearGradient>
-                        </Defs>
-                        <Circle cx={22} cy={22} r={20} fill="url(#rainbowGradient)" />
-                      </Svg>
-                    </View>
-                  ) : (
-                    <View
-                      style={[
-                        styles.symptomsFilterCircle,
-                        { backgroundColor: filter.color },
-                        activeSymptomFilter === filter.id && styles.symptomsFilterCircleActive,
-                      ]}
-                    />
-                  )}
-                  <Text style={[
-                    styles.symptomsFilterLabel,
-                    activeSymptomFilter === filter.id && styles.symptomsFilterLabelActive,
-                  ]} allowFontScaling={false}>
-                    {filter.label}
-                  </Text>
-                </TouchableOpacity>
+            {/* X-axis day labels */}
+            <View style={styles.symptomsXAxisRow}>
+              {WEEK_DAYS_SHORT.map((d) => (
+                <Text key={d} style={styles.symptomsXAxisLabel} allowFontScaling={false}>{d}</Text>
               ))}
+            </View>
+
+            {/* Class Legend */}
+            <View style={styles.symptomsLegend}>
+              {SYMPTOM_CLASSES.map((cls) => {
+                const isActive = activeSymptomClass === cls.id;
+                return (
+                  <TouchableOpacity
+                    key={cls.id}
+                    style={[
+                      styles.symptomsLegendItem,
+                      isActive && [styles.symptomsLegendItemActive, { borderColor: cls.color }],
+                    ]}
+                    onPress={() => setActiveSymptomClass(isActive ? null : cls.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.symptomsLegendDot, { backgroundColor: cls.color }]} />
+                    <Text style={[
+                      styles.symptomsLegendLabel,
+                      isActive && [styles.symptomsLegendLabelActive, { color: cls.color }],
+                    ]} allowFontScaling={false}>
+                      {cls.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         </View>
@@ -1077,29 +942,6 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
         </ScrollView>
       </BottomSheet>
 
-      <BottomSheet
-        visible={symptomsWeekSheetVisible}
-        onClose={() => setSymptomsWeekSheetVisible(false)}
-        title="Select week"
-      >
-        <ScrollView
-          style={{ maxHeight: 320 }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: spacing('xl') }}
-        >
-          {WEEK_OPTIONS.map((week) => (
-            <BottomSheetOption
-              key={week}
-              label={`Week ${week}`}
-              selected={symptomsWeek === week}
-              onPress={() => {
-                setSymptomsWeek(week);
-                setSymptomsWeekSheetVisible(false);
-              }}
-            />
-          ))}
-        </ScrollView>
-      </BottomSheet>
     </SafeAreaView>
   );
 };

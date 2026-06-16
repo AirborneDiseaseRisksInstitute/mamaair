@@ -18,12 +18,13 @@ interface AdsScreenProps {
 }
 
 export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
-  const [timeLeft, setTimeLeft] = useState(5);
+  const [timeLeft, setTimeLeft] = useState(3);
   const [canClose, setCanClose] = useState(false);
 
   useEffect(() => {
     if (timeLeft === 0) {
       setCanClose(true);
+      onClose?.();
       return;
     }
 
@@ -32,7 +33,7 @@ export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft]);
+  }, [timeLeft, onClose]);
 
   const drugImage = require('../assets/ads/drug.png');
 

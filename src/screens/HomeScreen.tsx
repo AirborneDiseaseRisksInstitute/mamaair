@@ -8,7 +8,6 @@ import {
   FlatList,
   ListRenderItem,
   TouchableOpacity,
-  ActivityIndicator,
   Modal,
   Image,
 } from 'react-native';
@@ -27,6 +26,8 @@ import { BIRTHDAY_SVG, SUN_SVG, CLOUD_SVG } from '../utils/svgIcons';
 import { WeekCycleView, MainHeader, FloatingActionButton } from '../components/ui';
 import { SummaryService, SummaryResponse } from '../services/api/SummaryService';
 import { ProfileService } from '../services/api/ProfileService';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { AdsScreen } from './AdsScreen';
 
 const SUN_SIZE = 52;
 const CLOUD_SIZE = 32;
@@ -1218,13 +1219,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   //   return saved && saved >= 1 && saved <= 40 ? saved : 1;
   // });
   const { profile } = useUserStore();
-  const [activeWeek, setActiveWeek] = useState<number>(profile.pregnancyWeek || 1);
+  const [activeWeek, setActiveWeek] = useState<number>(
+    getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1,
+  );
   const [weeksData, setWeeksData] = useState<WeekData[]>(WEEKS_DATA);
   const [summaryData, setSummaryData] = useState<SummaryResponse | null>(null);
   const [isLayoutReady, setIsLayoutReady] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [weekItemHeight, setWeekItemHeight] = useState(0);
-   const [isTodayLoading, setIsTodayLoading] = useState(false);
+  const [showTodayAds, setShowTodayAds] = useState(false);
   const totalWeeks = weeksData.length;
 
   // Fetch API Data
@@ -1248,52 +1251,47 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
           const updatedWeeksData = [...WEEKS_DATA];
           const weekIndex = apiWeek - 1;
 
-          if (updatedWeeksData[weekIndex]) {
-            // Update description
-            if (summary.week_info?.text) {
-              updatedWeeksData[weekIndex] = {
-                ...updatedWeeksData[weekIndex],
-                description: summary.week_info.text
+          // Update description for current week
+          if (updatedWeeksData[weekIndex] && summary.week_info?.text) {
+            updatedWeeksData[weekIndex] = {
+              ...updatedWeeksData[weekIndex],
+              description: summary.week_info.text
+            };
+          }
+
+          // Update history for ALL weeks up to (and including) current week
+          if (userProfile.pregnancy_start_date) {
+            const startDate = new Date(userProfile.pregnancy_start_date);
+
+            for (let wIdx = 0; wIdx <= weekIndex; wIdx++) {
+              if (!updatedWeeksData[wIdx]) continue;
+
+              const weekStart = new Date(startDate);
+              weekStart.setDate(startDate.getDate() + (wIdx * 7));
+
+              const updatedWeekDays = updatedWeeksData[wIdx].weekDays.map((dayItem, dIndex) => {
+                const dayDate = new Date(weekStart);
+                dayDate.setDate(weekStart.getDate() + dIndex);
+                const dateStr = dayDate.toISOString().split('T')[0];
+                const dayName = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
+
+                const historyItem = summary.exposure_history?.items?.find(
+                  (item: any) => item.date === dateStr
+                );
+                const hasHistory = !!historyItem;
+
+                return {
+                  ...dayItem,
+                  day: dayName,
+                  isActive: hasHistory ? true : (dayItem.isActive || false),
+                  activeIcons: hasHistory ? (['running'] as ('heart' | 'basket' | 'running')[]) : dayItem.activeIcons,
+                };
+              });
+
+              updatedWeeksData[wIdx] = {
+                ...updatedWeeksData[wIdx],
+                weekDays: updatedWeekDays
               };
-            }
-
-            // Update Timeline/History if we have start date
-            if (userProfile.pregnancy_start_date) {
-               const startDate = new Date(userProfile.pregnancy_start_date);
-               
-               // Calculate dates for the active week
-               const weekStart = new Date(startDate);
-               weekStart.setDate(startDate.getDate() + (weekIndex * 7));
-
-               const updatedWeekDays = updatedWeeksData[weekIndex].weekDays.map((dayItem, dIndex) => {
-                 const dayDate = new Date(weekStart);
-                 dayDate.setDate(weekStart.getDate() + dIndex);
-                 const dateStr = dayDate.toISOString().split('T')[0];
-                 const dayName = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
-
-                 // Check history
-                 const historyItem = summary.exposure_history?.items?.find(
-                   (item: any) => item.date === dateStr
-                 );
-                 
-                 // Basic active logic based on history presence
-                 // Ideally we'd map specific icons to specific data points
-                 const hasHistory = !!historyItem;
-
-                 return {
-                   ...dayItem,
-                   day: dayName,
-                   isActive: hasHistory ? true : (dayItem.isActive || false),
-                   activeIcons: hasHistory ? (['running'] as ('heart' | 'basket' | 'running')[]) : dayItem.activeIcons,
-                   // We keep the existing isActive/isMissed logic in renderWeekItem 
-                   // but we can override icon state here
-                 };
-               });
-
-               updatedWeeksData[weekIndex] = {
-                 ...updatedWeeksData[weekIndex],
-                 weekDays: updatedWeekDays
-               };
             }
           }
           setWeeksData(updatedWeeksData);
@@ -1403,31 +1401,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       alignItems: 'center',
       flexDirection: 'column-reverse',
     },
-    loadingOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.35)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    loadingContainer: {
-      backgroundColor: '#fff',
-      borderRadius: spacing('md'),
-      paddingVertical: spacing('lg'),
-      paddingHorizontal: spacing('xl'),
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
-      elevation: 6,
-    },
-    loadingText: {
-      marginTop: spacing('sm'),
-      fontSize: theme.typography.fontSize.md,
-      fontFamily: theme.typography.fontFamily.medium,
-      color: theme.colors.textPrimary,
-    },
     fixedBackground: {
       position: 'absolute',
       bottom: 0,
@@ -1512,18 +1485,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   ), [styles, handleHeaderLayout, onNavigateToPlanBirthday]);
 
   const handleNavigateToToday = useCallback(() => {
-    if (isTodayLoading) {
-      return;
-    }
-    setIsTodayLoading(true);
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        onNavigateToToday?.();
-        // Give navigation a brief moment before hiding loader
-        setTimeout(() => setIsTodayLoading(false), 200);
-      }, 120);
-    });
-  }, [isTodayLoading, onNavigateToToday]);
+    if (showTodayAds) return;
+    setShowTodayAds(true);
+  }, [showTodayAds]);
 
   // Memoize the render function for week items
   // Note: In reversed array, index 0 = week 40, so active week index calculation:
@@ -1705,8 +1669,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       <MainHeader 
         weekNumber={`${activeWeek}${getOrdinalSuffix(activeWeek)} Week`}
         icons={[
-          { type: 'food', count: 0 }, // TODO: Map to real data
-          { type: 'exercise', count: summaryData?.exposure_history?.items?.length || 0 }, // Using exposure count as proxy
+          { type: 'food', count: 0 },
+          { type: 'exercise', count: 0 },
           { type: 'heart', count: 0 },
         ]}
         onProfilePress={onNavigateToProfile}
@@ -1742,19 +1706,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       />
       
       <Modal
-        visible={isTodayLoading}
-        transparent
+        visible={showTodayAds}
         animationType="fade"
         onRequestClose={() => {}}
       >
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.colors.orange500} />
-            <Text style={styles.loadingText} allowFontScaling={false}>
-              Loading your day...
-            </Text>
-          </View>
-        </View>
+        <AdsScreen
+          onClose={() => {
+            setShowTodayAds(false);
+            onNavigateToToday?.();
+          }}
+        />
       </Modal>
     </SafeAreaView>
   );

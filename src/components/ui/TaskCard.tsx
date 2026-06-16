@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,10 +22,11 @@ interface TaskButton {
 interface TaskCardProps {
   type: TaskType;
   title: string;
-  description: string;
+  description?: string;
   buttons?: TaskButton[];
   onCheck?: (checked: boolean) => void;
   initialChecked?: boolean;
+  hideIcon?: boolean;
 }
 
 const iconConfig = {
@@ -53,10 +54,16 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   buttons = [],
   onCheck,
   initialChecked = false,
+  hideIcon = false,
 }) => {
   const theme = useTheme();
-  const [checked, setChecked] = useState(initialChecked);
+  const [checked, setChecked] = useState(initialChecked ?? false);
   const config = iconConfig[type];
+
+  // Sync when parent loads initialChecked asynchronously (e.g. from API)
+  useEffect(() => {
+    setChecked(initialChecked ?? false);
+  }, [initialChecked]);
 
   const handleCheck = () => {
     const newChecked = !checked;
@@ -100,7 +107,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     },
     content: {
       flex: 1,
-      marginLeft: spacing('md'),
+      marginLeft: hideIcon ? 0 : spacing('md'),
       marginRight: spacing('sm'),
     },
     title: {
@@ -178,12 +185,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.iconContainer}>
-          <SvgXml xml={config.svg} width={28} height={28} />
-        </View>
+        {!hideIcon && (
+          <View style={styles.iconContainer}>
+            <SvgXml xml={config.svg} width={28} height={28} />
+          </View>
+        )}
         <View style={styles.content}>
           <Text style={styles.title} allowFontScaling={false}>{title}</Text>
-          <Text style={styles.description} allowFontScaling={false}>{description}</Text>
+          {!!description && <Text style={styles.description} allowFontScaling={false}>{description}</Text>}
         </View>
         <TouchableOpacity
           onPress={handleCheck}

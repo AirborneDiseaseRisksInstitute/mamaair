@@ -1,81 +1,112 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Dimensions,
 } from 'react-native';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import {
   faTimes,
-  faMinus,
-  faPlus,
-  faChevronRight,
-  faGlassWater,
+  faCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing } from '../../theme';
 import { Button } from './Button';
+import { WellbeingService, type WellbeingCatalogItem } from '../../services/api/WellbeingService';
 
-// Mood options data
-const MOOD_OPTIONS = [
-  { id: 'feel_sick', emoji: '🤢', label: 'Feel sick' },
-  { id: 'distressed', emoji: '😖', label: 'Distressed' },
-  { id: 'nervous', emoji: '😰', label: 'Nervous' },
-  { id: 'nauseous', emoji: '🤮', label: 'nauseous' },
+// Fallback options used when API catalog is unavailable
+const FALLBACK_MOODS: WellbeingCatalogItem[] = [
+  { id: 1, name: 'Feel sick', emoji: '🤢' },
+  { id: 2, name: 'Distressed', emoji: '😖' },
+  { id: 3, name: 'Nervous', emoji: '😰' },
+  { id: 4, name: 'Nauseous', emoji: '🤮' },
 ];
 
-// Symptoms options data
-const SYMPTOMS_OPTIONS = [
-  { id: 'everything_fine', emoji: '💪🏾', label: 'Everything is fine' },
-  { id: 'poor_sleep', emoji: '🙍🏾', label: 'Poor Sleep' },
-  { id: 'headache', emoji: '🙎🏾', label: 'Headache' },
+const FALLBACK_FEELINGS: WellbeingCatalogItem[] = [
+  { id: 1, name: 'Everything is fine', emoji: '💪🏾' },
+  { id: 2, name: 'Poor Sleep', emoji: '🙍🏾' },
+  { id: 3, name: 'Headache', emoji: '🙎🏾' },
+  { id: 4, name: 'Back Pain', emoji: '😣' },
+  { id: 5, name: 'Fatigue', emoji: '😴' },
+  { id: 6, name: 'Nausea', emoji: '🤢' },
 ];
-
-const WATER_GOAL = 72;
 
 interface SymptomsProps {
   onClose: () => void;
   onApply?: (data: {
-    moods: string[];
-    symptoms: string[];
-    waterAmount: number;
+    mood_ids: number[];
+    feeling_ids: number[];
+    water_amount: number;
   }) => void;
+  initialMoodIds?: number[];
+  initialFeelingIds?: number[];
 }
 
-export const Symptoms: React.FC<SymptomsProps> = ({ onClose, onApply }) => {
-  const theme = useTheme();
-  const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
-  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
-  const [waterAmount, setWaterAmount] = useState(0);
+const APPLY_BUTTON_AREA = 72;
+const MAX_PANEL_HEIGHT = SCREEN_HEIGHT * 0.72;
 
-  const toggleMood = (id: string) => {
-    setSelectedMoods(prev => 
+export const Symptoms: React.FC<SymptomsProps> = ({
+  onClose,
+  onApply,
+  initialMoodIds = [],
+  initialFeelingIds = [],
+}) => {
+  const theme = useTheme();
+  const [moods, setMoods] = useState<WellbeingCatalogItem[]>(FALLBACK_MOODS);
+  const [feelings, setFeelings] = useState<WellbeingCatalogItem[]>(FALLBACK_FEELINGS);
+  const [selectedMoodIds, setSelectedMoodIds] = useState<number[]>(initialMoodIds);
+  const [selectedFeelingIds, setSelectedFeelingIds] = useState<number[]>(initialFeelingIds);
+
+  useEffect(() => {
+    WellbeingService.getCatalog()
+      .then((catalog) => {
+        if (catalog.moods?.length) setMoods(catalog.moods);
+        if (catalog.feelings?.length) setFeelings(catalog.feelings);
+      })
+      .catch(() => {
+        // keep fallback options
+      });
+  }, []);
+
+  // Sync pre-selected IDs when parent passes them after async load
+  useEffect(() => {
+    setSelectedMoodIds(initialMoodIds);
+  }, [initialMoodIds]);
+
+  useEffect(() => {
+    setSelectedFeelingIds(initialFeelingIds);
+  }, [initialFeelingIds]);
+
+  const toggleMood = (id: number) => {
+    setSelectedMoodIds(prev =>
       prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
     );
   };
 
-  const toggleSymptom = (id: string) => {
-    setSelectedSymptoms(prev => 
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+  const toggleFeeling = (id: number) => {
+    setSelectedFeelingIds(prev =>
+      prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
     );
   };
 
-  const incrementWater = () => setWaterAmount(prev => Math.min(prev + 8, WATER_GOAL));
-  const decrementWater = () => setWaterAmount(prev => Math.max(prev - 8, 0));
-
   const handleApply = () => {
-    if (onApply) {
-      onApply({
-        moods: selectedMoods,
-        symptoms: selectedSymptoms,
-        waterAmount,
-      });
-    }
+    onApply?.({
+      mood_ids: selectedMoodIds,
+      feeling_ids: selectedFeelingIds,
+      water_amount: 0,
+    });
     onClose();
   };
 
   const styles = useMemo(() => StyleSheet.create({
+    wrapper: {
+      maxHeight: MAX_PANEL_HEIGHT,
+    },
     sheetHeader: {
       flexDirection: 'row',
       justifyContent: 'center',
@@ -85,9 +116,8 @@ export const Symptoms: React.FC<SymptomsProps> = ({ onClose, onApply }) => {
       borderBottomColor: theme.colors.neutral200,
     },
     sheetHeaderLeft: {
-      display:'flex',
       alignItems: 'center',
-      marginLeft:'auto'
+      marginLeft: 'auto',
     },
     sheetTitle: {
       fontSize: 16,
@@ -108,7 +138,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({ onClose, onApply }) => {
       borderRadius: 18,
       justifyContent: 'center',
       alignItems: 'center',
-      marginLeft:'auto'
+      marginLeft: 'auto',
     },
     sectionContainer: {
       backgroundColor: theme.colors.neutral100,
@@ -166,201 +196,124 @@ export const Symptoms: React.FC<SymptomsProps> = ({ onClose, onApply }) => {
       fontSize: 10,
       fontWeight: 'bold',
     },
-    waterContainer: {
-      backgroundColor: theme.colors.neutral100,
-      borderRadius: 16,
-      padding: spacing('md'),
-      marginTop: spacing('md'),
-    },
-    waterHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    waterLeft: {
+    feelingRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.neutral200,
     },
-    waterLabel: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.bold,
+    feelingRowLast: {
+      borderBottomWidth: 0,
+    },
+    feelingEmoji: {
+      fontSize: 20,
+      marginRight: spacing('sm'),
+    },
+    feelingLabel: {
+      flex: 1,
+      fontSize: 15,
+      fontFamily: theme.typography.fontFamily.medium,
       color: theme.colors.textPrimary,
     },
-    waterControls: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing('sm'),
-    },
-    waterButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: theme.colors.neutral300,
+    checkCircle: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: theme.colors.neutral300,
       justifyContent: 'center',
       alignItems: 'center',
     },
-    waterAmount: {
-      fontSize: 24,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginTop: spacing('sm'),
+    checkCircleSelected: {
+      backgroundColor: theme.colors.orange500,
+      borderColor: theme.colors.orange500,
     },
-    waterGoal: {
-      fontSize: 18,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.neutral500,
-    },
-    reminderRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
+    applyButtonContainer: {
       paddingTop: spacing('md'),
-      marginTop: spacing('md'),
+      paddingBottom: spacing('md'),
+      backgroundColor: '#fff',
       borderTopWidth: 1,
       borderTopColor: theme.colors.neutral200,
-    },
-    reminderText: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.neutral500,
-    },
-    applyButton: {
-      marginTop: spacing('lg'),
-      marginBottom: spacing('lg'),
     },
   }), [theme]);
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View style={styles.sheetHeader}>
-        <View style={styles.sheetHeaderLeft}>
-          <Text style={styles.sheetTitle} allowFontScaling={false}>Today</Text>
-          <Text style={styles.sheetSubtitle} allowFontScaling={false}>Day 4/ 19th Week</Text>
-        </View>
-        <TouchableOpacity 
-          style={styles.closeButton}
-          onPress={onClose}
-        >
-          <FontAwesomeIcon 
-            icon={faTimes as any} 
-            size={20} 
-            color={theme.colors.textPrimary} 
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Mood Section */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle} allowFontScaling={false}>Mood</Text>
-        <View style={styles.optionsRow}>
-          {MOOD_OPTIONS.map((mood) => (
-            <TouchableOpacity
-              key={mood.id}
-              style={[
-                styles.optionChip,
-                selectedMoods.includes(mood.id) && styles.optionChipSelected,
-              ]}
-              onPress={() => toggleMood(mood.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.optionEmoji} allowFontScaling={false}>{mood.emoji}</Text>
-              <Text style={styles.optionLabel} allowFontScaling={false}>{mood.label}</Text>
-              {selectedMoods.includes(mood.id) && (
-                <View style={styles.checkBadge}>
-                  <Text style={styles.checkBadgeText} allowFontScaling={false}>✓</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Water Section */}
-      <View style={styles.waterContainer}>
-        <View style={styles.waterHeader}>
-          <View style={styles.waterLeft}>
-            <FontAwesomeIcon 
-              icon={faGlassWater as any} 
-              size={20} 
-              color="#2196F3"
-              style={{ marginRight: spacing('sm') }}
-            />
-            <Text style={styles.waterLabel} allowFontScaling={false}>Water</Text>
+    <View style={styles.wrapper}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: APPLY_BUTTON_AREA }}
+      >
+        {/* Header */}
+        <View style={styles.sheetHeader}>
+          <View style={styles.sheetHeaderLeft}>
+            <Text style={styles.sheetTitle} allowFontScaling={false}>Today</Text>
           </View>
-          <View style={styles.waterControls}>
-            <TouchableOpacity 
-              style={styles.waterButton}
-              onPress={decrementWater}
-              activeOpacity={0.7}
-            >
-              <FontAwesomeIcon 
-                icon={faMinus as any} 
-                size={14} 
-                color={theme.colors.neutral600} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.waterButton}
-              onPress={incrementWater}
-              activeOpacity={0.7}
-            >
-              <FontAwesomeIcon 
-                icon={faPlus as any} 
-                size={14} 
-                color={theme.colors.neutral600} 
-              />
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <FontAwesomeIcon icon={faTimes as any} size={20} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Mood Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle} allowFontScaling={false}>Mood</Text>
+          <View style={styles.optionsRow}>
+            {moods.map((mood) => (
+              <TouchableOpacity
+                key={mood.id}
+                style={[
+                  styles.optionChip,
+                  selectedMoodIds.includes(mood.id) && styles.optionChipSelected,
+                ]}
+                onPress={() => toggleMood(mood.id)}
+                activeOpacity={0.7}
+              >
+                {!!mood.emoji && (
+                  <Text style={styles.optionEmoji} allowFontScaling={false}>{mood.emoji}</Text>
+                )}
+                <Text style={styles.optionLabel} allowFontScaling={false}>{mood.name}</Text>
+                {selectedMoodIds.includes(mood.id) && (
+                  <View style={styles.checkBadge}>
+                    <Text style={styles.checkBadgeText} allowFontScaling={false}>✓</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
-        <Text style={styles.waterAmount} allowFontScaling={false}>
-          {waterAmount}
-          <Text style={styles.waterGoal} allowFontScaling={false}> / {WATER_GOAL} fl. oz.</Text>
-        </Text>
-        <TouchableOpacity style={styles.reminderRow} activeOpacity={0.7}>
-          <Text style={styles.reminderText} allowFontScaling={false}>Reminders and settings</Text>
-          <FontAwesomeIcon 
-            icon={faChevronRight as any} 
-            size={14} 
-            color={theme.colors.neutral400} 
-          />
-        </TouchableOpacity>
-      </View>
 
-      {/* Symptoms Section */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle} allowFontScaling={false}>Symptoms</Text>
-        <View style={styles.optionsRow}>
-          {SYMPTOMS_OPTIONS.map((symptom) => (
-            <TouchableOpacity
-              key={symptom.id}
-              style={[
-                styles.optionChip,
-                selectedSymptoms.includes(symptom.id) && styles.optionChipSelected,
-              ]}
-              onPress={() => toggleSymptom(symptom.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.optionEmoji} allowFontScaling={false}>{symptom.emoji}</Text>
-              <Text style={styles.optionLabel} allowFontScaling={false}>{symptom.label}</Text>
-              {selectedSymptoms.includes(symptom.id) && (
-                <View style={styles.checkBadge}>
-                  <Text style={styles.checkBadgeText} allowFontScaling={false}>✓</Text>
+        {/* Feelings Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle} allowFontScaling={false}>Confirm your feelings:</Text>
+          {feelings.map((feeling, index) => {
+            const isSelected = selectedFeelingIds.includes(feeling.id);
+            const isLast = index === feelings.length - 1;
+            return (
+              <TouchableOpacity
+                key={feeling.id}
+                style={[styles.feelingRow, isLast && styles.feelingRowLast]}
+                onPress={() => toggleFeeling(feeling.id)}
+                activeOpacity={0.7}
+              >
+                {!!feeling.emoji && (
+                  <Text style={styles.feelingEmoji} allowFontScaling={false}>{feeling.emoji}</Text>
+                )}
+                <Text style={styles.feelingLabel} allowFontScaling={false}>{feeling.name}</Text>
+                <View style={[styles.checkCircle, isSelected && styles.checkCircleSelected]}>
+                  {isSelected && (
+                    <FontAwesomeIcon icon={faCheck as any} size={12} color="#FFF" />
+                  )}
                 </View>
-              )}
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      </View>
+      </ScrollView>
 
-      {/* Apply Button */}
-      <View style={styles.applyButton}>
-        <Button
-          title="Apply"
-          onPress={handleApply}
-        />
+      {/* Fixed Apply Button */}
+      <View style={styles.applyButtonContainer}>
+        <Button title="Apply" onPress={handleApply} />
       </View>
-    </ScrollView>
+    </View>
   );
 };
-
