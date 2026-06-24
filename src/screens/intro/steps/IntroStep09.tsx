@@ -3,24 +3,21 @@ import { View, Text, StyleSheet, SafeAreaView, Dimensions, Pressable, ScrollView
 import { useTheme, spacing } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, IntroTitleBox } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
+import { useMetaChoices } from '../../../hooks/useMetaChoices';
+import { useTranslation } from 'react-i18next';
 import { fs, s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface IntroStep09Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
-type WorkType = 'desk' | 'standing' | 'night' | 'physical' | 'home';
-
-const WORK_TYPE_OPTIONS: Array<{ id: WorkType; label: string; iconEmoji?: string }> = [
-  { id: 'desk', label: 'Desk work', iconEmoji: '🪑' }, { id: 'standing', label: 'Standing work', iconEmoji: '🧍🏿‍♀️' },
-  { id: 'night', label: 'Night shifts', iconEmoji: '🌙' }, { id: 'physical', label: 'Physical labor', iconEmoji: '💪🏿' },
-  { id: 'home', label: 'Stay-at-home mom', iconEmoji: '👩🏿‍🦱' },
-];
 
 export const IntroStep09: React.FC<IntroStep09Props> = ({ onNext, onBack, onSkip }) => {
   const theme = useTheme();
-  const [selectedWorkType, setSelectedWorkType] = useState<WorkType | null>(null);
-  const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
+  const { t } = useTranslation();
   const { setWorkType } = useUserStore();
+  const { work_types } = useMetaChoices();
+  const [selectedWorkType, setSelectedWorkType] = useState<string | null>(null);
+  const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },
@@ -34,27 +31,41 @@ export const IntroStep09: React.FC<IntroStep09Props> = ({ onNext, onBack, onSkip
     continueButtonWrapper: { width: s(200), marginLeft: spacing('md') },
   }), [theme]);
 
-  const handleNext = () => { if (selectedWorkType) setWorkType(selectedWorkType); onNext?.(); };
+  const handleNext = () => {
+    if (selectedWorkType) setWorkType(selectedWorkType);
+    onNext?.();
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <OrangeHalo cx={SCREEN_WIDTH / 2} cy={titleBoxCenterY} radius={SCREEN_WIDTH * 0.6} />
-     
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      <BackButton onPress={onBack} />
-      <ProgressBar progress={0.643} />
+        <BackButton onPress={onBack} />
+        <ProgressBar progress={0.643} />
         <View style={styles.contentWrapper}>
-          <IntroTitleBox title="What type of work do you have?" onLayout={setTitleBoxCenterY} />
-          <Text style={styles.questionText} allowFontScaling={false}>Select the option that best describes your work:</Text>
+          <IntroTitleBox title={t('intro.step09_title')} onLayout={setTitleBoxCenterY} />
+          <Text style={styles.questionText} allowFontScaling={false}>{t('intro.step09_select')}</Text>
           <View style={styles.optionsContainer}>
-            {WORK_TYPE_OPTIONS.map((o) => (<RadioOption key={o.id} label={o.label} iconEmoji={o.iconEmoji} selected={selectedWorkType === o.id} onPress={() => setSelectedWorkType(o.id)} />))}
+            {work_types.map((wt) => (
+              <RadioOption
+                key={wt.value}
+                label={wt.label}
+                iconEmoji={wt.emoji}
+                selected={selectedWorkType === wt.value}
+                onPress={() => setSelectedWorkType(wt.value)}
+              />
+            ))}
           </View>
         </View>
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>SKIP</Text></Pressable>
-          <View style={styles.continueButtonWrapper}><Button title="CONTINUE" onPress={handleNext} disabled={!selectedWorkType} /></View>
+          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}>
+            <Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text>
+          </Pressable>
+          <View style={styles.continueButtonWrapper}>
+            <Button title={t('common.continue')} onPress={handleNext} disabled={!selectedWorkType} />
+          </View>
         </View>
       </FixedButtonContainer>
     </SafeAreaView>

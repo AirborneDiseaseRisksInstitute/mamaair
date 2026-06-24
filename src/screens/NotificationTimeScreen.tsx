@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
 import { useTheme, spacing } from '../theme';
 import { BackButton, NotificationTimeSettings } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
+import { scheduleReminders } from '../services/NotificationService';
 import { responsiveUtils } from '../utils/responsiveUtils';
 
 interface NotificationTimeScreenProps {
@@ -72,6 +73,7 @@ export const NotificationTimeScreen: React.FC<NotificationTimeScreenProps> = ({ 
           days={profile.notifDays ?? '1111111'}
           onSave={(from, to, days) => {
             setNotifTime(from, to, days);
+            scheduleReminders(from.hour, from.minute, days).catch(() => {});
             onBack?.();
           }}
           showSaveButton={true}

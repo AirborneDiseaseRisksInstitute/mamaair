@@ -27,6 +27,8 @@ import {
   faCheck,
   faCamera,
   faUser,
+  faHeartPulse,
+  faGlobe,
 } from '@fortawesome/free-solid-svg-icons';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
@@ -41,13 +43,17 @@ import {
   FixedButtonContainer,
   HeightWeightPicker,
   Input,
+  TransitionLoader,
 } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { ProfileService } from '../services/api/ProfileService';
+import { LanguageService } from '../services/api/LanguageService';
 import { FIXED_BUTTON_AREA_HEIGHT, ms, vs } from '../utils/responsive';
 import { responsiveUtils } from '../utils/responsiveUtils';
-import { KENYA_FLAG_SVG, YORUBA_FLAG_SVG, OTHERS_FLAG_SVG } from '../utils/svgIcons';
+import { useMetaChoices } from '../hooks/useMetaChoices';
 import { AdsScreen } from './AdsScreen';
+import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEALTH_CARD_PADDING = 16 * 2;
@@ -65,24 +71,28 @@ interface UserProfileScreenProps {
   onNavigateToReminders?: () => void;
   onNavigateToPrivacySettings?: () => void;
   onNavigateToPlanBirthday?: () => void;
+  onNavigateToSymptomsHistory?: () => void;
   onLogout?: () => void;
 }
 
-export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({ 
-  onBack, 
-  onNavigateToBabyTwin, 
-  onNavigateToMotherTwin, 
+export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
+  onBack,
+  onNavigateToBabyTwin,
+  onNavigateToMotherTwin,
   onNavigateToRefer,
   onNavigateToAppSettings,
   onNavigateToReminders,
   onNavigateToPrivacySettings,
   onNavigateToPlanBirthday,
-  onLogout 
+  onNavigateToSymptomsHistory,
+  onLogout,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { profile, setPhoto, setName, setCountry, setArea, setWeight, setHeight, setBirthday } = useUserStore();
+  const { profile, setPhoto, setName, setCountry, setArea, setWeight, setHeight, setBirthday, setLanguage } = useUserStore();
   const { logout } = useAuthStore();
+  const { countries, languages } = useMetaChoices();
   const [showBabyTwinAds, setShowBabyTwinAds] = useState(false);
   const [isEditSheetVisible, setIsEditSheetVisible] = useState(false);
   const [isHealthServiceSheetVisible, setIsHealthServiceSheetVisible] = useState(false);
@@ -99,6 +109,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   // Edit sub-sheets
   const [isCountrySheetVisible, setIsCountrySheetVisible] = useState(false);
   const [isAreaSheetVisible, setIsAreaSheetVisible] = useState(false);
+  const [isLanguageSheetVisible, setIsLanguageSheetVisible] = useState(false);
+  const [isLanguagePickerFromMenu, setIsLanguagePickerFromMenu] = useState(false);
+  const [isChangingLanguage, setIsChangingLanguage] = useState(false);
   const [isHWPickerVisible, setIsHWPickerVisible] = useState(false);
   const [isBirthdayPickerVisible, setIsBirthdayPickerVisible] = useState(false);
 
@@ -106,18 +119,13 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const [editName, setEditName] = useState<string>('');
   const [editCountry, setEditCountry] = useState<string>('');
   const [editArea, setEditArea] = useState<string>('');
+  const [editLanguage, setEditLanguage] = useState<string>('');
   const [editHeight, setEditHeight] = useState<number | null>(null);
   const [editWeight, setEditWeight] = useState<number | null>(null);
   const [editBirthday, setEditBirthday] = useState<Date | null>(null);
 
-  type Country = 'kenya' | 'nigeria' | 'others';
   type AreaType = 'urban' | 'peri-urban' | 'rural';
 
-  const COUNTRIES: Array<{ id: Country; label: string; iconSvg: string }> = [
-    { id: 'kenya', label: 'Kenya', iconSvg: KENYA_FLAG_SVG },
-    { id: 'nigeria', label: 'Nigeria', iconSvg: YORUBA_FLAG_SVG },
-    { id: 'others', label: 'Others', iconSvg: OTHERS_FLAG_SVG },
-  ];
   const AREA_TYPES: Array<{ id: AreaType; label: string }> = [
     { id: 'urban', label: 'Urban' },
     { id: 'peri-urban', label: 'Peri-Urban' },
@@ -128,6 +136,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     setEditName(profile.name || '');
     setEditCountry(profile.country || '');
     setEditArea(profile.area || '');
+    setEditLanguage(profile.language || '');
     setEditHeight(profile.height);
     setEditWeight(profile.weight);
     setEditBirthday(profile.birthday ? new Date(profile.birthday) : null);
@@ -138,10 +147,25 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     if (editName.trim()) setName(editName.trim());
     if (editCountry) setCountry(editCountry);
     if (editArea) setArea(editArea);
+    if (editLanguage) setLanguage(editLanguage);
     if (editHeight) setHeight(editHeight);
     if (editWeight) setWeight(editWeight);
     if (editBirthday) setBirthday(editBirthday);
     setIsEditSheetVisible(false);
+
+    const patch: Record<string, any> = {};
+    if (editName.trim()) patch.name = editName.trim();
+    if (editCountry) patch.country = editCountry;
+    if (editLanguage) patch.language = editLanguage;
+    if (editHeight) patch.height = editHeight;
+    if (editWeight) patch.weight_pre_pregnancy = editWeight;
+    if (editBirthday) patch.date_of_birth = editBirthday.toISOString().split('T')[0];
+    if (Object.keys(patch).length > 0) {
+      ProfileService.patchProfile(patch).catch(() => {});
+    }
+    if (editLanguage) {
+      LanguageService.setLanguage(editLanguage).catch(() => {});
+    }
   };
 
   const handlePickPhotoCamera = () => {
@@ -971,11 +995,12 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   }), [theme]);
 
   return (
+    <React.Fragment>
     <SafeAreaView style={styles.container}>
       <BackButton onPress={onBack} />
       
       <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>Profile</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('profile.title')}</Text>
       </View>
 
       <ScrollView 
@@ -1018,23 +1043,23 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
           <View style={styles.detailsContainer}>
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>Country:</Text>
-              <Text style={styles.detailValue} allowFontScaling={false}>{profile.country || '-'}</Text>
+              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.country')}:</Text>
+              <Text style={styles.detailValue} allowFontScaling={false}>{countries.find(c => c.value === profile.country)?.label || profile.country || '-'}</Text>
             </View>
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>Area:</Text>
+              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.area')}:</Text>
               <Text style={styles.detailValue} allowFontScaling={false}>{profile.area || '-'}</Text>
             </View>
-            {/* <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>Language:</Text>
-              <Text style={styles.detailValue} allowFontScaling={false}>{profile.language || '-'}</Text>
-            </View> */}
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>Height:</Text>
+              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.language')}:</Text>
+              <Text style={styles.detailValue} allowFontScaling={false}>{languages.find(l => l.value === profile.language)?.label || profile.language || '-'}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.height')}:</Text>
               <Text style={styles.detailValue} allowFontScaling={false}>{profile.height ? `${profile.height} cm` : '-'}</Text>
             </View>
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>Weight:</Text>
+              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.weight')}:</Text>
               <Text style={styles.detailValue} allowFontScaling={false}>{profile.weight ? `${profile.weight} kg` : '-'}</Text>
             </View>
           </View>
@@ -1058,10 +1083,10 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 <Text style={styles.percentageText} allowFontScaling={false}>36%</Text>
               </View>
             </View>
-            <Text style={styles.digitalTwinTitle} allowFontScaling={false}>Mother's Digital twin</Text>
+            <Text style={styles.digitalTwinTitle} allowFontScaling={false}>{t('profile.mothers_digital_twin')}</Text>
           </View>
           <Text style={styles.digitalTwinDescription} allowFontScaling={false}>
-            Follow your digital twin step by step with accurate diagnosis and actionable insights.
+            {t('profile.digital_twin_description')}
           </Text>
         </TouchableOpacity>
 
@@ -1084,7 +1109,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 <Text style={styles.percentageText} allowFontScaling={false}>36%</Text>
               </View>
             </View>
-            <Text style={styles.babyTwinTitle} allowFontScaling={false}>Baby's Digital twin</Text>
+            <Text style={styles.babyTwinTitle} allowFontScaling={false}>{t('profile.babys_digital_twin')}</Text>
           </View>
          
         </TouchableOpacity>
@@ -1103,7 +1128,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.menuText} allowFontScaling={false}>Baby birthday</Text>
+              <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_baby_birthday')}</Text>
               {calculatedDueDate ? (
                 <Text style={styles.menuSubText} allowFontScaling={false}>{calculatedDueDate}</Text>
               ) : null}
@@ -1118,22 +1143,52 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
           <View style={styles.menuDivider} />
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.menuItem}
             activeOpacity={0.7}
             onPress={onNavigateToAppSettings}
           >
             <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faGear as any} 
-                size={20} 
+              <FontAwesomeIcon
+                icon={faGear as any}
+                size={20}
                 color={theme.colors.textPrimary}
               />
             </View>
-            <Text style={styles.menuText} allowFontScaling={false}>App settings</Text>
-            <FontAwesomeIcon 
-              icon={faChevronRight as any} 
-              size={14} 
+            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_app_settings')}</Text>
+            <FontAwesomeIcon
+              icon={faChevronRight as any}
+              size={14}
+              color={theme.colors.textSecondary}
+              style={styles.menuChevron}
+            />
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            activeOpacity={0.7}
+            onPress={() => {
+              setEditLanguage(profile.language || '');
+              setIsLanguagePickerFromMenu(true);
+              setIsLanguageSheetVisible(true);
+            }}
+          >
+            <View style={styles.menuIcon}>
+              <FontAwesomeIcon
+                icon={faGlobe as any}
+                size={20}
+                color={theme.colors.textPrimary}
+              />
+            </View>
+            <Text style={[styles.menuText, { flex: 1 }]} allowFontScaling={false}>{t('profile.language')}</Text>
+            <Text style={{ fontSize: 14, fontFamily: theme.typography.fontFamily.regular, color: theme.colors.textSecondary, marginRight: 4 }} allowFontScaling={false}>
+              {languages.find(l => l.value === profile.language)?.label || profile.language || ''}
+            </Text>
+            <FontAwesomeIcon
+              icon={faChevronRight as any}
+              size={14}
               color={theme.colors.textSecondary}
               style={styles.menuChevron}
             />
@@ -1153,7 +1208,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 color={theme.colors.textPrimary}
               />
             </View>
-            <Text style={styles.menuText} allowFontScaling={false}>Reminders</Text>
+            <Text style={styles.menuText} allowFontScaling={false}>{t('reminders.title')}</Text>
             <FontAwesomeIcon 
               icon={faChevronRight as any} 
               size={14} 
@@ -1176,7 +1231,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 color={theme.colors.textPrimary}
               />
             </View>
-            <Text style={styles.menuText} allowFontScaling={false}>Privacy settings</Text>
+            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_privacy')}</Text>
             <FontAwesomeIcon 
               icon={faChevronRight as any} 
               size={14} 
@@ -1187,19 +1242,42 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
           <View style={styles.menuDivider} />
 
-          <TouchableOpacity 
+          <TouchableOpacity
+            style={styles.menuItem}
+            activeOpacity={0.7}
+            onPress={onNavigateToSymptomsHistory}
+          >
+            <View style={styles.menuIcon}>
+              <FontAwesomeIcon
+                icon={faHeartPulse as any}
+                size={20}
+                color={theme.colors.textPrimary}
+              />
+            </View>
+            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_symptoms')}</Text>
+            <FontAwesomeIcon
+              icon={faChevronRight as any}
+              size={14}
+              color={theme.colors.textSecondary}
+              style={styles.menuChevron}
+            />
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
+          <TouchableOpacity
             style={styles.menuItem}
             activeOpacity={0.7}
             onPress={() => setIsHealthServiceSheetVisible(true)}
           >
             <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faHospital as any} 
-                size={20} 
+              <FontAwesomeIcon
+                icon={faHospital as any}
+                size={20}
                 color={theme.colors.textPrimary}
               />
             </View>
-            <Text style={styles.menuText} allowFontScaling={false}>Healthcare specialist services</Text>
+            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_healthcare')}</Text>
             <FontAwesomeIcon 
               icon={faChevronRight as any} 
               size={14} 
@@ -1222,7 +1300,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 color={theme.colors.textPrimary}
               />
             </View>
-            <Text style={styles.menuText} allowFontScaling={false}>Refer a Friend</Text>
+            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_refer')}</Text>
             <FontAwesomeIcon 
               icon={faChevronRight as any} 
               size={14} 
@@ -1248,7 +1326,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 color={'#FF4444'}
               />
             </View>
-            <Text style={[styles.menuText, { color: '#FF4444' }]} allowFontScaling={false}>Log Out</Text>
+            <Text style={[styles.menuText, { color: '#FF4444' }]} allowFontScaling={false}>{t('profile.menu_logout')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -1264,10 +1342,10 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           contentContainerStyle={styles.editSheetScrollContent}
         >
           {/* Name */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>Name</Text>
+          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.edit_name')}</Text>
           <Input
             title=""
-            placeholder="Enter name"
+            placeholder={t('profile.enter_name')}
             type="text"
             value={editName}
             onChangeText={setEditName}
@@ -1275,24 +1353,34 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
           <View style={styles.inputSpacing} />
 
-          {/* Country */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>Country</Text>
+          {/* Language */}
+          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.language')}</Text>
           <Dropdown
-            label="Select country"
-            value={COUNTRIES.find(c => c.id === editCountry)?.label || null}
+            label={t('profile.select_language')}
+            value={languages.find(l => l.value === editLanguage)?.label || null}
+            onPress={() => setIsLanguageSheetVisible(true)}
+          />
+
+          <View style={styles.inputSpacing} />
+
+          {/* Country */}
+          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.country')}</Text>
+          <Dropdown
+            label={t('profile.select_country')}
+            value={countries.find(c => c.value === editCountry)?.label || null}
             onPress={() => setIsCountrySheetVisible(true)}
           />
 
           {/* Area */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>Area</Text>
+          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.area')}</Text>
           <Dropdown
-            label="Select area type"
+            label={t('intro.step05_select_area')}
             value={AREA_TYPES.find(a => a.id === editArea)?.label || null}
             onPress={() => setIsAreaSheetVisible(true)}
           />
 
           {/* Height & Weight */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>Height & Weight</Text>
+          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('intro.step03_height_weight')}</Text>
           <TouchableOpacity style={styles.editPickerInputWrapper} onPress={() => setIsHWPickerVisible(true)} activeOpacity={0.7}>
             <View style={styles.editPickerShadow} />
             <View style={styles.editPickerInput}>
@@ -1307,7 +1395,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           </TouchableOpacity>
 
           {/* Birthday */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>Birthday</Text>
+          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('intro.step03_birthday')}</Text>
           <TouchableOpacity style={styles.editPickerInputWrapper} onPress={() => setIsBirthdayPickerVisible(true)} activeOpacity={0.7}>
             <View style={styles.editPickerShadow} />
             <View style={styles.editPickerInput}>
@@ -1322,21 +1410,47 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           </TouchableOpacity>
 
           <View style={{ marginTop: spacing('md') }}>
-            <Button title="Save" onPress={handleSaveProfile} />
+            <Button title={t('common.save')} onPress={handleSaveProfile} />
           </View>
           <View style={{ height: insets.bottom + spacing('lg') }} />
         </ScrollView>
       </BottomSheet>
 
+      {/* Language picker */}
+      <BottomSheet visible={isLanguageSheetVisible} onClose={() => { setIsLanguageSheetVisible(false); setIsLanguagePickerFromMenu(false); }}>
+        <View style={{ paddingBottom: spacing('xl') * 2 }}>
+          {languages.map((l) => (
+            <BottomSheetOption
+              key={l.value}
+              label={l.label}
+              selected={(isLanguagePickerFromMenu ? profile.language : editLanguage) === l.value}
+              onPress={() => {
+                setEditLanguage(l.value);
+                setIsLanguageSheetVisible(false);
+                if (isLanguagePickerFromMenu) {
+                  setIsLanguagePickerFromMenu(false);
+                  setIsChangingLanguage(true);
+                  setLanguage(l.value);
+                  LanguageService.setLanguage(l.value)
+                    .catch(() => {})
+                    .finally(() => setTimeout(() => setIsChangingLanguage(false), 300));
+                  ProfileService.patchProfile({ language: l.value }).catch(() => {});
+                }
+              }}
+            />
+          ))}
+        </View>
+      </BottomSheet>
+
       {/* Country picker */}
       <BottomSheet visible={isCountrySheetVisible} onClose={() => setIsCountrySheetVisible(false)}>
         <View style={{ paddingBottom: spacing('xl') * 2 }}>
-          {COUNTRIES.map((c) => (
+          {countries.map((c) => (
             <BottomSheetOption
-              key={c.id}
+              key={c.value}
               label={c.label}
-              selected={editCountry === c.id}
-              onPress={() => { setEditCountry(c.id); setIsCountrySheetVisible(false); }}
+              selected={editCountry === c.value}
+              onPress={() => { setEditCountry(c.value); setIsCountrySheetVisible(false); }}
             />
           ))}
         </View>
@@ -1374,10 +1488,10 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       />
 
       {/* Photo source picker */}
-      <BottomSheet visible={isPhotoSheetVisible} onClose={() => setIsPhotoSheetVisible(false)} title="Select Photo">
+      <BottomSheet visible={isPhotoSheetVisible} onClose={() => setIsPhotoSheetVisible(false)} title={t('profile.select_photo')}>
         <View style={{ paddingBottom: spacing('xl') * 2 }}>
-          <BottomSheetOption label="Take Photo" selected={false} onPress={handlePickPhotoCamera} />
-          <BottomSheetOption label="Choose from Library" selected={false} onPress={handlePickPhotoLibrary} />
+          <BottomSheetOption label={t('profile.take_photo')} selected={false} onPress={handlePickPhotoCamera} />
+          <BottomSheetOption label={t('profile.choose_library')} selected={false} onPress={handlePickPhotoLibrary} />
         </View>
       </BottomSheet>
 
@@ -1387,7 +1501,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         showHandle={true}
       >
         <View style={styles.healthServiceSheetHeader}>
-          <Text style={styles.healthServiceSheetTitle} allowFontScaling={false}>Specialist Services</Text>
+          <Text style={styles.healthServiceSheetTitle} allowFontScaling={false}>{t('profile.specialist_services')}</Text>
           <TouchableOpacity
             style={styles.healthServiceCloseButton}
             onPress={() => setIsHealthServiceSheetVisible(false)}
@@ -1448,9 +1562,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             {/* Card Content Overlay */}
             <View style={styles.healthServiceCardOverlay}>
               <View style={styles.healthServiceTextContainer}>
-                <Text style={styles.healthServiceTitle} allowFontScaling={false}>Healthcare specialist services</Text>
+                <Text style={styles.healthServiceTitle} allowFontScaling={false}>{t('profile.menu_healthcare')}</Text>
                 <Text style={styles.healthServiceSubtitle} allowFontScaling={false}>
-                  Let's Mama Air track everything to more healthcare services.
+                  {t('profile.healthcare_subtitle')}
                 </Text>
               </View>
 
@@ -1462,7 +1576,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   setIsHealthRequestSheetVisible(true);
                 }}
               >
-                <Text style={styles.healthServiceButtonText} allowFontScaling={false}>Request</Text>
+                <Text style={styles.healthServiceButtonText} allowFontScaling={false}>{t('profile.request')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1481,8 +1595,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           <View style={styles.healthRequestHeader}>
             <View style={styles.healthRequestHeaderSpacer} />
             <View style={styles.healthRequestHeaderCenter}>
-              <Text style={styles.healthRequestTitle} allowFontScaling={false}>Healthcare request</Text>
-              <Text style={styles.healthRequestSubtitle} allowFontScaling={false}>Day 4 / 19th Week</Text>
+              <Text style={styles.healthRequestTitle} allowFontScaling={false}>{t('profile.healthcare_request')}</Text>
+              <Text style={styles.healthRequestSubtitle} allowFontScaling={false}>{t('profile.healthcare_request_subtitle')}</Text>
             </View>
             <TouchableOpacity
               style={styles.healthRequestCloseButton}
@@ -1499,7 +1613,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
           <View style={styles.healthRequestDivider} />
 
-          <Text style={styles.healthRequestSectionTitle} allowFontScaling={false}>Services</Text>
+          <Text style={styles.healthRequestSectionTitle} allowFontScaling={false}>{t('profile.services')}</Text>
           <View style={styles.healthRequestServicesBox}>
             {[
               { id: 'emergency', label: 'Emergency', icon: '🚑' },
@@ -1554,9 +1668,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 <FontAwesomeIcon icon={faShield as any} size={ms(18)} color="#2E6BFF" />
               </View>
               <View style={styles.healthRequestConsentText}>
-                <Text style={styles.healthRequestConsentLabel} allowFontScaling={false}>Data Consent Agreement</Text>
+                <Text style={styles.healthRequestConsentLabel} allowFontScaling={false}>{t('intro.step14_consent_label')}</Text>
                 <Text style={styles.healthRequestConsentSubtitle} allowFontScaling={false}>
-                  I consent to the processing of my data.
+                  {t('intro.step14_consent_subtitle')}
                 </Text>
               </View>
               <View style={styles.healthRequestRadioOuter}>
@@ -1570,11 +1684,11 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             activeOpacity={0.7}
             onPress={() => setIsAgreementSheetVisible(true)}
           >
-            <Text style={styles.healthRequestAgreementLinkText} allowFontScaling={false}>Agreement Content</Text>
+            <Text style={styles.healthRequestAgreementLinkText} allowFontScaling={false}>{t('profile.agreement_content')}</Text>
           </TouchableOpacity>
 
           <View style={styles.healthRequestEmailContainer}>
-            <Text style={styles.healthRequestEmailLabel} allowFontScaling={false}>Email</Text>
+            <Text style={styles.healthRequestEmailLabel} allowFontScaling={false}>{t('auth.email')}</Text>
             <View style={styles.healthRequestEmailBox}>
               <Text style={styles.healthRequestEmailText} allowFontScaling={false}>
                 {profile.email || 'mary.anderson@gmail.com'}
@@ -1591,11 +1705,11 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 style={styles.healthRequestCancelButton}
                 activeOpacity={0.7}
               >
-                <Text style={styles.healthRequestCancelText} allowFontScaling={false}>Cancel</Text>
+                <Text style={styles.healthRequestCancelText} allowFontScaling={false}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <View style={styles.healthRequestSubmitWrapper}>
                 <Button
-                  title="Request"
+                  title={t('profile.request')}
                   onPress={() => {
                     setIsHealthRequestSheetVisible(false);
                     setTimeout(() => setIsSuccessDialogVisible(true), 400);
@@ -1620,7 +1734,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           contentContainerStyle={styles.agreementScrollContent}
         >
           <View style={styles.agreementHeader}>
-            <Text style={styles.agreementTitle} allowFontScaling={false}>Agreement</Text>
+            <Text style={styles.agreementTitle} allowFontScaling={false}>{t('profile.agreement')}</Text>
             <TouchableOpacity
               style={styles.agreementCloseButton}
               onPress={() => setIsAgreementSheetVisible(false)}
@@ -1635,7 +1749,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           </View>
 
           <Text style={styles.agreementServicesTitle} allowFontScaling={false}>
-            By activating this consent, you will get these services:
+            {t('intro.step14_services_title')}
           </Text>
 
           <View style={styles.agreementServicesBox}>
@@ -1646,34 +1760,24 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               persistentScrollbar={true}
             >
               <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>1. Emergency Care</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>
-                  Provides immediate medical attention to people experiencing sudden, serious illness or injury to stabilize their condition and prevent further harm.
-                </Text>
+                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service1_title')}</Text>
+                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service1_desc')}</Text>
               </View>
               <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>2. Medication prescription</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>
-                  Allows healthcare providers to prescribe medications based on your medical condition and needs to ensure proper treatment and recovery.
-                </Text>
+                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service2_title')}</Text>
+                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service2_desc')}</Text>
               </View>
               <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>3. Doctor or midwife appointment</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>
-                  Enables scheduling and management of appointments with healthcare professionals to monitor your health and receive ongoing care.
-                </Text>
+                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service3_title')}</Text>
+                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service3_desc')}</Text>
               </View>
               <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>4. Health monitoring</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>
-                  Continuous tracking of vital signs and health metrics to identify any changes or concerns early.
-                </Text>
+                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service4_title')}</Text>
+                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service4_desc')}</Text>
               </View>
               <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>5. Medical records access</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>
-                  Provides secure access to your medical history and records for better coordination of care.
-                </Text>
+                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service5_title')}</Text>
+                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service5_desc')}</Text>
               </View>
             </ScrollView>
           </View>
@@ -1692,11 +1796,11 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 style={styles.agreementRejectButton}
                 activeOpacity={0.7}
               >
-                <Text style={styles.agreementRejectText} allowFontScaling={false}>Reject</Text>
+                <Text style={styles.agreementRejectText} allowFontScaling={false}>{t('profile.reject')}</Text>
               </TouchableOpacity>
               <View style={styles.agreementAcceptWrapper}>
                 <Button
-                  title="Accept"
+                  title={t('profile.accept')}
                   onPress={() => {
                     setIsAgreementAccepted(true);
                     setIsAgreementSheetVisible(false);
@@ -1745,9 +1849,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               />
             </View>
 
-            <Text style={styles.successTitle} allowFontScaling={false}>Request Saved</Text>
+            <Text style={styles.successTitle} allowFontScaling={false}>{t('profile.request_saved')}</Text>
             <Text style={styles.successMessage} allowFontScaling={false}>
-              Stay tuned, we will send you an{'\n'}email once your request approved
+              {t('profile.request_saved_message')}
             </Text>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -1766,6 +1870,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         />
       </Modal>
     </SafeAreaView>
+    <TransitionLoader visible={isChangingLanguage} />
+    </React.Fragment>
   );
 };
 

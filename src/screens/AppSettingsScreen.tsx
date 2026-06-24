@@ -16,6 +16,7 @@ import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { useTheme, spacing, radius } from '../theme';
 import { BackButton, UpgradeSubscription, BottomSheet, Button, BottomSheetOption, useToast } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
+import { scheduleReminders } from '../services/NotificationService';
 import { getDeviceTimezone, getTimezoneList } from '../utils/timezoneUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { vs, s } from '../utils/responsive';
@@ -50,6 +51,10 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
       const settings = await notifee.requestPermission();
       if (settings.authorizationStatus >= AuthorizationStatus.AUTHORIZED) {
         setShowNotifSheet(false);
+        const fh = profile.notifTimeFromHour ?? 9;
+        const fm = profile.notifTimeFromMinute ?? 0;
+        const days = profile.notifDays ?? '1111111';
+        scheduleReminders(fh, fm, days).catch(() => {});
       } else {
         showToast({
           type: 'error',

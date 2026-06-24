@@ -12,10 +12,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, G } from 'react-native-svg';
 import { useTheme, spacing, radius } from '../../theme';
-import { Input, Button, OrangeHalo, type InputRef, useToast } from '../../components/ui';
+import { Input, Button, OrangeHalo, type InputRef, useToast, LanguagePickerSheet } from '../../components/ui';
 import { AuthService } from '../../services/api/AuthService';
 import { getAuthErrorMessage } from '../../utils/authErrors';
 import { s, vs, ms, mvs } from '../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUserStore } from '../../store/useUserStore';
 import {
@@ -24,6 +25,9 @@ import {
   isErrorWithCode,
   isSuccessResponse,
 } from '@react-native-google-signin/google-signin';
+import { DEV_MODE } from '../../config/dev';
+import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
+import { faGlobe } from '@fortawesome/free-solid-svg-icons';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -42,12 +46,15 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
 }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [devLoading, setDevLoading] = useState(false);
   const setTokens = useAuthStore(state => state.setTokens);
-  const setEmailStore = useUserStore(state => state.setEmail);
+  const { setEmail: setEmailStore, setLanguage, profile } = useUserStore();
+  const [showLangSheet, setShowLangSheet] = useState(true);
 
   const emailInputRef = useRef<InputRef>(null);
   const passwordInputRef = useRef<InputRef>(null);
@@ -82,8 +89,8 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
         } else {
             showToast({
               type: 'error',
-              title: 'Google sign-in',
-              message: 'Could not complete sign-in. Please try again.',
+              title: t('auth.google_sign_in_error'),
+              message: t('auth.google_sign_in_failed'),
             });
         }
       } else {
@@ -101,24 +108,24 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
             showToast({
               type: 'error',
-              title: 'Google sign-in',
-              message: 'Google Play Services is not available. Please update your device.',
+              title: t('auth.google_sign_in_error'),
+              message: t('auth.google_play_services_error'),
             });
             break;
           default:
             console.error('Google Sign-In Error', error);
             showToast({
               type: 'error',
-              title: 'Google sign-in',
-              message: 'Could not sign in with Google. Please try again.',
+              title: t('auth.google_sign_in_error'),
+              message: t('auth.google_sign_in_failed'),
             });
         }
       } else {
         console.error('Google Sign-In Error', error);
         showToast({
           type: 'error',
-          title: 'Google sign-in',
-          message: 'Could not sign in with Google. Please try again.',
+          title: t('auth.google_sign_in_error'),
+          message: t('auth.google_sign_in_failed'),
         });
       }
     } finally {
@@ -130,6 +137,18 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
+    },
+    langButton: {
+      position: 'absolute',
+      top: spacing('lg'),
+      right: spacing('md'),
+      zIndex: 10,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: theme.colors.orange100,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     scrollContent: {
       flexGrow: 1,
@@ -220,6 +239,21 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
       color: theme.colors.textPrimary,
       marginLeft: spacing('md'),
     },
+    devLoginButton: {
+      marginTop: spacing('sm'),
+      paddingVertical: 10,
+      paddingHorizontal: spacing('md'),
+      borderRadius: 8,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: '#FF6900',
+      alignItems: 'center',
+    },
+    devLoginText: {
+      fontSize: 13,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: '#FF6900',
+    },
     signUpContainer: {
       alignItems: 'center',
       marginTop: spacing('sm'),
@@ -240,34 +274,56 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
       try {
         setLoading(true);
         const response = await AuthService.login(email.trim(), password.trim());
-        console.log('Login response:', response);
 
         if (response.access && response.refresh) {
           setTokens(response.access, response.refresh);
           setEmailStore(email.trim());
           showToast({
             type: 'success',
-            title: 'Logged in',
-            message: 'You have logged in successfully.',
+            title: t('auth.logged_in_title'),
+            message: t('auth.logged_in_message'),
           });
           onLogin?.(email, password);
         } else {
           showToast({
             type: 'error',
-            title: 'Login failed',
-            message: 'Something went wrong. Please try again.',
+            title: t('auth.login_failed'),
+            message: t('auth.login_error'),
           });
         }
       } catch (error: any) {
         console.error('Login error:', error);
         showToast({
           type: 'error',
-          title: 'Login failed',
+          title: t('auth.login_failed'),
           message: getAuthErrorMessage(error, 'login'),
         });
       } finally {
         setLoading(false);
       }
+    }
+  };
+
+  // DEV ONLY — remove before production
+  const handleDevLogin = async () => {
+    const DEV_EMAIL = 'emulator@dev.local';
+    const DEV_PASS = 'EmulatorDev2026!';
+    setDevLoading(true);
+    try {
+      let response = await AuthService.login(DEV_EMAIL, DEV_PASS).catch(() => null);
+      if (!response?.access) {
+        await AuthService.register(DEV_EMAIL, DEV_PASS).catch(() => {});
+        response = await AuthService.login(DEV_EMAIL, DEV_PASS);
+      }
+      if (response?.access && response?.refresh) {
+        setTokens(response.access, response.refresh);
+        setEmailStore(DEV_EMAIL);
+        onLogin?.(DEV_EMAIL, DEV_PASS);
+      }
+    } catch {
+      showToast({ type: 'error', title: 'Dev login failed', message: 'Check API connectivity.' });
+    } finally {
+      setDevLoading(false);
     }
   };
 
@@ -296,6 +352,15 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Language picker trigger */}
+      <TouchableOpacity
+        style={styles.langButton}
+        onPress={() => setShowLangSheet(true)}
+        activeOpacity={0.7}
+      >
+        <FontAwesomeIcon icon={faGlobe as any} size={16} color={theme.colors.orange500} />
+      </TouchableOpacity>
+
       {/* Background halo */}
       <OrangeHalo position="center" />
 
@@ -316,14 +381,14 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
             </View>
 
             {/* Welcome Text */}
-            <Text style={styles.welcomeText} allowFontScaling={false}>Welcome Back!</Text>
+            <Text style={styles.welcomeText} allowFontScaling={false}>{t('auth.welcome_back')}</Text>
 
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Input
                 ref={emailInputRef}
-                title="Email"
-                placeholder="yourmain@some.com"
+                title={t('auth.email')}
+                placeholder={t('auth.email_placeholder')}
                 type="email"
                 value={email}
                 onChangeText={setEmail}
@@ -335,8 +400,8 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
             <View style={styles.inputContainer}>
               <Input
                 ref={passwordInputRef}
-                title="Password"
-                placeholder="Password"
+                title={t('auth.password')}
+                placeholder={t('auth.password_placeholder')}
                 type="password"
                 value={password}
                 onChangeText={setPassword}
@@ -349,14 +414,14 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
               onPress={onForgotPassword}
               activeOpacity={0.7}
             >
-              <Text style={styles.forgotPasswordText} allowFontScaling={false}>Forgot password? </Text>
-              <Text style={styles.resetHereText} allowFontScaling={false}>Reset here</Text>
+              <Text style={styles.forgotPasswordText} allowFontScaling={false}>{t('auth.forgot_password_prompt')} </Text>
+              <Text style={styles.resetHereText} allowFontScaling={false}>{t('auth.reset_here')}</Text>
             </TouchableOpacity>
 
             {/* Log in Button */}
             <View style={styles.loginButtonContainer}>
               <Button
-                title={loading ? "Logging in..." : "Log in"}
+                title={loading ? t('auth.logging_in') : t('auth.log_in')}
                 onPress={handleLogin}
                 disabled={loading || !email.trim() || !password.trim()}
               />
@@ -368,7 +433,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
               onPress={onSignUp}
               activeOpacity={0.7}
             >
-              <Text style={styles.signUpText} allowFontScaling={false}>Create new account</Text>
+              <Text style={styles.signUpText} allowFontScaling={false}>{t('auth.create_new_account')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -377,7 +442,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
             {/* Separator */}
             <View style={styles.separatorContainer}>
               <View style={styles.separatorLine} />
-              <Text style={styles.separatorText} allowFontScaling={false}>Or</Text>
+              <Text style={styles.separatorText} allowFontScaling={false}>{t('common.or')}</Text>
               <View style={styles.separatorLine} />
             </View>
 
@@ -388,11 +453,35 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
               activeOpacity={0.7}
             >
               <GoogleIcon />
-              <Text style={styles.googleButtonText} allowFontScaling={false}>Continue with Google</Text>
+              <Text style={styles.googleButtonText} allowFontScaling={false}>{t('auth.continue_with_google')}</Text>
             </TouchableOpacity>
+
+            {/* ⚠️ DEV ONLY — controlled by DEV_ENABLED in src/config/dev.ts */}
+            {DEV_MODE && (
+              <TouchableOpacity
+                style={styles.devLoginButton}
+                onPress={handleDevLogin}
+                activeOpacity={0.7}
+                disabled={devLoading}
+              >
+                <Text style={styles.devLoginText} allowFontScaling={false}>
+                  {devLoading ? 'Logging in...' : '[DEV] Emulator Login'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </ScrollView>
+
+      <LanguagePickerSheet
+        visible={showLangSheet}
+        selectedLanguage={profile.language || null}
+        onConfirm={(lang) => {
+          setLanguage(lang);
+          setShowLangSheet(false);
+        }}
+        onClose={() => setShowLangSheet(false)}
+      />
     </SafeAreaView>
   );
 };

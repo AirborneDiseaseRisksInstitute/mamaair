@@ -23,11 +23,9 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
       // DEV MODE: auto-login to bypass the login UI (useful for Genymotion)
       if (DEV_BYPASS_AUTH && !activeToken) {
         try {
-          console.log('[DEV] Auto-logging in with dev credentials...');
           const response = await AuthService.login(DEV_EMAIL, DEV_PASSWORD);
           setTokens(response.access, response.refresh);
           activeToken = response.access;
-          console.log('[DEV] Auto-login successful');
         } catch (e) {
           console.error('[DEV] Auto-login failed:', e);
           onComplete('Auth');
@@ -44,79 +42,41 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
       try {
         // 2. Fetch Profile from API
         const profileData = await AuthService.getProfile();
-        console.log('Profile data fetched:', profileData);
 
         // 2.1 Fetch Lifestyle from API
         let lifestyleData: any = {};
         try {
             lifestyleData = await LifestyleService.getLifestyle();
-            console.log('Lifestyle data fetched:', lifestyleData);
-        } catch (e) {
-            console.log('Lifestyle data not found or failed, assuming empty', e);
+        } catch {
+            // silently ignore — lifestyle may not exist yet
         }
-        
-        // Map snake_case to camelCase and Reverse Map Enums
-        
-        // Reverse Maps
-        const countryReverseMap: Record<string, string> = {
-            'NG': 'nigeria',
-            'KE': 'kenya',
-            'other': 'others',
-        };
 
-        const languageReverseMap: Record<string, string> = {
-            'en': 'english',
-            'fr': 'french',
-            'sw': 'swahili',
-            // 'pl': 'polish', // Not in frontend options yet
-        };
-
-        const workTypeReverseMap: Record<string, string> = {
-            'Desk': 'desk',
-            'Standing': 'standing',
-            'Night Shift': 'night',
-            'Physical': 'physical',
-            'Domestic': 'home',
-            'Care': 'home', // Approximate mapping
-            'Field': 'physical', // Approximate mapping
-        };
-
-        const cookingMethodReverseMap: Record<string, string> = {
-            'gas': 'gas',
-            'charcoal': 'charcoal',
-            'electric': 'gas', // Approximate
-            'wood': 'charcoal', // Approximate
-        };
-
+        // ventilation_level (API) → ventilation (local store)
         const ventilationReverseMap: Record<string, string> = {
             'high': 'good',
             'medium': 'moderate',
             'low': 'poor',
         };
 
+        // Profile fields — API values are stored directly, no enum conversion needed
         const mappedProfile = {
             ...profileData,
-            pregnancyWeek: profileData.pregnancy_week || profileData.pregnancyWeek,
-            birthday: profileData.date_of_birth || profileData.birthday,
-            timezone: profileData.timezone,
-            // Use mapped values or fallback to original (in case of direct match or new values)
-            country: countryReverseMap[profileData.country] || profileData.country,
-            language: languageReverseMap[profileData.language] || profileData.language,
+            pregnancyWeek: profileData.week_of_pregnancy ?? profileData.pregnancyWeek,
+            birthday: profileData.date_of_birth ?? profileData.birthday,
+            // country, language — stored as API values (NG, KE, en, fr, etc.)
         };
 
         const mappedLifestyle = {
             sleepHours: lifestyleData.average_sleep_hours,
-            workType: workTypeReverseMap[lifestyleData.work_type] || lifestyleData.work_type,
+            workType: lifestyleData.work_type,
             diet: lifestyleData.diet_type,
-            cookingMethod: cookingMethodReverseMap[lifestyleData.cooking_method] || lifestyleData.cooking_method,
-            activeHours: lifestyleData.activity_duration_minutes ? lifestyleData.activity_duration_minutes / 60 : undefined,
-            ventilation: lifestyleData.ventilation || ventilationReverseMap[lifestyleData.ventilation_level],
+            cookingMethod: lifestyleData.cooking_method,
+            activeHours: lifestyleData.activity_duration_minutes
+                ? lifestyleData.activity_duration_minutes / 60
+                : undefined,
+            ventilation: ventilationReverseMap[lifestyleData.ventilation_level],
             timeSpent: lifestyleData.time_spent,
             timeOfDay: lifestyleData.time_of_day,
-            // Extra fields stored in lifestyle but used in frontend profile state
-            // Note: If backend doesn't return these yet, we might lose them if we overwrite blindly.
-            // But since we use "updateIfMissing", we are safe for local data.
-            // However, if user logged in on new device, we need these from server.
         };
         
         // Get current local profile state non-reactively to avoid loops
@@ -140,7 +100,13 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         updateIfMissing('birthday', mappedProfile.birthday);
         updateIfMissing('height', mappedProfile.height);
         updateIfMissing('weight', mappedProfile.weight_pre_pregnancy || mappedProfile.weight);
-        updateIfMissing('language', mappedProfile.language);
+        // Language is explicitly chosen by the user in IntroStep04 or Profile Settings.
+        // The API returns 'en' as a default for all new users, which would cause IntroStep04
+        // to be skipped — so we only sync language from server if the user already has a name
+        // (meaning they've been through intro and have an established profile).
+        if (mergedProfile.name) {
+          updateIfMissing('language', mappedProfile.language);
+        }
         updateIfMissing('country', mappedProfile.country);
         updateIfMissing('timezone', mappedProfile.timezone);
         // updateIfMissing('area', mappedProfile.area); // Not in profile response?
@@ -186,7 +152,6 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
             mergedProfile.ventilation;
 
         if (isOnboardingComplete) {
-             console.log('User has complete profile data, skipping intro...');
              setAgreementAccepted(true);
              onComplete('Home');
              return;

@@ -23,11 +23,13 @@ import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
 import { useTheme, spacing } from '../theme';
 import { useUserStore } from '../store/useUserStore';
 import { BIRTHDAY_SVG, SUN_SVG, CLOUD_SVG } from '../utils/svgIcons';
-import { WeekCycleView, MainHeader, FloatingActionButton } from '../components/ui';
+import { WeekCycleView, MainHeader, FloatingActionButton, AccessLocationBottomSheet, TransitionLoader } from '../components/ui';
+import { locationTracker } from '../services/tracking/LocationTracker';
 import { SummaryService, SummaryResponse } from '../services/api/SummaryService';
 import { ProfileService } from '../services/api/ProfileService';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 import { AdsScreen } from './AdsScreen';
+import { useTranslation } from 'react-i18next';
 
 const SUN_SIZE = 52;
 const CLOUD_SIZE = 32;
@@ -39,11 +41,6 @@ const CARD_HEIGHT = CARD_WIDTH * 0.55;
 const ICON_SIZE = CARD_WIDTH * 0.20; // icon circle
 const NOTCH_DEPTH = ICON_SIZE * 0.7; // notch depth - creates gap
 
-const getOrdinalSuffix = (n: number) => {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
-};
 
 const HEADER_MARGIN_TOP = ICON_SIZE / 2;
 const HEADER_MARGIN_BOTTOM = spacing('lg');
@@ -64,6 +61,7 @@ interface WeekData {
   id: string;
   title: string;
   description: string;
+  isApiText?: boolean;
   centerImage?: any;
   circleIcons?: Array<{ index: number; iconPath?: string; percentage?: number }>;
   weekDays: Array<{
@@ -1208,6 +1206,7 @@ const topDecoStyles = StyleSheet.create({
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNavigateToProfile, onNavigateToBabyStatus, onNavigateToPlanBirthday }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const flatListRef = useRef<FlatList>(null);
   
   // Active week state - can be loaded from storage (MMKV) on mount
@@ -1228,6 +1227,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   const [headerHeight, setHeaderHeight] = useState(0);
   const [weekItemHeight, setWeekItemHeight] = useState(0);
   const [showTodayAds, setShowTodayAds] = useState(false);
+  const [isNavigatingToToday, setIsNavigatingToToday] = useState(false);
+  const [showLocationSheet, setShowLocationSheet] = useState(false);
+  const [birthdayCardHeight, setBirthdayCardHeight] = useState(CARD_HEIGHT);
   const totalWeeks = weeksData.length;
 
   // Fetch API Data
@@ -1255,7 +1257,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
           if (updatedWeeksData[weekIndex] && summary.week_info?.text) {
             updatedWeeksData[weekIndex] = {
               ...updatedWeeksData[weekIndex],
-              description: summary.week_info.text
+              description: summary.week_info.text,
+              isApiText: true,
             };
           }
 
@@ -1329,9 +1332,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       alignItems: 'center',
     },
     birthdayCardContainer: {
-      position: 'relative',
       width: CARD_WIDTH,
-      height: CARD_HEIGHT,
+      minHeight: CARD_HEIGHT,
       marginTop: HEADER_CARD_MARGIN_TOP,
     },
     iconCircleContainer: {
@@ -1348,13 +1350,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       elevation: 8,
     },
     cardOverlay: {
-      position: 'absolute',
-      top: NOTCH_DEPTH + 20,
-      left: 0,
-      right: 0,
-      bottom: 0,
       alignItems: 'center',
-      justifyContent: 'center',
+      paddingTop: NOTCH_DEPTH + 20,
+      paddingBottom: spacing('xl'),
       paddingHorizontal: spacing('lg'),
     },
     textContainer: {
@@ -1379,14 +1377,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
     planButton: {
       backgroundColor: '#FFFFFF',
       borderRadius: 30,
-      paddingVertical: 14,
-      paddingHorizontal: 36,
+      paddingVertical: 12,
+      paddingHorizontal: 28,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.1,
       shadowRadius: 4,
       elevation: 3,
-      marginBottom: HEADER_BUTTON_MARGIN_BOTTOM
     },
     planButtonText: {
       color: theme.colors.orange500,
@@ -1400,6 +1397,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       justifyContent: 'center',
       alignItems: 'center',
       flexDirection: 'column-reverse',
+    },
+    emptyStateBanner: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing('sm'),
+      backgroundColor: '#FFF8F0',
+      borderWidth: 1,
+      borderColor: '#FFD9B3',
+      borderRadius: 12,
+      padding: spacing('md'),
+      marginHorizontal: spacing('md'),
+      marginTop: spacing('md'),
+    },
+    emptyStateBannerIcon: {
+      fontSize: 24,
+    },
+    emptyStateBannerTitle: {
+      fontSize: 14,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.textPrimary,
+      marginBottom: 4,
+    },
+    emptyStateBannerSubtitle: {
+      fontSize: 13,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.neutral500,
+      lineHeight: 18,
     },
     fixedBackground: {
       position: 'absolute',
@@ -1430,10 +1454,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   }, [weekItemHeight]);
 
   const renderHeader = useCallback(() => (
-    <View style={styles.birthdayCardWrapper} onLayout={handleHeaderLayout}>
-      <View style={styles.birthdayCardContainer}>
-        {/* SVG Background with curved top */}
-        <Svg width={CARD_WIDTH} height={CARD_HEIGHT} style={{ position: 'absolute' }}>
+    <View onLayout={handleHeaderLayout}>
+      {!summaryData && (
+        <TouchableOpacity
+          style={styles.emptyStateBanner}
+          onPress={() => setShowLocationSheet(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.emptyStateBannerIcon} allowFontScaling={false}>📍</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.emptyStateBannerTitle} allowFontScaling={false}>
+              {t('home.location_banner_title')}
+            </Text>
+            <Text style={styles.emptyStateBannerSubtitle} allowFontScaling={false}>
+              {t('home.location_banner_subtitle')}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
+    <View style={styles.birthdayCardWrapper}>
+      <View
+        style={styles.birthdayCardContainer}
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0 && h !== birthdayCardHeight) setBirthdayCardHeight(h);
+        }}
+      >
+        {/* SVG Background with curved notch — height tracks actual card height */}
+        <Svg width={CARD_WIDTH} height={birthdayCardHeight} style={{ position: 'absolute', top: 0, left: 0 }}>
           <Defs>
             <LinearGradient id="cardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
               <Stop offset="0%" stopColor="#FFB86A" />
@@ -1450,10 +1498,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
               C ${CARD_WIDTH * 0.62} ${NOTCH_DEPTH * 0.1}, ${CARD_WIDTH * 0.65} 0, ${CARD_WIDTH * 0.7} 0
               L ${CARD_WIDTH - 20} 0
               Q ${CARD_WIDTH} 0, ${CARD_WIDTH} 20
-              L ${CARD_WIDTH} ${CARD_HEIGHT - 20}
-              Q ${CARD_WIDTH} ${CARD_HEIGHT}, ${CARD_WIDTH - 20} ${CARD_HEIGHT}
-              L 20 ${CARD_HEIGHT}
-              Q 0 ${CARD_HEIGHT}, 0 ${CARD_HEIGHT - 20}
+              L ${CARD_WIDTH} ${birthdayCardHeight - 20}
+              Q ${CARD_WIDTH} ${birthdayCardHeight}, ${CARD_WIDTH - 20} ${birthdayCardHeight}
+              L 20 ${birthdayCardHeight}
+              Q 0 ${birthdayCardHeight}, 0 ${birthdayCardHeight - 20}
               L 0 20
               Q 0 0, 20 0
               Z
@@ -1467,32 +1515,47 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
           <SvgXml xml={BIRTHDAY_SVG} width={ICON_SIZE * 0.55} height={ICON_SIZE * 0.65} />
         </View>
 
-        {/* Card Content Overlay */}
+        {/* Card Content — normal flow so card expands with content */}
         <View style={styles.cardOverlay}>
           <View style={styles.textContainer}>
-            <Text style={styles.title} allowFontScaling={false}>Pick your baby's birthday</Text>
+            <Text style={styles.title} allowFontScaling={false}>{t('home.pick_birthday_title')}</Text>
             <Text style={styles.subtitle} allowFontScaling={false}>
-              Pregnancy cycle is over and now you{'\n'}can pick birth date
+              {t('home.pick_birthday_subtitle')}
             </Text>
           </View>
 
           <TouchableOpacity style={styles.planButton} onPress={onNavigateToPlanBirthday} activeOpacity={0.7}>
-            <Text style={styles.planButtonText} allowFontScaling={false}>Plan Birthday</Text>
+            <Text style={styles.planButtonText} allowFontScaling={false}>{t('home.plan_birthday')}</Text>
           </TouchableOpacity>
         </View>
       </View>
     </View>
-  ), [styles, handleHeaderLayout, onNavigateToPlanBirthday]);
+    </View>
+  ), [styles, handleHeaderLayout, onNavigateToPlanBirthday, summaryData, t, setShowLocationSheet, birthdayCardHeight, setBirthdayCardHeight]);
 
   const handleNavigateToToday = useCallback(() => {
-    if (showTodayAds) return;
-    setShowTodayAds(true);
-  }, [showTodayAds]);
+    if (showTodayAds || isNavigatingToToday) return;
+    setIsNavigatingToToday(true);
+    setTimeout(() => {
+      setIsNavigatingToToday(false);
+      setShowTodayAds(true);
+    }, 350);
+  }, [showTodayAds, isNavigatingToToday]);
 
   // Memoize the render function for week items
   // Note: In reversed array, index 0 = week 40, so active week index calculation:
   // If activeWeek = 1, then in reversed array it's at index (40 - 1) = 39
   // If activeWeek = 40, then in reversed array it's at index (40 - 40) = 0
+  const getWeekDescKey = useCallback((week: number): string => {
+    if (week <= 8) return `home.week_desc_w${String(week).padStart(2, '0')}`;
+    if (week <= 10) return 'home.week_desc_w09';
+    if (week === 11) return 'home.week_desc_w11';
+    if (week === 12) return 'home.week_desc_w12';
+    if (week === 13) return 'home.week_desc_w13';
+    if (week === 14) return 'home.week_desc_w14';
+    return 'home.week_desc_w15';
+  }, []);
+
   const renderWeekItem: ListRenderItem<WeekData> = useCallback(({ item, index }) => {
     // Calculate if this item is the active week
     // In reversed array: index = totalWeeks - weekNumber
@@ -1508,6 +1571,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
     // - All days in weeks before activeWeek => missed
     // - In activeWeek: days before today => missed, today => start
     // - Future weeks keep their original missed state
+    const DAY_KEYS = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'] as const;
     const updatedWeekDays = item.weekDays.map((dayData, dayIndex) => {
       const isBeforeToday =
         weekNumber < activeWeek ||
@@ -1520,6 +1584,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
 
       return {
         ...dayData,
+        day: t(`common.${DAY_KEYS[dayIndex]}`),
         isStartDay,
         isMissed,
       };
@@ -1532,8 +1597,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
     return (
       <View style={styles.weekItem} onLayout={index === 0 ? handleWeekItemLayout : undefined}>
         <WeekCycleView
-          title={item.title}
-          description={item.description}
+          title={t('home.week_label', { week: weekNumber })}
+          description={item.isApiText ? item.description : t(getWeekDescKey(weekNumber))}
           centerImage={item.centerImage}
           circleIcons={item.circleIcons}
           weekDays={updatedWeekDays}
@@ -1544,7 +1609,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
         />
       </View>
     );
-  }, [styles.weekItem, handleNavigateToToday, onNavigateToBabyStatus, handleWeekItemLayout, activeWeek, totalWeeks, getTodayDayOfWeek]);
+  }, [styles.weekItem, handleNavigateToToday, onNavigateToBabyStatus, handleWeekItemLayout, activeWeek, totalWeeks, getTodayDayOfWeek, t, getWeekDescKey]);
 
   // Memoize key extractor
   const keyExtractor = useCallback((item: WeekData) => item.id, []);
@@ -1579,46 +1644,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   // Scroll to active week when layout is ready
   useEffect(() => {
     if (isLayoutReady && flatListRef.current && activeWeek >= 1 && activeWeek <= totalWeeks) {
-      console.log(`[HomeScreen] Scrolling to activeWeek: ${activeWeek}, calculated index: ${activeWeekIndex}`);
-      console.log(`[HomeScreen] Reversed array: first item is "${reversedWeeksData[0]?.title}", last item is "${reversedWeeksData[reversedWeeksData.length - 1]?.title}"`);
-      
-      // Multiple attempts with increasing delays to ensure proper rendering
       const attemptScroll = (attempt: number = 1) => {
         const delay = attempt * 300;
         setTimeout(() => {
           try {
-            console.log(`[HomeScreen] Scroll attempt ${attempt}, scrolling to index ${activeWeekIndex}`);
             flatListRef.current?.scrollToIndex({
               index: activeWeekIndex,
-              animated: attempt === 1, // Only animate first attempt
+              animated: attempt === 1,
               viewPosition: 0,
-              viewOffset: WEEK_CARD_TEXT_SECTION_HEIGHT, // Scroll more so active week card is in view (opposite of subtract)
+              viewOffset: WEEK_CARD_TEXT_SECTION_HEIGHT,
             });
-          } catch (error) {
-            console.log(`[HomeScreen] ScrollToIndex failed on attempt ${attempt}, using scrollToOffset fallback`, error);
+          } catch {
             const layout = getItemLayout(null, activeWeekIndex);
             const offsetCorrected = layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
-            console.log(`[HomeScreen] Using offset: ${offsetCorrected} (raw: ${layout.offset})`);
             flatListRef.current?.scrollToOffset({
               offset: offsetCorrected,
               animated: attempt === 1,
             });
-            
-            // Retry if first attempt failed
             if (attempt < 3) {
               attemptScroll(attempt + 1);
             }
           }
         }, delay);
       };
-      
       attemptScroll(1);
     }
   }, [isLayoutReady, activeWeekIndex, activeWeek, getItemLayout, reversedWeeksData, totalWeeks]);
 
   // Handle scroll to index errors with better retry logic
   const handleScrollToIndexFailed = useCallback((info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
-    console.log('ScrollToIndexFailed:', info);
     const layout = getItemLayout(null, info.index);
     const offsetCorrected = layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
     setTimeout(() => {
@@ -1667,7 +1721,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       </View>
       <HomeTopDecorations />
       <MainHeader 
-        weekNumber={`${activeWeek}${getOrdinalSuffix(activeWeek)} Week`}
+        weekNumber={t('home.week_label', { week: activeWeek })}
         icons={[
           { type: 'food', count: 0 },
           { type: 'exercise', count: 0 },
@@ -1686,25 +1740,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
         contentContainerStyle={{ paddingBottom: spacing('xl') }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
-        windowSize={11}
-        initialNumToRender={Math.min(activeWeekIndex + 3, 10)}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        initialNumToRender={Math.min(activeWeekIndex + 3, 6)}
         getItemLayout={getItemLayout}
         onContentSizeChange={handleContentSizeChange}
         onLayout={handleLayout}
         onScrollToIndexFailed={handleScrollToIndexFailed}
-        updateCellsBatchingPeriod={100}
+        updateCellsBatchingPeriod={50}
       />
 
 
       {/* FAB */}
-      <FloatingActionButton
-        onApply={(data: { moods: string[]; symptoms: string[]; waterAmount: number }) => {
-          // Handle apply with data
-          console.log('Applied data:', data);
+      <FloatingActionButton />
+
+      <AccessLocationBottomSheet
+        visible={showLocationSheet}
+        onClose={() => setShowLocationSheet(false)}
+        onAllow={() => {
+          setShowLocationSheet(false);
+          locationTracker.requestAndStart().catch(() => {});
         }}
+        onNotNow={() => setShowLocationSheet(false)}
       />
-      
+
+      <TransitionLoader visible={isNavigatingToToday} />
+
       <Modal
         visible={showTodayAds}
         animationType="fade"

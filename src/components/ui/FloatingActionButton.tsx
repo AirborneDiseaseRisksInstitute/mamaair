@@ -19,12 +19,16 @@ interface FloatingActionButtonProps {
   }) => void;
   initialMoodIds?: number[];
   initialFeelingIds?: number[];
+  waterDailyTotal?: number;
+  waterTarget?: number;
 }
 
 export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   onApply,
   initialMoodIds = [],
   initialFeelingIds = [],
+  waterDailyTotal = 0,
+  waterTarget = 2000,
 }) => {
   const theme = useTheme();
   const [isBottomSheetVisible, setIsBottomSheetVisible] = useState(false);
@@ -91,6 +95,8 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
           onApply={handleApply}
           initialMoodIds={initialMoodIds}
           initialFeelingIds={initialFeelingIds}
+          waterDailyTotal={waterDailyTotal}
+          waterTarget={waterTarget}
         />
       </BottomSheet>
     </>

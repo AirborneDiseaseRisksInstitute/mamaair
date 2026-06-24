@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,15 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  Modal,
 } from 'react-native';
+
 import Svg, { G, Path, Defs, ClipPath, Mask, Rect, Pattern } from 'react-native-svg';
 import { SvgXml } from 'react-native-svg';
 import { useTheme, spacing } from '../theme';
 import { useUserStore } from '../store/useUserStore';
-import { WaveCard, ExposureAccordion, TaskCard, FloatingActionButton, useToast, ReminderTimePicker } from '../components/ui';
+import { WaveCard, ExposureAccordion, TaskCard, FloatingActionButton, useToast, ReminderTimePicker, TransitionLoader } from '../components/ui';
+import { AdsScreen } from './AdsScreen';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,9 +27,12 @@ import { DailyTasksService, type DailyTask } from '../services/api/DailyTasksSer
 import { WellbeingService } from '../services/api/WellbeingService';
 import { TaskCompletionService } from '../services/api/TaskCompletionService';
 import { DailyCheckinService } from '../services/api/DailyCheckinService';
+import { ExposureService, type AirExposure } from '../services/api/ExposureService';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { useTranslation } from 'react-i18next';
 
 const getTodayDate = (): string => new Date().toLocaleDateString('en-CA');
+
 
 const ICON_SIZE = 48;
 const ICON_STROKE_WIDTH = 1.5;
@@ -189,11 +195,13 @@ const IconWithWave: React.FC<{
 
 interface TodayScreenProps {
   onNavigateToProfile?: () => void;
+  onNavigateToBabyStatus?: () => void;
   onBackPress?: () => void;
 }
 
-export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateToProfile: _onNavigateToProfile, onBackPress }) => {
+export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateToProfile: _onNavigateToProfile, onNavigateToBabyStatus, onBackPress }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const { profile } = useUserStore();
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -202,9 +210,24 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
   const [completedTaskCodes, setCompletedTaskCodes] = useState<string[]>([]);
   const [wellbeingMoodIds, setWellbeingMoodIds] = useState<number[]>([]);
   const [wellbeingFeelingIds, setWellbeingFeelingIds] = useState<number[]>([]);
+  const [wellbeingMoodCount, setWellbeingMoodCount] = useState<number>(0);
+  const [wellbeingFeelingCount, setWellbeingFeelingCount] = useState<number>(0);
+  const [waterAmount, setWaterAmount] = useState<number>(0);
+  const [airExposure, setAirExposure] = useState<AirExposure | null>(null);
   const [_loading, setLoading] = useState(false);
   const [_error, setError] = useState<string | null>(null);
+  const [showBabyAds, setShowBabyAds] = useState(false);
+  const [isNavigatingToBaby, setIsNavigatingToBaby] = useState(false);
   const currentWeek = summary?.week_info?.week || getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 19;
+
+  const handleNavigateToBabyStatus = useCallback(() => {
+    if (showBabyAds || isNavigatingToBaby) return;
+    setIsNavigatingToBaby(true);
+    setTimeout(() => {
+      setIsNavigatingToBaby(false);
+      setShowBabyAds(true);
+    }, 350);
+  }, [showBabyAds, isNavigatingToBaby]);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -213,12 +236,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
     (async () => {
       try {
         setLoading(true);
-        const [summaryData, lifestyleData, tasksData, completedData, wellbeingLog] = await Promise.all([
-          SummaryService.getSummary(),
-          LifestyleService.getLifestyle(),
-          DailyTasksService.getDailyTasks(),
-          TaskCompletionService.getCompleted(todayDate),
+        const [summaryData, lifestyleData, tasksData, completedData, wellbeingLog, wellbeingCatalog, airExposureData] = await Promise.all([
+          SummaryService.getSummary().catch(() => null),
+          LifestyleService.getLifestyle().catch(() => null),
+          DailyTasksService.getDailyTasks().catch(() => []),
+          TaskCompletionService.getCompleted(todayDate).catch(() => []),
           WellbeingService.getLog(todayDate),
+          WellbeingService.getCatalog().catch(() => ({ moods: [], feelings: [] } as any)),
+          ExposureService.getAirExposure().catch(() => null),
         ]);
         if (mounted) {
           setSummary(summaryData);
@@ -228,7 +253,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
           if (wellbeingLog) {
             setWellbeingMoodIds(wellbeingLog.mood_ids);
             setWellbeingFeelingIds(wellbeingLog.feeling_ids);
+            setWaterAmount(wellbeingLog.water_amount || 0);
           }
+          setWellbeingMoodCount(wellbeingCatalog.moods.length);
+          setWellbeingFeelingCount(wellbeingCatalog.feelings.length);
+          setAirExposure(airExposureData);
         }
       } catch {
         if (mounted) setError('Failed to load data.');
@@ -240,6 +269,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
     DailyCheckinService.ensureCheckin(todayDate);
     return () => { mounted = false; };
   }, []);
+
 
   const handleDelayTask = (taskTitle: string) => {
     showToast({
@@ -267,6 +297,30 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
       message: `Reminder set for ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}.`,
     });
   };
+
+  const tasksByCategory = useMemo(() => ({
+    diet: dailyTasks.filter(t => t.category === 'diet'),
+    activity: dailyTasks.filter(t => t.category === 'activity'),
+    behaviour: dailyTasks.filter(t => t.category === 'behavior'),
+  }), [dailyTasks]);
+
+  // Badge counts driven by task completion (not recommendation completion)
+  const dietCounts = {
+    done: tasksByCategory.diet.filter(t => completedTaskCodes.includes(t.code)).length,
+    total: tasksByCategory.diet.length,
+  };
+  const exerciseCounts = {
+    done: tasksByCategory.activity.filter(t => completedTaskCodes.includes(t.code)).length,
+    total: tasksByCategory.activity.length,
+  };
+  const behaviorCounts = {
+    done: tasksByCategory.behaviour.filter(t => completedTaskCodes.includes(t.code)).length,
+    total: tasksByCategory.behaviour.length,
+  };
+
+  const totalTasks = dailyTasks.length;
+  const doneTasks = completedTaskCodes.filter(code => dailyTasks.some(t => t.code === code)).length;
+  const protectionPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
   // Get current date info
   const today = new Date();
@@ -553,6 +607,29 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
       fontFamily: theme.typography.fontFamily.bold,
       color: theme.colors.textPrimary,
     },
+    categoryHeaderCard: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: spacing('sm'),
+      borderRadius: 10,
+      padding: spacing('sm'),
+      marginBottom: spacing('xs'),
+    },
+    categoryTitleBlock: {
+      flex: 1,
+    },
+    categorySubtitle: {
+      fontSize: responsiveUtils.getFixedFontSize(12),
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: responsiveUtils.getFixedLineHeight(12, 18),
+      marginTop: 2,
+    },
+    categoryCount: {
+      fontSize: responsiveUtils.getFixedFontSize(13),
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.neutral500,
+    },
     healthRisksCard: {
       backgroundColor: '#FFF',
       borderRadius: 12,
@@ -673,7 +750,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
             color={theme.colors.textPrimary} 
           />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} allowFontScaling={false}>Today</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('today.title')}</Text>
       </View>
       
       <ScrollView 
@@ -683,40 +760,40 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
         {/* Date Section */}
         <View style={styles.dateSection}>
           <Text style={styles.dateText} allowFontScaling={false}>{dateString}</Text>
-          <Text style={styles.dayWeekText} allowFontScaling={false}>Day 4 / Week {currentWeek}</Text>
+          <Text style={styles.dayWeekText} allowFontScaling={false}>{t('today.day_week', { week: currentWeek })}</Text>
         </View>
 
         {/* Wave Cards Section */}
         <View style={styles.cardsSection}>
           <View style={styles.cardsContainer}>
             <View style={styles.cardsRow}>
-              <WaveCard 
+              <WaveCard
                 type="water"
-                percentage={0} // TODO: Connect to water consumption endpoint when available
-                label={`Water\nTarget: ${lifestyle?.hydration_target_ml_per_day || 2000}ml`}
+                percentage={Math.min(100, Math.round((waterAmount / (lifestyle?.hydration_target_ml_per_day || 2000)) * 100))}
+                label={`${t('today.water')}\n${waterAmount}/${lifestyle?.hydration_target_ml_per_day || 2000}ml`}
               />
-              <WaveCard 
+              <WaveCard
                 type="mood"
-                percentage={12}
-                label="Mood"
+                percentage={wellbeingMoodCount > 0 ? Math.min(100, Math.round((wellbeingMoodIds.length / wellbeingMoodCount) * 100)) : 0}
+                label={t('today.mood')}
               />
-              <WaveCard 
+              <WaveCard
                 type="feeling"
-                percentage={48}
-                label="Feeling"
+                percentage={wellbeingFeelingCount > 0 ? Math.min(100, Math.round((wellbeingFeelingIds.length / wellbeingFeelingCount) * 100)) : 0}
+                label={t('today.feeling')}
               />
             </View>
           </View>
         </View>
 
         {/* Exposure Accordion */}
-        <ExposureAccordion level={summary?.mom_exposure?.exposure_level ?? 0} maxLevel={8} />
+        <ExposureAccordion airExposure={airExposure} />
 
         {/* Week Info Card */}
         <View style={styles.weekCard}>
-          <Text style={styles.weekTitle} allowFontScaling={false}>Week: {currentWeek}</Text>
+          <Text style={styles.weekTitle} allowFontScaling={false}>{t('today.week_label', { week: currentWeek })}</Text>
           <Text style={styles.weekDescription} allowFontScaling={false}>
-            {summary?.week_info?.text || 'A delicate layer begins to form, the skin and its soft covering start to protect the growing life within.'}
+            {summary?.week_info?.text || t('today.week_default_text')}
           </Text>
           
           <View style={styles.divider} />
@@ -735,7 +812,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
               )}
             </View>
             <Text style={styles.featureText} allowFontScaling={false}>
-              Focus on nervous system development
+              {t('today.feature_nervous_system')}
             </Text>
           </View>
           
@@ -754,14 +831,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
               )}
             </View>
             <Text style={styles.featureText} allowFontScaling={false}>
-              New senses begin to awaken
+              {t('today.feature_senses')}
             </Text>
           </View>
           
           <View style={styles.divider} />
           
-          <TouchableOpacity style={styles.showMoreButton} activeOpacity={0.7}>
-            <Text style={styles.showMoreText} allowFontScaling={false}>Show more</Text>
+          <TouchableOpacity style={styles.showMoreButton} activeOpacity={0.7} onPress={handleNavigateToBabyStatus}>
+            <Text style={styles.showMoreText} allowFontScaling={false}>{t('common.show_more')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -771,15 +848,21 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
           <View style={styles.headerBadges}>
             <View style={[styles.badge, styles.badgeGreen]}>
               <SvgXml xml={DIET_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextGreen]} allowFontScaling={false}>1/5</Text>
+              <Text style={[styles.badgeText, styles.badgeTextGreen]} allowFontScaling={false}>
+                {dietCounts.done}/{dietCounts.total}
+              </Text>
             </View>
             <View style={[styles.badge, styles.badgeYellow]}>
               <SvgXml xml={RUNNING_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextYellow]} allowFontScaling={false}>2/6</Text>
+              <Text style={[styles.badgeText, styles.badgeTextYellow]} allowFontScaling={false}>
+                {exerciseCounts.done}/{exerciseCounts.total}
+              </Text>
             </View>
             <View style={[styles.badge, styles.badgeRed]}>
               <SvgXml xml={BEHAVIOUR_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextRed]} allowFontScaling={false}>5/5</Text>
+              <Text style={[styles.badgeText, styles.badgeTextRed]} allowFontScaling={false}>
+                {behaviorCounts.done}/{behaviorCounts.total}
+              </Text>
             </View>
           </View>
 
@@ -789,14 +872,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
               <View style={[styles.protectionIcon, styles.protectionIconGreen]}>
                 <SvgXml xml={MOTHER_RISK_SVG} width={40} height={40} />
               </View>
-              <Text style={styles.protectionTitle} allowFontScaling={false}>Mother's Protection</Text>
+              <Text style={styles.protectionTitle} allowFontScaling={false}>{t('today.mothers_protection')}</Text>
             </View>
             <View style={styles.progressContainer}>
               <View style={styles.progressBar}>
-                <View style={[styles.progressBarFill, styles.progressBarFillGreen, { width: '30%' }]} />
+                <View style={[styles.progressBarFill, styles.progressBarFillGreen, { width: `${protectionPct}%` }]} />
                 <View style={[styles.progressBarEmpty, styles.progressBarEmptyGreen]} />
               </View>
-              <Text style={[styles.progressText, styles.progressTextGreen]} allowFontScaling={false}>30%</Text>
+              <Text style={[styles.progressText, styles.progressTextGreen]} allowFontScaling={false}>{protectionPct}%</Text>
             </View>
           </View>
 
@@ -806,52 +889,71 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
               <View style={[styles.protectionIcon, styles.protectionIconYellow]}>
                 <SvgXml xml={BABY_RISK_SVG} width={40} height={40} />
               </View>
-              <Text style={styles.protectionTitle} allowFontScaling={false}>Baby's Protection</Text>
+              <Text style={styles.protectionTitle} allowFontScaling={false}>{t('today.babys_protection')}</Text>
             </View>
             <View style={styles.progressContainer}>
               <View style={styles.progressBar}>
-                <View style={[styles.progressBarFill, styles.progressBarFillOrange, { width: '48%' }]} />
+                <View style={[styles.progressBarFill, styles.progressBarFillOrange, { width: `${protectionPct}%` }]} />
                 <View style={[styles.progressBarEmpty, styles.progressBarEmptyOrange]} />
               </View>
-              <Text style={[styles.progressText, styles.progressTextOrange]} allowFontScaling={false}>48%</Text>
+              <Text style={[styles.progressText, styles.progressTextOrange]} allowFontScaling={false}>{protectionPct}%</Text>
             </View>
           </View>
         </View>
 
         {/* Today's Tasks Section */}
         <View style={styles.dateSection}>
-          <Text style={styles.dateText} allowFontScaling={false}>Today's Tasks</Text>
+          <Text style={styles.dateText} allowFontScaling={false}>{t('today.tasks_title')}</Text>
           <Text style={styles.dayWeekText} allowFontScaling={false}>{tasksDayLabel}</Text>
         </View>
 
         <View style={styles.tasksContainer}>
-          {dailyTasks.length > 0 ? (
-            dailyTasks.map((task) => (
-              <View key={task.code} style={styles.categorySection}>
-                <TaskCard
-                  type="behaviour"
-                  hideIcon
-                  title={task.title}
-                  initialChecked={completedTaskCodes.includes(task.code)}
-                  buttons={[
-                    {
-                      label: 'Set Reminder',
-                      onPress: () => openReminderPicker(task.title),
-                      variant: 'reminder',
-                    },
-                  ]}
-                  onCheck={(checked) => {
-                    const todayDate = getTodayDate();
-                    const updated = checked
-                      ? [...completedTaskCodes, task.code]
-                      : completedTaskCodes.filter(c => c !== task.code);
-                    setCompletedTaskCodes(updated);
-                    TaskCompletionService.saveCompleted(todayDate, updated).catch(() => {});
-                  }}
-                />
+          {([
+            { key: 'diet' as const,      label: t('today.diet'),      icon: DIET_SVG,      apiCategory: 'diet',     headerBg: '#F0FBF0', iconBg: '#C8EFD4' },
+            { key: 'activity' as const,  label: t('today.activity'),  icon: RUNNING_SVG,   apiCategory: 'exercise', headerBg: '#FFFBF0', iconBg: '#FFE8A3' },
+            { key: 'behaviour' as const, label: t('today.behaviour'), icon: BEHAVIOUR_SVG, apiCategory: 'behavior', headerBg: '#FFF5F5', iconBg: '#FFCDD2' },
+          ] as const).map(section => {
+            const sectionTasks = tasksByCategory[section.key];
+            if (sectionTasks.length === 0) return null;
+            const rec = (summary?.recommendations ?? []).find(r => r.category === section.apiCategory);
+            const doneCount = sectionTasks.filter(t => completedTaskCodes.includes(t.code)).length;
+            return (
+              <View key={section.key} style={styles.categorySection}>
+                <View style={[styles.categoryHeaderCard, { backgroundColor: section.headerBg }]}>
+                  <View style={[styles.categoryIconCircle, { backgroundColor: section.iconBg }]}>
+                    <SvgXml xml={section.icon} width={18} height={18} />
+                  </View>
+                  <View style={styles.categoryTitleBlock}>
+                    <Text style={styles.categoryTitle} allowFontScaling={false}>{section.label}</Text>
+                    {rec && (
+                      <Text style={styles.categorySubtitle} allowFontScaling={false} numberOfLines={2}>
+                        {rec.message}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.categoryCount} allowFontScaling={false}>{doneCount}/{sectionTasks.length}</Text>
+                </View>
+                {sectionTasks.map(task => (
+                  <TaskCard
+                    key={task.code}
+                    type={section.key}
+                    hideIcon
+                    title={task.title}
+                    initialChecked={completedTaskCodes.includes(task.code)}
+                    buttons={[{ label: t('today.set_reminder'), onPress: () => openReminderPicker(task.title), variant: 'reminder' }]}
+                    onCheck={(checked) => {
+                      const todayDate = getTodayDate();
+                      const updated = checked
+                        ? [...completedTaskCodes, task.code]
+                        : completedTaskCodes.filter(c => c !== task.code);
+                      setCompletedTaskCodes(updated);
+                      TaskCompletionService.saveCompleted(todayDate, updated).catch(() => {});
+                    }}
+                  />
+                ))}
               </View>
-            ))
-          ) : null}
+            );
+          })}
         </View>
 
         {/* Health Risks Card */}
@@ -875,17 +977,17 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
                 strokeDashoffset="18.84"
               />
             </Svg>
-            <Text style={styles.healthRisksTitle} allowFontScaling={false}>Health Risks</Text>
+            <Text style={styles.healthRisksTitle} allowFontScaling={false}>{t('today.health_risks')}</Text>
           </View>
 
           {/* Mother's Risk Section */}
           <View style={[styles.riskSection, styles.riskSectionMother]}>
-            <Text style={styles.riskTitle} allowFontScaling={false}>Mother's Risk</Text>
-            <Text 
-              style={summary?.risks_delta?.mom && summary.risks_delta.mom > 0 ? styles.riskIncrease : styles.riskDecrease} 
+            <Text style={styles.riskTitle} allowFontScaling={false}>{t('today.mothers_risk')}</Text>
+            <Text
+              style={summary?.risks_delta?.mom && summary.risks_delta.mom > 0 ? styles.riskIncrease : styles.riskDecrease}
               allowFontScaling={false}
             >
-              {summary?.risks_delta?.mom ? `${Math.abs(summary.risks_delta.mom).toFixed(1)}% ${summary.risks_delta.mom < 0 ? 'Decrease' : 'Increase'}` : 'No Change'}
+              {summary?.risks_delta?.mom ? `${Math.abs(summary.risks_delta.mom).toFixed(1)}% ${summary.risks_delta.mom < 0 ? t('today.decrease') : t('today.increase')}` : t('today.no_change')}
             </Text>
             <View style={styles.riskProgressContainer}>
               <View style={styles.riskProgressBar}>
@@ -895,19 +997,19 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
             </View>
             <View style={[styles.riskTag, styles.riskTagMother]}>
               <Text style={styles.riskTagText} allowFontScaling={false}>
-                {(summary?.mom_exposure?.exposure_level || 0)}/8 Exposure Level
+                {(summary?.mom_exposure?.exposure_level || 0)}/8 {t('today.exposure_level')}
               </Text>
             </View>
           </View>
 
           {/* Baby's Risk Section */}
           <View style={[styles.riskSection, styles.riskSectionBaby]}>
-            <Text style={styles.riskTitle} allowFontScaling={false}>Baby's Risk</Text>
-            <Text 
-              style={summary?.risks_delta?.baby && summary.risks_delta.baby > 0 ? styles.riskIncrease : styles.riskDecrease} 
+            <Text style={styles.riskTitle} allowFontScaling={false}>{t('today.babys_risk')}</Text>
+            <Text
+              style={summary?.risks_delta?.baby && summary.risks_delta.baby > 0 ? styles.riskIncrease : styles.riskDecrease}
               allowFontScaling={false}
             >
-              {summary?.risks_delta?.baby ? `${Math.abs(summary.risks_delta.baby).toFixed(1)}% ${summary.risks_delta.baby < 0 ? 'Decrease' : 'Increase'}` : 'No Change'}
+              {summary?.risks_delta?.baby ? `${Math.abs(summary.risks_delta.baby).toFixed(1)}% ${summary.risks_delta.baby < 0 ? t('today.decrease') : t('today.increase')}` : t('today.no_change')}
             </Text>
             <View style={styles.riskProgressContainer}>
               <View style={styles.riskProgressBar}>
@@ -917,7 +1019,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
             </View>
             <View style={[styles.riskTag, styles.riskTagBaby]}>
               <Text style={styles.riskTagText} allowFontScaling={false}>
-                {(summary?.baby_exposure?.exposure_level || 0)}/8 Exposure Level
+                {(summary?.baby_exposure?.exposure_level || 0)}/8 {t('today.exposure_level')}
               </Text>
             </View>
           </View>
@@ -928,6 +1030,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
       <FloatingActionButton
         initialMoodIds={wellbeingMoodIds}
         initialFeelingIds={wellbeingFeelingIds}
+        waterDailyTotal={waterAmount}
+        waterTarget={lifestyle?.hydration_target_ml_per_day || 2000}
         onApply={(data) => {
           const todayDate = getTodayDate();
           WellbeingService.saveLog({
@@ -938,6 +1042,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
           }).catch(() => {});
           setWellbeingMoodIds(data.mood_ids);
           setWellbeingFeelingIds(data.feeling_ids);
+          if (data.water_amount > 0) {
+            setWaterAmount(prev => prev + data.water_amount);
+          }
         }}
       />
 
@@ -950,6 +1057,21 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateT
         onConfirm={handleReminderConfirm}
         taskTitle={reminderTaskTitle ?? undefined}
       />
+
+      <TransitionLoader visible={isNavigatingToBaby} />
+
+      <Modal
+        visible={showBabyAds}
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <AdsScreen
+          onClose={() => {
+            setShowBabyAds(false);
+            onNavigateToBabyStatus?.();
+          }}
+        />
+      </Modal>
     </SafeAreaView>
   );
 });

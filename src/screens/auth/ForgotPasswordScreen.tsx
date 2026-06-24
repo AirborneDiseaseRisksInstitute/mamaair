@@ -9,6 +9,7 @@ import {
 import { SvgXml } from 'react-native-svg';
 import { useTheme, spacing } from '../../theme';
 import { Input, Button, OrangeHalo, BackButton, type InputRef } from '../../components/ui';
+import { useTranslation } from 'react-i18next';
 import { ms, mvs, s } from '../../utils/responsive';
 import { FORGOT_PASS_ICON_SVG } from '../../utils/svgIcons';
 
@@ -22,6 +23,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
   onResetPassword,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
 
   const emailInputRef = useRef<InputRef>(null);
@@ -93,19 +95,19 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
           </View>
 
           {/* Title */}
-          <Text style={styles.title} allowFontScaling={false}>Forgot password</Text>
+          <Text style={styles.title} allowFontScaling={false}>{t('auth.forgot_password_title')}</Text>
 
           {/* Description */}
           <Text style={styles.description} allowFontScaling={false}>
-            Type in your email and we'll send you a code to reset your password.
+            {t('auth.forgot_password_description')}
           </Text>
 
           {/* Email Input */}
           <View style={styles.inputContainer}>
             <Input
               ref={emailInputRef}
-              title="Email"
-              placeholder="Enter your email to reset your password"
+              title={t('auth.email')}
+              placeholder={t('auth.enter_email_reset')}
               type="email"
               value={email}
               onChangeText={setEmail}
@@ -116,7 +118,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
           {/* Reset Password Button */}
           <View style={styles.buttonContainer}>
             <Button
-              title="Reset password"
+              title={t('auth.reset_password')}
               onPress={handleResetPassword}
               disabled={!email.trim()}
             />

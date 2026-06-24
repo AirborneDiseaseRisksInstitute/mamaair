@@ -3,8 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useTheme, spacing, radius } from '../../theme';
 import { Button } from './Button';
 import { ReminderTimePicker } from './ReminderTimePicker';
-
-const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+import { useTranslation } from 'react-i18next';
 
 const toPickerHour = (h: number) => (h === 0 ? 24 : h);
 const fromPickerHour = (h: number) => (h === 24 ? 0 : h);
@@ -38,6 +37,16 @@ export const NotificationTimeSettings: React.FC<NotificationTimeSettingsProps> =
   variant = 'default',
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
+  const DAY_LABELS = [
+    t('common.day_sun')[0],
+    t('common.day_mon')[0],
+    t('common.day_tue')[0],
+    t('common.day_wed')[0],
+    t('common.day_thu')[0],
+    t('common.day_fri')[0],
+    t('common.day_sat')[0],
+  ];
   const [fromH, setFromH] = useState(fromHour);
   const [fromM, setFromM] = useState(fromMinute);
   const [toH, setToH] = useState(toHour);
@@ -128,16 +137,16 @@ export const NotificationTimeSettings: React.FC<NotificationTimeSettingsProps> =
     <>
       <View style={styles.timeBlock}>
         <Pressable style={styles.timeRow} onPress={() => setFromPickerVisible(true)}>
-          <Text style={styles.timeLabel} allowFontScaling={false}>From</Text>
+          <Text style={styles.timeLabel} allowFontScaling={false}>{t('notifications.from')}</Text>
           <Text style={styles.timeValue} allowFontScaling={false}>{formatTime(fromH, fromM)}</Text>
         </Pressable>
         <Pressable style={[styles.timeRow, styles.timeRowLast]} onPress={() => setToPickerVisible(true)}>
-          <Text style={styles.timeLabel} allowFontScaling={false}>To</Text>
+          <Text style={styles.timeLabel} allowFontScaling={false}>{t('notifications.to')}</Text>
           <Text style={styles.timeValue} allowFontScaling={false}>{formatTime(toH, toM)}</Text>
         </Pressable>
       </View>
 
-      <Text style={styles.daysLabel} allowFontScaling={false}>Notification days</Text>
+      <Text style={styles.daysLabel} allowFontScaling={false}>{t('notifications.days_label')}</Text>
       <View style={styles.daysRow}>
         {DAY_LABELS.map((label, i) => {
           const on = days[i] === '1';
@@ -171,7 +180,7 @@ export const NotificationTimeSettings: React.FC<NotificationTimeSettingsProps> =
         }}
         initialHour={toPickerHour(fromH)}
         initialMinute={toPickerMinute(fromM)}
-        taskTitle="From"
+        taskTitle={t('notifications.from')}
       />
       <ReminderTimePicker
         visible={toPickerVisible}
@@ -183,7 +192,7 @@ export const NotificationTimeSettings: React.FC<NotificationTimeSettingsProps> =
         }}
         initialHour={toPickerHour(toH)}
         initialMinute={toPickerMinute(toM)}
-        taskTitle="To"
+        taskTitle={t('notifications.to')}
       />
     </>
   );

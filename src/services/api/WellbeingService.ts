@@ -15,6 +15,7 @@ export interface WellbeingCatalog {
 export interface WellbeingLog {
   date: string;
   water_amount: number;
+  water_unit?: string;
   mood_ids: number[];
   feeling_ids: number[];
 }
@@ -22,19 +23,30 @@ export interface WellbeingLog {
 export const WellbeingService = {
   getCatalog: async (): Promise<WellbeingCatalog> => {
     const response = await api.get('/wellbeing/');
-    return response.data;
+    const data = response.data;
+    return {
+      water_goal_ml: data.water_goal?.value,
+      moods: (data.moods || []).map((m: any) => ({ id: m.id, name: m.title, emoji: m.emoji })),
+      feelings: (data.feelings || []).map((f: any) => ({ id: f.id, name: f.title, emoji: f.emoji })),
+    };
   },
 
   getLog: async (date: string): Promise<WellbeingLog | null> => {
     try {
       const response = await api.get('/wellbeing/log/', { params: { date } });
-      return response.data;
+      const data = response.data;
+      return {
+        date: data.date,
+        water_amount: data.water_amount ?? 0,
+        mood_ids: (data.moods || []).map((m: any) => (typeof m === 'number' ? m : m.id)),
+        feeling_ids: (data.feelings || []).map((f: any) => (typeof f === 'number' ? f : f.id)),
+      };
     } catch {
       return null;
     }
   },
 
   saveLog: async (data: WellbeingLog): Promise<void> => {
-    await api.post('/wellbeing/log/', data);
+    await api.post('/wellbeing/log/', { ...data, water_unit: 'ml' });
   },
 };

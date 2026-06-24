@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,61 +7,113 @@ import {
   ScrollView,
   Image,
   Switch,
+  Linking,
 } from 'react-native';
+import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { useTheme, spacing } from '../theme';
 import { BackButton, AccessLocationBottomSheet } from '../components/ui';
+import { locationTracker } from '../services/tracking/LocationTracker';
 import { responsiveUtils } from '../utils/responsiveUtils';
 
 interface PrivacySettingsScreenProps {
   onBack?: () => void;
 }
 
-interface PrivacySetting {
-  id: string;
-  label: string;
-  defaultValue: boolean;
-}
-
 export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ onBack }) => {
   const theme = useTheme();
 
-  const privacySettings: PrivacySetting[] = [
-    { id: 'sensitiveNotification', label: 'Sensitive notification', defaultValue: true },
-    { id: 'personalData', label: 'Personal data', defaultValue: false },
-    { id: 'preciseLocation', label: 'Precise location', defaultValue: true },
-    { id: 'tracking', label: 'Tracking', defaultValue: false },
-  ];
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [locationEnabled, setLocationEnabled] = useState(false);
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
+  // 'location' = triggered from Precise Location toggle; 'tracking' = from Tracking toggle
+  const [locationSheetFor, setLocationSheetFor] = useState<'location' | 'tracking' | null>(null);
 
-  const [settings, setSettings] = useState<Record<string, boolean>>(
-    privacySettings.reduce((acc, setting) => {
-      acc[setting.id] = setting.defaultValue;
-      return acc;
-    }, {} as Record<string, boolean>)
-  );
-  const [showLocationSheet, setShowLocationSheet] = useState(false);
+  // Read actual permission / service states on mount
+  useEffect(() => {
+    const init = async () => {
+      const [notifSettings, locationStatus] = await Promise.all([
+        notifee.getNotificationSettings().catch(() => null),
+        locationTracker.getPermissionStatus().catch(() => 'unavailable' as const),
+      ]);
+      setNotificationEnabled(
+        (notifSettings?.authorizationStatus ?? 0) >= AuthorizationStatus.AUTHORIZED,
+      );
+      setLocationEnabled(locationStatus === 'granted');
+      setTrackingEnabled(locationTracker.isTracking());
+    };
+    init();
+  }, []);
 
-  const handleToggle = (id: string) => {
-    if (id === 'tracking') {
-      const current = settings[id];
-      if (!current) {
-        setShowLocationSheet(true);
-        return;
+  // ── Notification ──────────────────────────────────────────────────────────
+  const handleNotificationToggle = useCallback(async () => {
+    if (!notificationEnabled) {
+      const result = await notifee.requestPermission().catch(() => null);
+      if ((result?.authorizationStatus ?? 0) >= AuthorizationStatus.AUTHORIZED) {
+        setNotificationEnabled(true);
+      } else {
+        // Blocked — must go to OS Settings
+        Linking.openSettings();
+      }
+    } else {
+      // Can't revoke programmatically — send user to OS Settings
+      Linking.openSettings();
+    }
+  }, [notificationEnabled]);
+
+  // ── Precise Location ──────────────────────────────────────────────────────
+  const handleLocationToggle = useCallback(async () => {
+    if (!locationEnabled) {
+      const current = await locationTracker.getPermissionStatus().catch(() => 'unavailable' as const);
+      if (current === 'blocked') {
+        Linking.openSettings();
+      } else {
+        setLocationSheetFor('location');
+      }
+    } else {
+      // Can't revoke location permission programmatically — open Settings
+      Linking.openSettings();
+    }
+  }, [locationEnabled]);
+
+  // ── Tracking ──────────────────────────────────────────────────────────────
+  const handleTrackingToggle = useCallback(async () => {
+    if (!trackingEnabled) {
+      const current = await locationTracker.getPermissionStatus().catch(() => 'unavailable' as const);
+      if (current === 'blocked') {
+        Linking.openSettings();
+      } else {
+        setLocationSheetFor('tracking');
+      }
+    } else {
+      locationTracker.stopTracking();
+      setTrackingEnabled(false);
+    }
+  }, [trackingEnabled]);
+
+  // ── LocationBottomSheet callbacks ─────────────────────────────────────────
+  const handleLocationAllow = useCallback(async () => {
+    if (locationSheetFor === 'tracking') {
+      const status = await locationTracker.requestAndStart().catch(() => 'denied' as const);
+      if (status === 'granted') {
+        setLocationEnabled(true);
+        setTrackingEnabled(true);
+      } else if (status === 'blocked') {
+        Linking.openSettings();
+      }
+    } else if (locationSheetFor === 'location') {
+      const status = await locationTracker.requestPermissionOnly().catch(() => 'denied' as const);
+      if (status === 'granted') {
+        setLocationEnabled(true);
+      } else if (status === 'blocked') {
+        Linking.openSettings();
       }
     }
-    setSettings((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
+    setLocationSheetFor(null);
+  }, [locationSheetFor]);
 
-  const handleLocationAllow = () => {
-    setSettings((prev) => ({ ...prev, tracking: true }));
-    setShowLocationSheet(false);
-  };
-
-  const handleLocationClose = () => {
-    setShowLocationSheet(false);
-  };
+  const handleLocationClose = useCallback(() => {
+    setLocationSheetFor(null);
+  }, []);
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -141,18 +193,21 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ on
     },
   }), [theme]);
 
+  const switchProps = {
+    trackColor: { false: theme.colors.neutral300, true: theme.colors.orange500 },
+    thumbColor: '#fff',
+    ios_backgroundColor: theme.colors.neutral300,
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <BackButton onPress={onBack} />
-      
+
       <View style={styles.header}>
         <Text style={styles.headerTitle} allowFontScaling={false}>Privacy Setting</Text>
       </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.illustrationContainer}>
           <Image
             source={require('../assets/images/Privacysetting.png')}
@@ -162,29 +217,41 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ on
         </View>
 
         <View style={styles.settingsCard}>
-          {privacySettings.map((setting, index) => (
-            <React.Fragment key={setting.id}>
-              <View style={styles.settingItem}>
-                <Text style={styles.settingText} allowFontScaling={false}>{setting.label}</Text>
-                <Switch
-                  value={settings[setting.id]}
-                  onValueChange={() => handleToggle(setting.id)}
-                  trackColor={{
-                    false: theme.colors.neutral300,
-                    true: theme.colors.orange500,
-                  }}
-                  thumbColor="#fff"
-                  ios_backgroundColor={theme.colors.neutral300}
-                />
-              </View>
-              {index < privacySettings.length - 1 && <View style={styles.settingDivider} />}
-            </React.Fragment>
-          ))}
+          <View style={styles.settingItem}>
+            <Text style={styles.settingText} allowFontScaling={false}>Sensitive notification</Text>
+            <Switch
+              {...switchProps}
+              value={notificationEnabled}
+              onValueChange={handleNotificationToggle}
+            />
+          </View>
+
+          <View style={styles.settingDivider} />
+
+          <View style={styles.settingItem}>
+            <Text style={styles.settingText} allowFontScaling={false}>Precise location</Text>
+            <Switch
+              {...switchProps}
+              value={locationEnabled}
+              onValueChange={handleLocationToggle}
+            />
+          </View>
+
+          <View style={styles.settingDivider} />
+
+          <View style={styles.settingItem}>
+            <Text style={styles.settingText} allowFontScaling={false}>Tracking</Text>
+            <Switch
+              {...switchProps}
+              value={trackingEnabled}
+              onValueChange={handleTrackingToggle}
+            />
+          </View>
         </View>
       </ScrollView>
 
       <AccessLocationBottomSheet
-        visible={showLocationSheet}
+        visible={locationSheetFor !== null}
         onClose={handleLocationClose}
         onAllow={handleLocationAllow}
         onNotNow={handleLocationClose}
@@ -192,4 +259,3 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ on
     </SafeAreaView>
   );
 };
-

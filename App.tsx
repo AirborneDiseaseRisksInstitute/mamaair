@@ -6,6 +6,7 @@ import React from 'react';
 import { StatusBar, useColorScheme, Text, TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppRoot } from './src/App/AppRoot';
+import './src/i18n';
 
 // Disable system font scaling globally to prevent layout breakage
 // Our responsive system handles font scaling independently

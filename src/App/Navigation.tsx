@@ -36,6 +36,7 @@ import { NotificationTimeScreen } from '../screens/NotificationTimeScreen';
 import { PrivacySettingsScreen } from '../screens/PrivacySettingsScreen';
 import { PlanBirthdayScreen } from '../screens/PlanBirthdayScreen';
 import { RemindersScreen } from '../screens/RemindersScreen';
+import { SymptomsHistoryScreen } from '../screens/SymptomsHistoryScreen';
 
 import { AuthLoadingScreen } from '../screens/AuthLoadingScreen';
 import { DEV_MODE } from '../config/dev';
@@ -75,6 +76,7 @@ export type RootStackParamList = {
   PlanBirthday: undefined;
   Ads: undefined;
   BabyStatus: undefined;
+  SymptomsHistory: undefined;
   SignIn: undefined;
   SignUp: undefined;
   ForgotPassword: undefined;
@@ -82,83 +84,49 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Smart navigation helper to find the first incomplete step
+// Ordered intro step definitions — the actual flow order the user should experience.
+// Language is FIRST so the rest of the intro is shown in the chosen language.
+// Each step has a screen name, the index Navigation.tsx passes when leaving that screen,
+// and a completion check against the profile.
+type UserProfile = ReturnType<typeof useUserStore.getState>['profile'];
+const INTRO_STEP_FLOW: Array<{
+  fromIndex: number;
+  screen: keyof RootStackParamList;
+  isComplete: (p: UserProfile) => boolean;
+}> = [
+  { fromIndex: 4,  screen: 'IntroStep04',          isComplete: () => false }, // always shown — user picks language first
+  { fromIndex: 2,  screen: 'IntroStep02',          isComplete: p => !!(p.name && p.email) },
+  { fromIndex: 3,  screen: 'IntroStep03',          isComplete: p => !!(p.birthday && p.height && p.weight) },
+  { fromIndex: 5,  screen: 'IntroStep05',          isComplete: p => !!(p.country && p.area) },
+  { fromIndex: 6,  screen: 'IntroStep05Timezone',  isComplete: p => !!p.timezone },
+  { fromIndex: 7,  screen: 'IntroStep06',          isComplete: p => !!(p.timeSpent && p.timeOfDay) },
+  { fromIndex: 8,  screen: 'IntroStep07',          isComplete: p => !!(p.cookingMethod && p.ventilation) },
+  { fromIndex: 9,  screen: 'IntroStep08',          isComplete: p => !!(p.sleepHours && p.activeHours) },
+  { fromIndex: 10, screen: 'IntroStep09',          isComplete: p => !!p.workType },
+  { fromIndex: 11, screen: 'IntroStep10',          isComplete: p => !!p.diet },
+  { fromIndex: 12, screen: 'IntroStep10Pregnancy', isComplete: p => !!p.pregnancyNumber },
+  { fromIndex: 13, screen: 'IntroStep11',          isComplete: p => !!p.pregnancyWeek },
+  { fromIndex: 14, screen: 'IntroStep12',          isComplete: () => false }, // always shown
+  { fromIndex: 15, screen: 'IntroStep13',          isComplete: () => false },
+  { fromIndex: 16, screen: 'IntroStep14',          isComplete: () => false },
+];
+
+// Returns the next screen the user should visit, starting from after `currentStepIndex`.
+// currentStepIndex = 1 means "just left IntroStep01" → scan from the top of the flow.
 const getNextIntroStep = (currentStepIndex: number): keyof RootStackParamList => {
   const { profile } = useUserStore.getState();
-  
-  // Step definitions and their completion criteria
-  // Step 1 is Welcome (always starts here if not skipped entirely)
-  // Step 2: Name/Email
-  if (currentStepIndex < 2) {
-    if (!profile.name || !profile.email) return 'IntroStep02';
-  }
-  
-  // Step 3: Birthday
-  if (currentStepIndex < 3) {
-    if (!profile.birthday) return 'IntroStep03';
-  }
-  
-  // Step 4: Height/Weight
-  if (currentStepIndex < 4) {
-    if (!profile.height || !profile.weight) return 'IntroStep04';
-  }
-  
-  // Step 5: Country/Language
-  if (currentStepIndex < 5) {
-    if (!profile.country || !profile.language) return 'IntroStep05';
+
+  // Find where we are in the ordered flow; -1 means before the flow (step 01)
+  const currentPos = INTRO_STEP_FLOW.findIndex(s => s.fromIndex === currentStepIndex);
+
+  // Steps that still need to be visited (everything after current position)
+  const remaining = currentPos === -1 ? INTRO_STEP_FLOW : INTRO_STEP_FLOW.slice(currentPos + 1);
+
+  for (const step of remaining) {
+    if (!step.isComplete(profile)) return step.screen;
   }
 
-  // Step 5.5: Timezone
-  if (currentStepIndex < 6) {
-    if (!profile.timezone) return 'IntroStep05Timezone';
-  }
-  
-  // Step 6: TimeSpent/TimeOfDay (Lifestyle starts here)
-  if (currentStepIndex < 7) {
-      if (!profile.timeSpent || !profile.timeOfDay) return 'IntroStep06';
-  }
-
-  // Step 7: CookingMethod/Ventilation
-  if (currentStepIndex < 8) {
-      if (!profile.cookingMethod || !profile.ventilation) return 'IntroStep07';
-  }
-
-  // Step 8: SleepHours/ActiveHours
-  if (currentStepIndex < 9) {
-      if (!profile.sleepHours || !profile.activeHours) return 'IntroStep08';
-  }
-
-  // Step 9: WorkType
-  if (currentStepIndex < 10) {
-      if (!profile.workType) return 'IntroStep09';
-  }
-
-  // Step 10: Diet
-  if (currentStepIndex < 11) {
-      if (!profile.diet) return 'IntroStep10';
-  }
-
-  // Step 10.5: Pregnancy number (first, second, third, more than 3)
-  if (currentStepIndex < 12) {
-      if (!profile.pregnancyNumber) return 'IntroStep10Pregnancy';
-  }
-
-  // Step 11: Pregnancy Week
-  if (currentStepIndex < 13) {
-      if (!profile.pregnancyWeek) return 'IntroStep11';
-  }
-
-  // Step 12: Notifications
-  if (currentStepIndex < 14) {
-      return 'IntroStep12';
-  }
-
-  // Step 13: Review/Privacy
-  // Step 14: Final Consent
-  if (currentStepIndex < 15) return 'IntroStep13';
-  if (currentStepIndex < 16) return 'IntroStep14';
-
-  return 'IntroStep14'; // Fallback
+  return 'IntroStep14'; // fallback
 };
 
 export const Navigation: React.FC = () => {
@@ -171,6 +139,8 @@ export const Navigation: React.FC = () => {
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
+          animationDuration: 220,
+          freezeOnBlur: true,
         }}
       >
         <Stack.Screen name="AuthLoading">
@@ -422,15 +392,16 @@ export const Navigation: React.FC = () => {
         </Stack.Screen>
         <Stack.Screen name="Today">
           {({ navigation }) => (
-            <TodayScreen 
+            <TodayScreen
               onNavigateToProfile={() => navigation.navigate('UserProfile')}
+              onNavigateToBabyStatus={() => navigation.navigate('BabyStatus')}
               onBackPress={() => navigation.goBack()}
             />
           )}
         </Stack.Screen>
         <Stack.Screen name="UserProfile">
           {({ navigation }) => (
-            <UserProfileScreen 
+            <UserProfileScreen
               onBack={() => navigation.goBack()}
               onNavigateToBabyTwin={() => navigation.navigate('BabyTwin')}
               onNavigateToMotherTwin={() => navigation.navigate('MotherTwin')}
@@ -439,6 +410,7 @@ export const Navigation: React.FC = () => {
               onNavigateToReminders={() => navigation.navigate('Reminders')}
               onNavigateToPrivacySettings={() => navigation.navigate('PrivacySettings')}
               onNavigateToPlanBirthday={() => navigation.navigate('PlanBirthday')}
+              onNavigateToSymptomsHistory={() => navigation.navigate('SymptomsHistory')}
               onLogout={() => {
                 navigation.reset({
                   index: 0,
@@ -446,6 +418,11 @@ export const Navigation: React.FC = () => {
                 });
               }}
             />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="SymptomsHistory">
+          {({ navigation }) => (
+            <SymptomsHistoryScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Screen name="BabyTwin">
@@ -501,7 +478,6 @@ export const Navigation: React.FC = () => {
             <PlanBirthdayScreen 
               onBack={() => navigation.goBack()}
               onConfirm={(date) => {
-                console.log('Birth date confirmed:', date);
                 // Don't navigate back - let the screen handle the state change
               }}
             />

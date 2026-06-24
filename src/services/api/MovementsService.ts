@@ -1,5 +1,12 @@
 import api from './client';
 
+export interface MovementPoint {
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+  indoor?: boolean;
+}
+
 export const MovementsService = {
   uploadMovements: async (filePath: string) => {
     const formData = new FormData();
@@ -14,6 +21,11 @@ export const MovementsService = {
         'Content-Type': 'multipart/form-data',
       },
     });
+    return response.data;
+  },
+
+  uploadMovementsJson: async (movements: MovementPoint[]) => {
+    const response = await api.post('/movements/upload/json/', { movements });
     return response.data;
   },
 };

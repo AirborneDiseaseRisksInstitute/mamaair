@@ -18,6 +18,8 @@ import { BackButton, Button, FixedButtonContainer } from '../components/ui';
 import { ms, fs, vs, FIXED_BUTTON_AREA_HEIGHT } from '../utils/responsive';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { Image } from 'react-native';
+import { useUserStore } from '../store/useUserStore';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 
 interface PlanBirthdayScreenProps {
   onBack?: () => void;
@@ -26,11 +28,21 @@ interface PlanBirthdayScreenProps {
 
 export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, onConfirm }) => {
   const theme = useTheme();
+  const { profile } = useUserStore();
 
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const selectedDateRef = useRef<Date>(new Date());
+  const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1;
+  const weeksRemaining = Math.max(0, 40 - currentWeek);
+  const estimatedDueDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + weeksRemaining * 7);
+    return d;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [selectedDate, setSelectedDate] = useState<Date>(estimatedDueDate);
+  const selectedDateRef = useRef<Date>(estimatedDueDate);
   const [markedDates, setMarkedDates] = useState<any>({});
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const [currentMonth, setCurrentMonth] = useState<Date>(estimatedDueDate);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 

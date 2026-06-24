@@ -6,27 +6,21 @@ import { Button, FixedButtonContainer, OrangeHalo } from '../../../components/ui
 import { CONGRATS_SVG } from '../../../utils/svgIcons';
 import { useUserStore } from '../../../store/useUserStore';
 import { s, vs, ms, fs, FIXED_BUTTON_AREA_HEIGHT } from '../../../utils/responsive';
-
-const ORDINAL_NUMBERS = [
-  '', 'FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH', 'NINTH', 'TENTH',
-  'ELEVENTH', 'TWELFTH', 'THIRTEENTH', 'FOURTEENTH', 'FIFTEENTH', 'SIXTEENTH', 'SEVENTEENTH', 'EIGHTEENTH', 'NINETEENTH', 'TWENTIETH',
-  'TWENTY-FIRST', 'TWENTY-SECOND', 'TWENTY-THIRD', 'TWENTY-FOURTH', 'TWENTY-FIFTH', 'TWENTY-SIXTH', 'TWENTY-SEVENTH', 'TWENTY-EIGHTH', 'TWENTY-NINTH', 'THIRTIETH',
-  'THIRTY-FIRST', 'THIRTY-SECOND', 'THIRTY-THIRD', 'THIRTY-FOURTH', 'THIRTY-FIFTH', 'THIRTY-SIXTH', 'THIRTY-SEVENTH', 'THIRTY-EIGHTH', 'THIRTY-NINTH', 'FORTIETH',
-  'FORTY-FIRST', 'FORTY-SECOND'
-];
+import { useTranslation } from 'react-i18next';
 
 interface StartFirstDayProps { onNext?: () => void; }
 
 export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const { profile } = useUserStore();
 
   const buttonText = useMemo(() => {
     const week = profile.pregnancyWeek;
-    if (week && week > 0 && week < ORDINAL_NUMBERS.length) return `START MY ${ORDINAL_NUMBERS[week]} WEEK`;
-    return "START MY FIRST DAY";
-  }, [profile.pregnancyWeek]);
+    if (week && week > 0) return t('intro.startfirstday_start_week', { week });
+    return t('intro.startfirstday_start');
+  }, [profile.pregnancyWeek, t]);
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },
@@ -61,15 +55,15 @@ export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
         <View style={styles.centerBox}>
           <View style={styles.svgContainer}><SvgXml xml={CONGRATS_SVG} width={s(304)} height={s(315)} /></View>
           <View style={styles.messageBox}>
-            <Text style={styles.title} allowFontScaling={false}>Congratulations!</Text>
-            <Text style={styles.message} allowFontScaling={false}>You've set the stage for a{'\n'}healthy journey ahead.{'\n'}Let's take your first small step{'\n'}today.</Text>
+            <Text style={styles.title} allowFontScaling={false}>{t('intro.startfirstday_title')}</Text>
+            <Text style={styles.message} allowFontScaling={false}>{t('intro.startfirstday_message')}</Text>
             <View style={styles.tail} />
           </View>
         </View>
       </View>
       <FixedButtonContainer><Button title={buttonText} onPress={handleNext} /></FixedButtonContainer>
       <Modal visible={isLoading} transparent={true} animationType="fade" onRequestClose={() => {}}>
-        <View style={styles.loadingOverlay}><View style={styles.loadingContainer}><ActivityIndicator size="large" color={theme.colors.orange500} /><Text style={styles.loadingText} allowFontScaling={false}>Loading...</Text></View></View>
+        <View style={styles.loadingOverlay}><View style={styles.loadingContainer}><ActivityIndicator size="large" color={theme.colors.orange500} /><Text style={styles.loadingText} allowFontScaling={false}>{t('common.loading')}</Text></View></View>
       </Modal>
     </SafeAreaView>
   );

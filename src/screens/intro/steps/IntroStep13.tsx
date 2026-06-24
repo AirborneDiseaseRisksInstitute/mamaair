@@ -7,6 +7,7 @@ import { useTheme, spacing, radius } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, BottomSheet, BottomSheetOption } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
 import { ms, fs, s, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const addPhotoPlaceholder = require('../../../assets/images/addPhoto.png');
@@ -16,6 +17,7 @@ const SHADOW_OFFSET = 4;
 
 export const IntroStep13: React.FC<IntroStep13Props> = ({ onNext, onBack, onSkip }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { setPhoto, profile } = useUserStore();
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(profile.photo || null);
   const [isPhotoSheetVisible, setPhotoSheetVisible] = useState(false);
@@ -65,14 +67,14 @@ export const IntroStep13: React.FC<IntroStep13Props> = ({ onNext, onBack, onSkip
       <BackButton onPress={onBack} />
       <ProgressBar progress={0.929} />
         <View style={styles.contentWrapper}>
-          <Text style={styles.titleText} allowFontScaling={false}>We'll use your photo to{'\n'}create your digital twin</Text>
+          <Text style={styles.titleText} allowFontScaling={false}>{t('intro.step13_photo_hint')}</Text>
           <View style={styles.photoContainer}><Image source={selectedPhoto ? { uri: selectedPhoto } : addPhotoPlaceholder} style={styles.photoImage} resizeMode="cover" /></View>
           <View style={styles.buttonContainer}>
             <Animated.View style={[styles.buttonShadow, { backgroundColor: buttonBorderColor, opacity: shadowOpacity }]} />
             <Pressable onPress={selectedPhoto ? () => setSelectedPhoto(null) : () => setPhotoSheetVisible(true)} onPressIn={handlePressIn} onPressOut={handlePressOut}>
               <Animated.View style={[styles.addPhotoButton, { borderColor: buttonBorderColor, transform: [{ translateY }] }]}>
                 {selectedPhoto && <View style={styles.buttonIcon}><FontAwesomeIcon icon={faTimes as any} size={ms(16)} color={buttonTextColor} /></View>}
-                <Text style={[styles.buttonText, { color: buttonTextColor }]} allowFontScaling={false}>{selectedPhoto ? 'Remove Photo' : 'Add Photo'}</Text>
+                <Text style={[styles.buttonText, { color: buttonTextColor }]} allowFontScaling={false}>{selectedPhoto ? t('intro.step13_remove_photo') : t('intro.step13_add_photo')}</Text>
               </Animated.View>
             </Pressable>
           </View>
@@ -80,11 +82,11 @@ export const IntroStep13: React.FC<IntroStep13Props> = ({ onNext, onBack, onSkip
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={handleSkip} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>SKIP</Text></Pressable>
-          <View style={styles.continueButtonWrapper}><Button title="APPLY" onPress={handleApply} /></View>
+          <Pressable onPress={handleSkip} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable>
+          <View style={styles.continueButtonWrapper}><Button title={t('intro.step13_apply')} onPress={handleApply} /></View>
         </View>
       </FixedButtonContainer>
-      <BottomSheet visible={isPhotoSheetVisible} onClose={() => setPhotoSheetVisible(false)} title="Select Photo">
+      <BottomSheet visible={isPhotoSheetVisible} onClose={() => setPhotoSheetVisible(false)} title={t('profile.select_photo')}>
         <View style={{ padding: spacing('md'), paddingBottom: spacing('xl') * 2 }}>
           <BottomSheetOption label="Take Photo" selected={false} onPress={handleLaunchCamera} />
           <BottomSheetOption label="Choose from Library" selected={false} onPress={handleLaunchLibrary} />

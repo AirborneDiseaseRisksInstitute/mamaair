@@ -16,6 +16,7 @@ import { Input, Button, OrangeHalo, type InputRef, useToast } from '../../compon
 import { AuthService } from '../../services/api/AuthService';
 import { getAuthErrorMessage } from '../../utils/authErrors';
 import { s, vs, ms, mvs } from '../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUserStore } from '../../store/useUserStore';
 import {
@@ -40,6 +41,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
 }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -83,8 +85,8 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
         } else {
             showToast({
               type: 'error',
-              title: 'Google sign-in',
-              message: 'Could not complete sign-in. Please try again.',
+              title: t('auth.google_sign_in_error'),
+              message: t('auth.google_sign_in_failed'),
             });
         }
       } else {
@@ -102,24 +104,24 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
             showToast({
               type: 'error',
-              title: 'Google sign-in',
-              message: 'Google Play Services is not available. Please update your device.',
+              title: t('auth.google_sign_in_error'),
+              message: t('auth.google_play_services_error'),
             });
             break;
           default:
             console.error('Google Sign-In Error', error);
             showToast({
               type: 'error',
-              title: 'Google sign-in',
-              message: 'Could not sign in with Google. Please try again.',
+              title: t('auth.google_sign_in_error'),
+              message: t('auth.google_sign_in_failed'),
             });
         }
       } else {
         console.error('Google Sign-In Error', error);
         showToast({
           type: 'error',
-          title: 'Google sign-in',
-          message: 'Could not sign in with Google. Please try again.',
+          title: t('auth.google_sign_in_error'),
+          message: t('auth.google_sign_in_failed'),
         });
       }
     } finally {
@@ -242,28 +244,28 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
           setEmailStore(email.trim());
           showToast({
             type: 'success',
-            title: 'Account created',
-            message: 'You are now logged in.',
+            title: t('auth.account_created_title'),
+            message: t('auth.account_created_message'),
           });
           onSignUp?.(email, password);
         } else {
           // Fallback for other formats or if no token is returned immediately
           const token = response.token || response.access_token || (typeof response === 'string' ? response : null);
-          
+
           if (token) {
             setToken(token);
             setEmailStore(email.trim());
             showToast({
               type: 'success',
-              title: 'Account created',
-              message: 'You are now logged in.',
+              title: t('auth.account_created_title'),
+              message: t('auth.account_created_message'),
             });
             onSignUp?.(email, password);
           } else {
             showToast({
               type: 'success',
-              title: 'Account created',
-              message: 'Please log in with your new account.',
+              title: t('auth.account_created_title'),
+              message: t('auth.already_have_account_login'),
             });
             onLogin?.();
           }
@@ -272,7 +274,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
         console.error('SignUp error:', error);
         showToast({
           type: 'error',
-          title: 'Sign up failed',
+          title: t('auth.sign_up_failed'),
           message: getAuthErrorMessage(error, 'signup'),
         });
       } finally {
@@ -326,14 +328,14 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             </View>
 
             {/* Welcome Text */}
-            <Text style={styles.welcomeText} allowFontScaling={false}>New here? Let's create your account</Text>
+            <Text style={styles.welcomeText} allowFontScaling={false}>{t('auth.new_here')}</Text>
 
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Input
                 ref={emailInputRef}
-                title="Email"
-                placeholder="yourmain@some.com"
+                title={t('auth.email')}
+                placeholder={t('auth.email_placeholder')}
                 type="email"
                 value={email}
                 onChangeText={setEmail}
@@ -345,8 +347,8 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             <View style={styles.inputContainer}>
               <Input
                 ref={passwordInputRef}
-                title="Password"
-                placeholder="Password"
+                title={t('auth.password')}
+                placeholder={t('auth.password_placeholder')}
                 type="password"
                 value={password}
                 onChangeText={setPassword}
@@ -358,8 +360,8 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             <View style={styles.inputContainer}>
               <Input
                 ref={confirmPasswordInputRef}
-                title="Confirm password"
-                placeholder="Confirm your password"
+                title={t('auth.confirm_password')}
+                placeholder={t('auth.confirm_password_placeholder')}
                 type="password"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
@@ -369,7 +371,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             {/* Sign Up Button */}
             <View style={styles.signUpButtonContainer}>
               <Button
-                title={loading ? "Signing up..." : "Sign up"}
+                title={loading ? t('auth.signing_up') : t('auth.sign_up')}
                 onPress={handleSignUp}
                 disabled={loading || !isFormValid}
               />
@@ -382,8 +384,8 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
               activeOpacity={0.7}
             >
               <Text style={styles.loginLinkText} allowFontScaling={false}>
-                already have an account?{' '}
-                <Text style={styles.loginLinkBold} allowFontScaling={false}>Log in</Text>
+                {t('auth.already_have_account')}{' '}
+                <Text style={styles.loginLinkBold} allowFontScaling={false}>{t('auth.log_in')}</Text>
               </Text>
             </TouchableOpacity>
           </View>
@@ -393,7 +395,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             {/* Separator */}
             <View style={styles.separatorContainer}>
               <View style={styles.separatorLine} />
-              <Text style={styles.separatorText} allowFontScaling={false}>Or</Text>
+              <Text style={styles.separatorText} allowFontScaling={false}>{t('common.or')}</Text>
               <View style={styles.separatorLine} />
             </View>
 
@@ -404,7 +406,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
               activeOpacity={0.7}
             >
               <GoogleIcon />
-              <Text style={styles.googleButtonText} allowFontScaling={false}>Continue with Google</Text>
+              <Text style={styles.googleButtonText} allowFontScaling={false}>{t('auth.continue_with_google')}</Text>
             </TouchableOpacity>
           </View>
         </View>

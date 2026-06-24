@@ -8,6 +8,7 @@ import {
   Image,
   Dimensions,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faCalendar, faLink, faChartLine, faChevronDown, faCheck, faCrosshairs } from '@fortawesome/free-solid-svg-icons';
@@ -17,6 +18,9 @@ import { useTheme, spacing } from '../theme';
 import { BackButton, BottomSheet, BottomSheetOption } from '../components/ui';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { SymptomsService } from '../services/api/SymptomsService';
+import { useUserStore } from '../store/useUserStore';
+import { useTranslation } from 'react-i18next';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 
 const WEEK_OPTIONS = Array.from({ length: 40 }, (_, i) => i + 1);
 
@@ -50,17 +54,44 @@ const WEEK_DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const EMPTY_WEEK_DATA = Array(7).fill({ value: 0 });
 
-// Returns Monday and Sunday of the current week as YYYY-MM-DD strings
-function getCurrentWeekRange(): { start: string; end: string } {
+const fmt = (d: Date) => d.toISOString().split('T')[0];
+
+// Returns the 7 dates (Mon–Sun) for a given pregnancy week number
+function getPregnancyWeekDates(
+  profileWeek: number | null | undefined,
+  weekSetDate: string | null | undefined,
+  targetWeek: number,
+): string[] {
+  if (profileWeek && weekSetDate) {
+    const setDate = new Date(weekSetDate);
+    const pregnancyStart = new Date(setDate);
+    pregnancyStart.setDate(setDate.getDate() - (profileWeek - 1) * 7);
+    const weekStart = new Date(pregnancyStart);
+    weekStart.setDate(pregnancyStart.getDate() + (targetWeek - 1) * 7);
+    return Array(7).fill(null).map((_, i) => {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      return fmt(d);
+    });
+  }
+  // Fallback: current calendar week
   const now = new Date();
-  const day = now.getDay(); // 0=Sun … 6=Sat
-  const diffToMonday = (day === 0 ? -6 : 1 - day);
+  const diffToMonday = now.getDay() === 0 ? -6 : 1 - now.getDay();
   const monday = new Date(now);
   monday.setDate(now.getDate() + diffToMonday);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
-  return { start: fmt(monday), end: fmt(sunday) };
+  return Array(7).fill(null).map((_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return fmt(d);
+  });
+}
+
+function formatWeekRange(dates: string[]): string {
+  if (dates.length < 7) return '';
+  const start = new Date(dates[0]);
+  const end = new Date(dates[6]);
+  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+  return `${start.toLocaleDateString('en-GB', opts)} – ${end.toLocaleDateString('en-GB', opts)}`;
 }
 
 interface MotherTwinScreenProps {
@@ -69,13 +100,24 @@ interface MotherTwinScreenProps {
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+function formatPregnancyStartDate(week: number | null, weekSetDate: string | null): string {
+  if (!week || !weekSetDate) return 'Unknown';
+  const d = new Date(weekSetDate);
+  d.setDate(d.getDate() - (week - 1) * 7);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) => {
   const theme = useTheme();
-  const progress = 36; // 36% progress
+  const { t } = useTranslation();
+  const { profile } = useUserStore();
+  const progress = 36; // 36% — no API source yet, needs product decision
+  const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1;
   const [activeTab, setActiveTab] = useState<StatTab>('Nutrition');
   const [activeSymptomClass, setActiveSymptomClass] = useState<string | null>(null);
-  const [statsWeek, setStatsWeek] = useState(1);
+  const [statsWeek, setStatsWeek] = useState(currentWeek);
   const [statsWeekSheetVisible, setStatsWeekSheetVisible] = useState(false);
+  const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [symptomChartData, setSymptomChartData] = useState<{
     class1: { value: number }[];
     class2: { value: number }[];
@@ -88,24 +130,30 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
     class4: [...EMPTY_WEEK_DATA],
   });
 
-  useEffect(() => {
-    const { start } = getCurrentWeekRange();
+  const weekDates = useMemo(
+    () => getPregnancyWeekDates(profile.pregnancyWeek, profile.pregnancyWeekSetDate, statsWeek),
+    [statsWeek, profile.pregnancyWeek, profile.pregnancyWeekSetDate],
+  );
 
-    // Build the 7 dates of the current week (Mon–Sun)
-    const weekDates = Array(7).fill(null).map((_, i) => {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      return d.toISOString().split('T')[0];
+  const weekRangeLabel = useMemo(() => formatWeekRange(weekDates), [weekDates]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingChart(true);
+    setSymptomChartData({
+      class1: [...EMPTY_WEEK_DATA],
+      class2: [...EMPTY_WEEK_DATA],
+      class3: [...EMPTY_WEEK_DATA],
+      class4: [...EMPTY_WEEK_DATA],
     });
 
-    // One request per day — response shape:
-    // { start_date, end_date, classes: [{ symptom_class, class_name, color_flag, quantity, symptoms }] }
     Promise.all(
       weekDates.map((date) =>
         SymptomsService.getMommyStatisticsClasses({ start_date: date, end_date: date })
-          .catch(() => null)
-      )
+          .catch(() => null),
+      ),
     ).then((results) => {
+      if (cancelled) return;
       const c1: { value: number }[] = [];
       const c2: { value: number }[] = [];
       const c3: { value: number }[] = [];
@@ -121,8 +169,10 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       });
 
       setSymptomChartData({ class1: c1, class2: c2, class3: c3, class4: c4 });
-    });
-  }, []);
+    }).finally(() => { if (!cancelled) setIsLoadingChart(false); });
+
+    return () => { cancelled = true; };
+  }, [weekDates]);
   const maxContentHeight = SCREEN_HEIGHT * 0.3;
   const size = Math.min(140, maxContentHeight * 0.8); // Smaller circular progress
   const strokeWidth = 8;
@@ -587,7 +637,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       <BackButton onPress={onBack} />
       
       <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>Mother Twin</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('mother.title')}</Text>
       </View>
 
       <ScrollView 
@@ -658,14 +708,16 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 color={theme.colors.textPrimary}
               />
             </View>
-            <Text style={styles.infoText} allowFontScaling={false}>start Date: 07/09/2025</Text>
+            <Text style={styles.infoText} allowFontScaling={false}>
+              Start Date: {formatPregnancyStartDate(profile.pregnancyWeek, profile.pregnancyWeekSetDate)}
+            </Text>
           </View>
 
           <View style={[styles.infoRow, styles.infoRowLast]}>
             <View style={styles.infoIcon}>
               <View style={styles.infoIconCircle} />
             </View>
-            <Text style={styles.infoText} allowFontScaling={false}>Tracking: {progress}%</Text>
+            <Text style={styles.infoText} allowFontScaling={false}>{t('mother.tracking', { progress })}</Text>
           </View>
         </View>
 
@@ -684,7 +736,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
               <View style={styles.badgeContentRight}>
                 {/* Row 1: Title and Amount */}
                 <View style={styles.badgeTitleRow}>
-                  <Text style={styles.badgeCardTitle} allowFontScaling={false}>Your Badges</Text>
+                  <Text style={styles.badgeCardTitle} allowFontScaling={false}>{t('mother.your_badges')}</Text>
                   <View style={styles.badgeAmountContainer}>
                     <Text style={styles.badgeAmountText} allowFontScaling={false}>2$</Text>
                   </View>
@@ -702,14 +754,14 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                       color={theme.colors.textPrimary}
                       style={styles.badgeButtonIcon}
                     />
-                    <Text style={styles.badgeButtonText} allowFontScaling={false}>Copy link</Text>
+                    <Text style={styles.badgeButtonText} allowFontScaling={false}>{t('mother.copy_link')}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity 
                     style={styles.badgeButton}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.badgeButtonText} allowFontScaling={false}>Share on</Text>
+                    <Text style={styles.badgeButtonText} allowFontScaling={false}>{t('mother.share_on')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -726,19 +778,21 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 color={theme.colors.textSecondary}
                 style={styles.statsHeaderIcon}
               />
-              <Text style={styles.statsHeaderTitle} allowFontScaling={false}>Statics On Active Actions</Text>
+              <Text style={styles.statsHeaderTitle} allowFontScaling={false}>{t('mother.stats_title')}</Text>
             </View>
 
             {/* Sub Header: Date & Week Dropdown */}
             <View style={styles.statsSubHeader}>
               <View style={styles.statsDateRow}>
-                <FontAwesomeIcon 
-                  icon={faCalendar as any} 
-                  size={14} 
+                <FontAwesomeIcon
+                  icon={faCalendar as any}
+                  size={14}
                   color={theme.colors.textSecondary}
                   style={styles.statsDateIcon}
                 />
-                <Text style={styles.statsDateText} allowFontScaling={false}>Wednesday</Text>
+                <Text style={styles.statsDateText} allowFontScaling={false}>
+                  {weekRangeLabel}
+                </Text>
               </View>
 
               <TouchableOpacity
@@ -746,7 +800,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 activeOpacity={0.7}
                 onPress={() => setStatsWeekSheetVisible(true)}
               >
-                <Text style={styles.statsWeekText} allowFontScaling={false}>Week {statsWeek}</Text>
+                <Text style={styles.statsWeekText} allowFontScaling={false}>{t('today.week_label', { week: statsWeek })}</Text>
                 <FontAwesomeIcon 
                   icon={faChevronDown as any} 
                   size={12} 
@@ -771,7 +825,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                     styles.statsTabText,
                     activeTab === tab && styles.statsTabTextActive,
                   ]} allowFontScaling={false}>
-                    {tab}
+                    {tab === 'Nutrition' ? t('mother.tab_nutrition') : tab === 'Protection' ? t('mother.tab_protection') : t('mother.tab_activity')}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -784,13 +838,30 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 <View style={styles.statsChartIcon}>
                   <View style={styles.statsChartIconInner} />
                 </View>
-                <Text style={styles.statsChartTitle} allowFontScaling={false}>Nutrition</Text>
+                <Text style={styles.statsChartTitle} allowFontScaling={false}>{t('today.diet')}</Text>
+                {isLoadingChart && (
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.orange500}
+                    style={{ marginLeft: 'auto' }}
+                  />
+                )}
               </View>
 
               {/* Pie Chart */}
               <View style={styles.statsChartWrapper}>
                 <PieChart
-                  data={PIE_DATA}
+                  data={(() => {
+                    const totals = SYMPTOM_CLASSES.map(cls => ({
+                      color: cls.color,
+                      value: symptomChartData[cls.id as keyof typeof symptomChartData]
+                        .reduce((s: number, d: { value: number }) => s + d.value, 0),
+                    }));
+                    const sum = totals.reduce((s, d) => s + d.value, 0);
+                    return sum > 0
+                      ? totals.map(d => ({ ...d, value: Math.round((d.value / sum) * 100) }))
+                      : PIE_DATA;
+                  })()}
                   radius={80}
                   donut={false}
                   showText={false}
@@ -800,8 +871,14 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
 
               {/* Legend */}
               <View style={styles.statsLegend}>
-                <View style={styles.statsLegendDot} />
-                <Text style={styles.statsLegendText} allowFontScaling={false}>nutrition</Text>
+                {SYMPTOM_CLASSES.map(cls => (
+                  <View key={cls.id} style={[styles.statsLegend, { marginRight: spacing('sm') }]}>
+                    <View style={[styles.statsLegendDot, { backgroundColor: cls.color }]} />
+                    <Text style={[styles.statsLegendText, { color: cls.color }]} allowFontScaling={false}>
+                      {cls.label}
+                    </Text>
+                  </View>
+                ))}
               </View>
             </View>
 
@@ -840,12 +917,18 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 color={theme.colors.textPrimary}
                 style={styles.symptomsHeaderIcon}
               />
-              <Text style={styles.symptomsHeaderTitle} allowFontScaling={false}>weekly Symptoms Tracker</Text>
+              <Text style={styles.symptomsHeaderTitle} allowFontScaling={false}>{t('mother.symptoms_tracker')}</Text>
+              {isLoadingChart && (
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.orange500}
+                  style={{ marginLeft: 'auto' }}
+                />
+              )}
             </View>
 
-            {/* Description */}
             <Text style={styles.symptomsDescription} allowFontScaling={false}>
-              Your symptoms are slightly improving this week. Today your fatigue is lower than yesterday.
+              {weekRangeLabel}
             </Text>
 
             {/* Area Chart — 4 classes, current week day by day
@@ -921,7 +1004,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       <BottomSheet
         visible={statsWeekSheetVisible}
         onClose={() => setStatsWeekSheetVisible(false)}
-        title="Select week"
+        title={t('mother.select_week')}
       >
         <ScrollView
           style={{ maxHeight: 320 }}

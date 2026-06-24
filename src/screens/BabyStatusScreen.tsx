@@ -9,25 +9,25 @@ import { SVG_ICONS, WAVE_BACKGROUND_SVG, MOTHER_RISK_SVG, BABY_RISK_SVG, BEHAVIO
 import { WEEKS_DATA } from './HomeScreen';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { SummaryService, type SummaryResponse } from '../services/api/SummaryService';
+import { RecommendationCompletionService, type RecommendationCompletion } from '../services/api/RecommendationCompletionService';
+import { useTranslation } from 'react-i18next';
+
+function getCurrentWeekDates(): string[] {
+  const today = new Date();
+  const dow = today.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + diff + i);
+    return d.toISOString().split('T')[0];
+  });
+}
 
 interface BabyStatusScreenProps {
   onBack?: () => void;
 }
 
-// Map icon keys to human-friendly system names
-const SYSTEM_LABELS: Record<string, string> = {
-  heartSystem: 'Cardiovascular System',
-  brainSystem: 'Nervous System',
-  boneSystem: 'Skeletal System',
-  digestiveSystem: 'Digestive System',
-  urinary: 'Urinary System',
-  integumentarySystem: 'Integumentary System',
-  endocrineSystem: 'Endocrine System',
-  immuneSystem: 'Immune System',
-  respiratorySystem: 'Respiratory System',
-  senseSystem: 'Sensory System',
-  reproductiveSystem: 'Reproductive System',
-};
 
 // Reusable icon with animated wave fill (similar to WeekCycleView)
 const SystemIconWithWave: React.FC<{
@@ -179,7 +179,15 @@ const SystemIconWithWave: React.FC<{
 
 export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { profile } = useUserStore();
+
+  const getSystemLabel = (iconKey: string): string => {
+    if (!iconKey) return t('baby.system_fallback');
+    const key = `baby.system_${iconKey}` as any;
+    const result = t(key, { defaultValue: '' });
+    return result || iconKey.replace(/([A-Z])/g, ' $1').replace(/^\w/, c => c.toUpperCase());
+  };
 
   const activeWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1;
   const weekIndex = Math.max(0, Math.min(WEEKS_DATA.length - 1, activeWeek - 1));
@@ -187,6 +195,32 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
   const circleIcons = weekData?.circleIcons || [];
 
   const [showAllSystems, setShowAllSystems] = useState(false);
+  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [completions, setCompletions] = useState<RecommendationCompletion[]>([]);
+
+  useEffect(() => {
+    SummaryService.getSummary()
+      .then(data => {
+        setSummary(data);
+        return data;
+      })
+      .then(data => {
+        if (data?.snapshot_id) {
+          return RecommendationCompletionService.getCompletions(data.snapshot_id);
+        }
+      })
+      .then(comp => { if (comp) setCompletions(comp); })
+      .catch(() => {});
+  }, []);
+
+  const weekDates = getCurrentWeekDates();
+
+  const checkinDays = (summary?.daily_checkins ?? []).filter(d => weekDates.includes(d)).length;
+  const exposureDays = (summary?.exposure_history?.items ?? []).filter(item => weekDates.includes(item.date)).length;
+  const taskDays = (summary?.task_completions ?? []).filter(tc => weekDates.includes(tc.date) && tc.tasks.length > 0).length;
+
+  const babyDelta = Math.abs(Math.round(summary?.risks_delta?.baby ?? 0));
+  const perItemDelta = Math.round(babyDelta / 3);
 
   // Determine focus system: pick the one with the highest percentage
   const focusSystem = circleIcons.reduce<typeof circleIcons[0] | null>((currentMax, item) => {
@@ -197,11 +231,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
   }, null);
 
   const rawIconKey = (focusSystem?.iconPath || '').replace('.svg', '');
-  const focusLabel =
-    SYSTEM_LABELS[rawIconKey] ||
-    (rawIconKey
-      ? rawIconKey.replace(/([A-Z])/g, ' $1').replace(/^\w/, (c) => c.toUpperCase())
-      : 'Baby System');
+  const focusLabel = getSystemLabel(rawIconKey);
   const focusPercentage = focusSystem?.percentage ?? 0;
   const progressToday = 4; // Placeholder daily change for UI
 
@@ -446,7 +476,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       <BackButton onPress={onBack} />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>Baby Status - Week {activeWeek}</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('baby.status_week', { week: activeWeek })}</Text>
       </View>
 
       <ScrollView
@@ -455,11 +485,10 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       >
         {/* Systems Development Card */}
         <View style={styles.statusCard}>
-          <Text style={styles.cardTitle} allowFontScaling={false}>Baby Development Systems</Text>
+          <Text style={styles.cardTitle} allowFontScaling={false}>{t('baby.development_systems')}</Text>
 
           <Text style={styles.cardDescription} allowFontScaling={false}>
-            {weekData?.description ||
-              'Protective measures this week support the healthy development of your baby.'}
+            {summary?.week_info?.text || weekData?.description || ''}
           </Text>
 
           {/* Systems list */}
@@ -470,7 +499,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 const svgXml = SVG_ICONS[iconKey] || SVG_ICONS['heartSystem.svg'];
                 const percentage = system.percentage ?? 0;
                 const rawIconKey = (system.iconPath || '').replace('.svg', '');
-                const systemLabel = SYSTEM_LABELS[rawIconKey] || rawIconKey.replace(/([A-Z])/g, ' $1').replace(/^\w/, (c) => c.toUpperCase());
+                const systemLabel = getSystemLabel(rawIconKey);
 
                 return (
                   <View key={system.index} style={styles.systemRow}>
@@ -525,11 +554,11 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
               <SvgXml xml={BABY_RISK_SVG} width={45} height={45} />
             </View>
             <View style={styles.actionCardHeaderText}>
-              <Text style={styles.actionCardTitle} allowFontScaling={false}>Your actions this week improved your baby&apos;s</Text>
+              <Text style={styles.actionCardTitle} allowFontScaling={false}>{t('baby.actions_title')}</Text>
               <Text style={styles.actionCardTitle} numberOfLines={1} allowFontScaling={false}>
-                protection by <Text style={{ color: theme.colors.orange500 }} allowFontScaling={false}>+14%</Text>
+                {t('baby.protection_by')}<Text style={{ color: theme.colors.orange500 }} allowFontScaling={false}>+{babyDelta}%</Text>
               </Text>
-              <Text style={styles.actionCardSubtitle} allowFontScaling={false}>mainly supporting the nervous system.</Text>
+              <Text style={styles.actionCardSubtitle} allowFontScaling={false}>{t('baby.mainly_supporting', { system: focusLabel.toLowerCase() })}</Text>
             </View>
           </View>
 
@@ -540,11 +569,11 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 <SvgXml xml={BEHAVIOUR_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
-                <Text style={styles.actionItemTitle} allowFontScaling={false}>4/7 Days</Text>
-                <Text style={styles.actionItemDescription} allowFontScaling={false}>Kept your protective habits 4 days this week.</Text>
+                <Text style={styles.actionItemTitle} allowFontScaling={false}>{checkinDays}/7 Days</Text>
+                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_habits', { days: checkinDays })}</Text>
               </View>
               <View style={styles.actionItemBadge}>
-                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+5%</Text>
+                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+{perItemDelta}%</Text>
               </View>
             </View>
 
@@ -554,11 +583,11 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 <SvgXml xml={RUNNING_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
-                <Text style={styles.actionItemTitle} allowFontScaling={false}>2/4 Days</Text>
-                <Text style={styles.actionItemDescription} allowFontScaling={false}>Took short walks or rest sessions.</Text>
+                <Text style={styles.actionItemTitle} allowFontScaling={false}>{exposureDays}/7 Days</Text>
+                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_walks')}</Text>
               </View>
               <View style={styles.actionItemBadge}>
-                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+5%</Text>
+                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+{perItemDelta}%</Text>
               </View>
             </View>
 
@@ -568,11 +597,11 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 <SvgXml xml={DIET_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
-                <Text style={styles.actionItemTitle} allowFontScaling={false}>1/3 Days</Text>
-                <Text style={styles.actionItemDescription} allowFontScaling={false}>Met your hydration or diet goal.</Text>
+                <Text style={styles.actionItemTitle} allowFontScaling={false}>{taskDays}/7 Days</Text>
+                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_hydration')}</Text>
               </View>
               <View style={styles.actionItemBadge}>
-                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+5%</Text>
+                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+{perItemDelta}%</Text>
               </View>
             </View>
           </View>

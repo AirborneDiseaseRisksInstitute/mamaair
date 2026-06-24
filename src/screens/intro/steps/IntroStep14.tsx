@@ -19,9 +19,14 @@ import {
   BackButton,
   ProgressBar,
   Checkbox,
+  AccessLocationBottomSheet,
 } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
+import { locationTracker } from '../../../services/tracking/LocationTracker';
 import { AuthService } from '../../../services/api/AuthService';
+import { ProfileService } from '../../../services/api/ProfileService';
+import { LifestyleService } from '../../../services/api/LifestyleService';
+import { LanguageService } from '../../../services/api/LanguageService';
 import {
   ms,
   fs,
@@ -30,6 +35,7 @@ import {
   FIXED_BUTTON_AREA_HEIGHT,
   HEADER_CLEARANCE,
 } from '../../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 import { getDeviceTimezone } from '../../../utils/timezoneUtils';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -47,9 +53,11 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
   onSkip,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { setAgreementAccepted, profile } = useUserStore();
   const [isConsentChecked, setIsConsentChecked] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showLocationSheet, setShowLocationSheet] = useState(false);
 
   const handleNext = async () => {
     setIsLoading(true);
@@ -60,37 +68,7 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
         ? profile.photo 
         : `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'Mama Air')}&background=FF8C00&color=fff`;
 
-      // Map internal values to backend Enums
-      const countryMap: Record<string, string> = {
-        'nigeria': 'NG',
-        'kenya': 'KE',
-        'others': 'other',
-      };
-
-      const languageMap: Record<string, string> = {
-        'english': 'en',
-        'french': 'fr',
-        'swahili': 'sw',
-        'yoruba': 'en', // Fallback as 'ig' or 'yo' not in enum
-        'arabic': 'en', // Fallback
-      };
-
-      const workTypeMap: Record<string, string> = {
-        'desk': 'Desk',
-        'standing': 'Standing',
-        'night': 'Night Shift',
-        'physical': 'Physical',
-        'home': 'Domestic',
-      };
-
-      // Cooking method mapping: 'mixed' is not in enum, send null or fallback
-      const cookingMethodMap: Record<string, string | null> = {
-        'gas': 'gas',
-        'charcoal': 'charcoal',
-        'mixed': null, 
-      };
-
-      const ventilationMap: Record<string, string> = {
+      const VENTILATION_LEVEL: Record<string, string> = {
         'good': 'high',
         'moderate': 'medium',
         'poor': 'low',
@@ -98,52 +76,49 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
 
       const profilePayload = {
         name: profile.name || "",
-        email: profile.email || "",
         avatar_url: avatarUrl,
         date_of_birth: profile.birthday || null,
         height: profile.height || 0,
         weight_pre_pregnancy: profile.weight || 0,
-        language: languageMap[profile.language || ''] || "en",
-        country: countryMap[profile.country || ''] || "other",
+        language: profile.language || "en",
+        country: profile.country || "other",
         week_of_pregnancy: profile.pregnancyWeek || 1,
         timezone: profile.timezone || getDeviceTimezone(),
         is_first_pregnancy: profile.pregnancyNumber === 'first',
+        consent: true,
+        tracking_enabled: true,
+        notifications_enabled: true,
       };
 
-      console.log('Sending PUT profile payload:', profilePayload);
-      const updatedProfile = await AuthService.putProfile(profilePayload);
-      console.log('Profile updated, received ID:', updatedProfile.id);
+      const updatedProfile = await ProfileService.patchProfile(profilePayload);
+      LanguageService.setLanguage(profile.language || 'en').catch(() => {});
 
       // 2. Update Lifestyle
       const lifestylePayload = {
-        user: updatedProfile.id, // Required by backend
+        user: updatedProfile.id,
         average_sleep_hours: profile.sleepHours || 0,
-        work_type: workTypeMap[profile.workType || ''] || null,
+        work_type: profile.workType || null,
         diet_type: profile.diet || null,
-        cooking_method: cookingMethodMap[profile.cookingMethod || ''] || null,
+        cooking_method: profile.cookingMethod || null,
         activity_duration_minutes: Math.round((profile.activeHours || 0) * 60),
-        // Extra fields requested to be sent to lifestyle endpoint
         area: profile.area || "",
         ventilation: profile.ventilation || null,
-        ventilation_level: ventilationMap[profile.ventilation || ''] || "medium",
+        ventilation_level: VENTILATION_LEVEL[profile.ventilation || ''] || "medium",
         time_spent: profile.timeSpent || null,
         time_of_day: profile.timeOfDay || null,
       };
 
-      console.log('Sending PUT lifestyle payload:', lifestylePayload);
-      await AuthService.putLifestyle(lifestylePayload);
+      await LifestyleService.patchLifestyle(lifestylePayload);
 
       setAgreementAccepted(true);
-      if (onNext) onNext();
+      setShowLocationSheet(true);
     } catch (error: any) {
       console.error('Failed to save profile/lifestyle:', error);
       if (error.response) {
         console.error('Error response data:', error.response.data);
       }
-      // Even if it fails, we might want to proceed or show error
-      // For now, let's allow proceeding to avoid blocking user flow
       setAgreementAccepted(true);
-      if (onNext) onNext();
+      setShowLocationSheet(true);
     } finally { setIsLoading(false); }
   };
 
@@ -235,59 +210,35 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
           <Image source={consentCheckImage} style={styles.illustrationImage} />
           <View style={styles.servicesBox}>
             <Text style={styles.servicesTitle}>
-              By activating this consent, you will get these services:
+              {t('intro.step14_services_title')}
             </Text>
             <View style={styles.servicesContent}>
               <View style={styles.serviceItem}>
-                <Text style={styles.serviceNumber}>1. Emergency Care</Text>
-                <Text style={styles.serviceDescription}>
-                  Provides immediate medical attention to people experiencing
-                  sudden, serious illness or injury to stabilize their condition
-                  and prevent further harm.
-                </Text>
+                <Text style={styles.serviceNumber}>{t('intro.step14_service1_title')}</Text>
+                <Text style={styles.serviceDescription}>{t('intro.step14_service1_desc')}</Text>
               </View>
               <View style={styles.serviceItem}>
-                <Text style={styles.serviceNumber}>
-                  2. Medication prescription
-                </Text>
-                <Text style={styles.serviceDescription}>
-                  Allows healthcare providers to prescribe medications based on
-                  your medical condition and needs to ensure proper treatment
-                  and recovery.
-                </Text>
+                <Text style={styles.serviceNumber}>{t('intro.step14_service2_title')}</Text>
+                <Text style={styles.serviceDescription}>{t('intro.step14_service2_desc')}</Text>
               </View>
               <View style={styles.serviceItem}>
-                <Text style={styles.serviceNumber}>
-                  3. Doctor or midwife appointment
-                </Text>
-                <Text style={styles.serviceDescription}>
-                  Enables scheduling and management of appointments with
-                  healthcare professionals to monitor your health and receive
-                  ongoing care.
-                </Text>
+                <Text style={styles.serviceNumber}>{t('intro.step14_service3_title')}</Text>
+                <Text style={styles.serviceDescription}>{t('intro.step14_service3_desc')}</Text>
               </View>
               <View style={styles.serviceItem}>
-                <Text style={styles.serviceNumber}>4. Health monitoring</Text>
-                <Text style={styles.serviceDescription}>
-                  Continuous tracking of vital signs and health metrics to
-                  identify any changes or concerns early.
-                </Text>
+                <Text style={styles.serviceNumber}>{t('intro.step14_service4_title')}</Text>
+                <Text style={styles.serviceDescription}>{t('intro.step14_service4_desc')}</Text>
               </View>
               <View style={styles.serviceItem}>
-                <Text style={styles.serviceNumber}>
-                  5. Medical records access
-                </Text>
-                <Text style={styles.serviceDescription}>
-                  Provides secure access to your medical history and records for
-                  better coordination of care.
-                </Text>
+                <Text style={styles.serviceNumber}>{t('intro.step14_service5_title')}</Text>
+                <Text style={styles.serviceDescription}>{t('intro.step14_service5_desc')}</Text>
               </View>
             </View>
           </View>
           <View style={styles.checkboxContainer}>
             <Checkbox
-              label="Data Consent Agreement"
-              subtitle="I consent to the processing of my data."
+              label={t('intro.step14_consent_label')}
+              subtitle={t('intro.step14_consent_subtitle')}
               checked={isConsentChecked}
               onPress={() => setIsConsentChecked(!isConsentChecked)}
               icon={
@@ -306,17 +257,28 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
           <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}>
-            <Text style={styles.skipText}>SKIP</Text>
+            <Text style={styles.skipText}>{t('common.skip')}</Text>
           </Pressable>
           <View style={styles.continueButtonWrapper}>
             <Button
-              title={isLoading ? 'Saving...' : 'Agree'}
+              title={isLoading ? t('common.saving') : t('intro.step14_agree')}
               onPress={handleNext}
               disabled={!isConsentChecked || isLoading}
             />
           </View>
         </View>
       </FixedButtonContainer>
+
+      <AccessLocationBottomSheet
+        visible={showLocationSheet}
+        onClose={() => { setShowLocationSheet(false); onNext?.(); }}
+        onAllow={() => {
+          setShowLocationSheet(false);
+          locationTracker.requestAndStart().catch(() => {});
+          onNext?.();
+        }}
+        onNotNow={() => { setShowLocationSheet(false); onNext?.(); }}
+      />
     </SafeAreaView>
   );
 };

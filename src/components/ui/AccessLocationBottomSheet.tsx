@@ -12,6 +12,7 @@ import { useTheme, spacing } from '../../theme';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { responsiveUtils } from '../../utils/responsiveUtils';
+import { useTranslation } from 'react-i18next';
 
 interface AccessLocationBottomSheetProps {
   visible: boolean;
@@ -27,6 +28,7 @@ export const AccessLocationBottomSheet: React.FC<AccessLocationBottomSheetProps>
   onNotNow,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   const styles = useMemo(
     () =>
@@ -127,16 +129,16 @@ export const AccessLocationBottomSheet: React.FC<AccessLocationBottomSheetProps>
         </View>
 
         <Text style={styles.title} allowFontScaling={false}>
-          Want local weather and air alerts?
+          {t('location.sheet_title')}
         </Text>
 
         <Text style={styles.description} allowFontScaling={false}>
-          Allow Mama Air to adjust your daily tips based on your area.
+          {t('location.sheet_desc')}
         </Text>
 
         <View style={styles.buttonContainer}>
           <Button
-            title="Yes, allow access"
+            title={t('location.allow')}
             onPress={handleAllow}
           />
         </View>
@@ -147,7 +149,7 @@ export const AccessLocationBottomSheet: React.FC<AccessLocationBottomSheetProps>
           activeOpacity={0.7}
         >
           <Text style={styles.notNowText} allowFontScaling={false}>
-            Not now
+            {t('location.not_now')}
           </Text>
         </TouchableOpacity>
       </View>

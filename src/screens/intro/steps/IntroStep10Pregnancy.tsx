@@ -4,24 +4,26 @@ import { useTheme, spacing } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, IntroTitleBox } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
 import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface IntroStep10PregnancyProps { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
 type PregnancyNumber = 'first' | 'second' | 'third' | 'moreThan3';
 
-const PREGNANCY_OPTIONS: Array<{ id: PregnancyNumber; label: string; iconEmoji: string }> = [
-  { id: 'first', label: 'First', iconEmoji: '1️⃣' },
-  { id: 'second', label: 'Second', iconEmoji: '2️⃣' },
-  { id: 'third', label: 'Third', iconEmoji: '3️⃣' },
-  { id: 'moreThan3', label: 'More than 3', iconEmoji: '👶' },
-];
-
 export const IntroStep10Pregnancy: React.FC<IntroStep10PregnancyProps> = ({ onNext, onBack, onSkip }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<PregnancyNumber | null>(null);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
   const { setPregnancyNumber } = useUserStore();
+
+  const PREGNANCY_OPTIONS: Array<{ id: PregnancyNumber; label: string; iconEmoji: string }> = [
+    { id: 'first', label: t('intro.step10pregnancy_first'), iconEmoji: '1️⃣' },
+    { id: 'second', label: t('intro.step10pregnancy_second'), iconEmoji: '2️⃣' },
+    { id: 'third', label: t('intro.step10pregnancy_third'), iconEmoji: '3️⃣' },
+    { id: 'moreThan3', label: t('intro.step10pregnancy_more'), iconEmoji: '👶' },
+  ];
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },
@@ -45,8 +47,8 @@ export const IntroStep10Pregnancy: React.FC<IntroStep10PregnancyProps> = ({ onNe
         <BackButton onPress={onBack} />
         <ProgressBar progress={0.75} />
         <View style={styles.contentWrapper}>
-          <IntroTitleBox title="Which pregnancy is this for you?" onLayout={setTitleBoxCenterY} />
-          <Text style={styles.questionText} allowFontScaling={false}>Select your current pregnancy number:</Text>
+          <IntroTitleBox title={t('intro.step10pregnancy_title')} onLayout={setTitleBoxCenterY} />
+          <Text style={styles.questionText} allowFontScaling={false}>{t('intro.step10pregnancy_desc')}</Text>
           <View style={styles.optionsContainer}>
             {PREGNANCY_OPTIONS.map((o) => (
               <RadioOption key={o.id} iconEmoji={o.iconEmoji} label={o.label} selected={selected === o.id} onPress={() => setSelected(o.id)} />
@@ -56,8 +58,8 @@ export const IntroStep10Pregnancy: React.FC<IntroStep10PregnancyProps> = ({ onNe
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>SKIP</Text></Pressable>
-          <View style={styles.continueButtonWrapper}><Button title="CONTINUE" onPress={handleNext} disabled={!selected} /></View>
+          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable>
+          <View style={styles.continueButtonWrapper}><Button title={t('common.continue')} onPress={handleNext} disabled={!selected} /></View>
         </View>
       </FixedButtonContainer>
     </SafeAreaView>

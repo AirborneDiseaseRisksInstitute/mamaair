@@ -9,6 +9,7 @@ import {
   type InputRef,
 } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
+import { useTranslation } from 'react-i18next';
 
 interface IntroStep02Props {
   onNext?: () => void;
@@ -17,6 +18,7 @@ interface IntroStep02Props {
 
 export const IntroStep02: React.FC<IntroStep02Props> = ({ onNext, onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { setName, setEmail, profile } = useUserStore();
   const [name, setNameLocal] = useState(profile.name || '');
   const [email, setEmailLocal] = useState(profile.email || '');
@@ -92,14 +94,14 @@ export const IntroStep02: React.FC<IntroStep02Props> = ({ onNext, onBack }) => {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.instructionText} allowFontScaling={false}>
-          Enter your name and email for further services and supports.
+          {t('intro.step02_instruction')}
         </Text>
 
         <View style={styles.inputContainer}>
           <Input
             ref={nameInputRef}
-            title="Name"
-            placeholder="Mary Anderson"
+            title={t('intro.step02_name')}
+            placeholder={t('intro.step02_name_placeholder')}
             type="text"
             value={name}
             onChangeText={setNameLocal}
@@ -110,16 +112,16 @@ export const IntroStep02: React.FC<IntroStep02Props> = ({ onNext, onBack }) => {
         <View style={styles.inputContainer}>
           <Input
             ref={emailInputRef}
-            title="Email"
-            placeholder="mary.anderson@gmail.com"
+            title={t('intro.step02_email')}
+            placeholder={t('intro.step02_email_placeholder')}
             type="email"
             value={email}
             onChangeText={setEmailLocal}
-            editable={true} // Email cannot be changed
+            editable={true}
           />
         </View>
 
-        <Button title="CONTINUE" onPress={handleNext} disabled={!isFormValid} />
+        <Button title={t('common.continue')} onPress={handleNext} disabled={!isFormValid} />
       </ScrollView>
     </SafeAreaView>
   );

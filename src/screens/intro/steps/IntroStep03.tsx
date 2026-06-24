@@ -5,6 +5,7 @@ import { Button, FixedButtonContainer, OrangeHalo, BackButton, DatePicker, Heigh
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faCalendar, faUser } from '@fortawesome/free-solid-svg-icons';
 import { useUserStore } from '../../../store/useUserStore';
+import { useTranslation } from 'react-i18next';
 import { ms, fs, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const SHADOW_OFFSET = 4;
@@ -17,6 +18,7 @@ interface IntroStep03Props {
 
 export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { setBirthday, setHeight, setWeight, profile } = useUserStore();
   const [birthday, setBirthdayLocal] = useState<Date | null>(profile.birthday ? new Date(profile.birthday) : null);
   const [height, setHeightLocal] = useState<number | null>(profile.height || null);
@@ -73,30 +75,30 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.contentWrapper}>
           <Text style={styles.instructionText} allowFontScaling={false}>
-            Your age, height, and weight help us understand your body better. Mama Air uses this information to provide safe, personalised guidance and and keep you and your baby protected every step of the way.
+            {t('intro.step03_instruction')}
           </Text>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.inputTitle} allowFontScaling={false}>Birthday</Text>
+            <Text style={styles.inputTitle} allowFontScaling={false}>{t('intro.step03_birthday')}</Text>
             <TouchableOpacity style={styles.pickerInputWrapper} onPress={() => setDatePickerVisible(true)} activeOpacity={0.7}>
               <View style={styles.pickerShadow} />
               <View style={styles.pickerInputContainer}>
                 <View style={styles.pickerInput}>
                   <View style={styles.pickerIconContainer}><FontAwesomeIcon icon={faCalendar as any} size={ms(18)} style={styles.pickerIcon} /></View>
-                  <Text style={styles.pickerInputText} allowFontScaling={false}>{birthday ? formatDate(birthday) : 'mm/dd/yyyy'}</Text>
+                  <Text style={styles.pickerInputText} allowFontScaling={false}>{birthday ? formatDate(birthday) : t('intro.step03_birthday_placeholder')}</Text>
                 </View>
               </View>
             </TouchableOpacity>
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.inputTitle} allowFontScaling={false}>Height & Weight</Text>
+            <Text style={styles.inputTitle} allowFontScaling={false}>{t('intro.step03_height_weight')}</Text>
             <TouchableOpacity style={styles.pickerInputWrapper} onPress={() => setHeightWeightPickerVisible(true)} activeOpacity={0.7}>
               <View style={styles.pickerShadow} />
               <View style={styles.pickerInputContainer}>
                 <View style={styles.pickerInput}>
                   <View style={styles.pickerIconContainer}><FontAwesomeIcon icon={faUser as any} size={ms(18)} style={styles.pickerIcon} /></View>
-                  <Text style={styles.pickerInputText} allowFontScaling={false}>{formatHeightWeight() || 'Select height and weight'}</Text>
+                  <Text style={styles.pickerInputText} allowFontScaling={false}>{formatHeightWeight() || t('intro.step03_height_weight_placeholder')}</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -105,7 +107,7 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
       </ScrollView>
 
       <FixedButtonContainer>
-        <Button title="CONTINUE" onPress={() => { if (isFormValid) { setBirthday(birthday); setHeight(height); setWeight(weight); onNext?.(); } }} disabled={!isFormValid} />
+        <Button title={t('common.continue')} onPress={() => { if (isFormValid) { setBirthday(birthday); setHeight(height); setWeight(weight); onNext?.(); } }} disabled={!isFormValid} />
       </FixedButtonContainer>
 
       <DatePicker visible={datePickerVisible} onClose={() => setDatePickerVisible(false)} onConfirm={(date) => { setBirthdayLocal(date); setDatePickerVisible(false); }} initialDate={birthday || undefined} />

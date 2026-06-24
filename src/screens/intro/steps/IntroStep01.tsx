@@ -4,6 +4,7 @@ import Svg, { Defs, Path, LinearGradient, Stop } from 'react-native-svg';
 import { SvgXml } from 'react-native-svg';
 import { useTheme, spacing } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo } from '../../../components/ui';
+import { useTranslation } from 'react-i18next';
 import { BUBBLE2_SVG } from '../../../utils/svgIcons';
 import { s, vs, ms, fs, FIXED_BUTTON_AREA_HEIGHT } from '../../../utils/responsive';
 
@@ -15,9 +16,10 @@ interface IntroStep01Props {
 
 export const IntroStep01: React.FC<IntroStep01Props> = ({ onNext, skipAnimation = false }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
-  const bubble1FullText = "Hi mama, I`m here to guide you through hot and pollution threats";
-  const bubble2FullText = "Each week is a level of your baby's journey.";
+  const bubble1FullText = t('intro.bubble1');
+  const bubble2FullText = t('intro.bubble2');
 
   const scale1Image = useRef(new Animated.Value(skipAnimation ? 1 : 0)).current;
   const scale1Bubble = useRef(new Animated.Value(skipAnimation ? 1 : 0)).current;
@@ -222,7 +224,7 @@ export const IntroStep01: React.FC<IntroStep01Props> = ({ onNext, skipAnimation 
       {/* Fixed button at bottom */}
       <FixedButtonContainer>
         <Animated.View style={{ transform: [{ scale: buttonScale }], opacity: buttonScale }}>
-          <Button title="Start" onPress={onNext || (() => {})} />
+          <Button title={t('intro.start')} onPress={onNext || (() => {})} />
         </Animated.View>
       </FixedButtonContainer>
     </SafeAreaView>

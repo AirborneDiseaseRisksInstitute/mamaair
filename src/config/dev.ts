@@ -1,14 +1,20 @@
 /**
  * Development Mode Configuration
  *
- * IMPORTANT: Set all flags to false before production builds!
+ * ┌─────────────────────────────────────────────────────────┐
+ * │  BEFORE PRODUCTION / APK BUILD:                         │
+ * │  Set DEV_ENABLED = false  ← this is the ONLY change     │
+ * │  needed to disable all dev features at once.            │
+ * └─────────────────────────────────────────────────────────┘
  */
 
-// Skip sign in and go directly to IntroStep01
-export const DEV_MODE = true;
+const DEV_ENABLED = false;
 
-// Auto-login with credentials below and go directly to the app (bypasses login UI entirely)
-// Useful for Genymotion emulator where manual sign-in is problematic
-export const DEV_BYPASS_AUTH = false;
-export const DEV_EMAIL = 'alireza@gmail.com'; // your test account email
-export const DEV_PASSWORD = '12345678'; // your test account password
+// Skip sign in and go directly to IntroStep01
+export const DEV_MODE = DEV_ENABLED;
+
+// Auto-login with credentials below and bypass login UI entirely
+// (useful for Genymotion/emulator where manual sign-in is problematic)
+export const DEV_BYPASS_AUTH = DEV_ENABLED;
+export const DEV_EMAIL = 'alireza@gmail.com';
+export const DEV_PASSWORD = '12345678';

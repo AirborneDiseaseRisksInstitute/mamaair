@@ -14,10 +14,12 @@ import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import {
   faTimes,
   faCheck,
+  faDroplet,
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing } from '../../theme';
 import { Button } from './Button';
 import { WellbeingService, type WellbeingCatalogItem } from '../../services/api/WellbeingService';
+import { useTranslation } from 'react-i18next';
 
 // Fallback options used when API catalog is unavailable
 const FALLBACK_MOODS: WellbeingCatalogItem[] = [
@@ -36,6 +38,8 @@ const FALLBACK_FEELINGS: WellbeingCatalogItem[] = [
   { id: 6, name: 'Nausea', emoji: '🤢' },
 ];
 
+const WATER_QUICK_AMOUNTS = [100, 250, 500];
+
 interface SymptomsProps {
   onClose: () => void;
   onApply?: (data: {
@@ -45,6 +49,8 @@ interface SymptomsProps {
   }) => void;
   initialMoodIds?: number[];
   initialFeelingIds?: number[];
+  waterDailyTotal?: number;
+  waterTarget?: number;
 }
 
 const APPLY_BUTTON_AREA = 72;
@@ -55,12 +61,16 @@ export const Symptoms: React.FC<SymptomsProps> = ({
   onApply,
   initialMoodIds = [],
   initialFeelingIds = [],
+  waterDailyTotal = 0,
+  waterTarget = 2000,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [moods, setMoods] = useState<WellbeingCatalogItem[]>(FALLBACK_MOODS);
   const [feelings, setFeelings] = useState<WellbeingCatalogItem[]>(FALLBACK_FEELINGS);
   const [selectedMoodIds, setSelectedMoodIds] = useState<number[]>(initialMoodIds);
   const [selectedFeelingIds, setSelectedFeelingIds] = useState<number[]>(initialFeelingIds);
+  const [waterIncrement, setWaterIncrement] = useState(0);
 
   useEffect(() => {
     WellbeingService.getCatalog()
@@ -98,7 +108,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({
     onApply?.({
       mood_ids: selectedMoodIds,
       feeling_ids: selectedFeelingIds,
-      water_amount: 0,
+      water_amount: waterIncrement,
     });
     onClose();
   };
@@ -236,6 +246,68 @@ export const Symptoms: React.FC<SymptomsProps> = ({
       borderTopWidth: 1,
       borderTopColor: theme.colors.neutral200,
     },
+    waterHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing('sm'),
+      gap: spacing('xs'),
+    },
+    waterTotalText: {
+      fontSize: 13,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.neutral500,
+      marginLeft: 'auto',
+    },
+    waterProgressBar: {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: theme.colors.neutral200,
+      marginBottom: spacing('sm'),
+      overflow: 'hidden',
+    },
+    waterProgressFill: {
+      height: '100%',
+      borderRadius: 3,
+      backgroundColor: '#4FC3F7',
+    },
+    waterQuickRow: {
+      flexDirection: 'row',
+      gap: spacing('sm'),
+      marginBottom: spacing('xs'),
+    },
+    waterQuickBtn: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: 24,
+      backgroundColor: '#E3F6FF',
+      alignItems: 'center',
+    },
+    waterQuickBtnText: {
+      fontSize: 14,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: '#0288D1',
+    },
+    waterIncrementRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    waterIncrementText: {
+      fontSize: 14,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: theme.colors.textPrimary,
+    },
+    waterResetBtn: {
+      paddingHorizontal: spacing('sm'),
+      paddingVertical: 4,
+      borderRadius: 12,
+      backgroundColor: theme.colors.neutral100,
+    },
+    waterResetText: {
+      fontSize: 12,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.neutral500,
+    },
   }), [theme]);
 
   return (
@@ -247,7 +319,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({
         {/* Header */}
         <View style={styles.sheetHeader}>
           <View style={styles.sheetHeaderLeft}>
-            <Text style={styles.sheetTitle} allowFontScaling={false}>Today</Text>
+            <Text style={styles.sheetTitle} allowFontScaling={false}>{t('symptoms.today')}</Text>
           </View>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <FontAwesomeIcon icon={faTimes as any} size={20} color={theme.colors.textPrimary} />
@@ -256,7 +328,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({
 
         {/* Mood Section */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle} allowFontScaling={false}>Mood</Text>
+          <Text style={styles.sectionTitle} allowFontScaling={false}>{t('symptoms.mood')}</Text>
           <View style={styles.optionsRow}>
             {moods.map((mood) => (
               <TouchableOpacity
@@ -282,9 +354,54 @@ export const Symptoms: React.FC<SymptomsProps> = ({
           </View>
         </View>
 
+        {/* Water Section */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.waterHeader}>
+            <FontAwesomeIcon icon={faDroplet as any} size={16} color="#0288D1" />
+            <Text style={styles.sectionTitle} allowFontScaling={false}>{t('symptoms.water')}</Text>
+            <Text style={styles.waterTotalText} allowFontScaling={false}>
+              {waterDailyTotal + waterIncrement} / {waterTarget} ml
+            </Text>
+          </View>
+          <View style={styles.waterProgressBar}>
+            <View
+              style={[
+                styles.waterProgressFill,
+                { width: `${Math.min(100, ((waterDailyTotal + waterIncrement) / waterTarget) * 100)}%` },
+              ]}
+            />
+          </View>
+          <View style={styles.waterQuickRow}>
+            {WATER_QUICK_AMOUNTS.map((amount) => (
+              <TouchableOpacity
+                key={amount}
+                style={styles.waterQuickBtn}
+                onPress={() => setWaterIncrement(prev => prev + amount)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.waterQuickBtnText} allowFontScaling={false}>+{amount} ml</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {waterIncrement > 0 && (
+            <View style={styles.waterIncrementRow}>
+              <Text style={styles.waterIncrementText} allowFontScaling={false}>
+                {t('symptoms.adding', { amount: waterIncrement })}
+              </Text>
+              <TouchableOpacity
+                style={styles.waterResetBtn}
+                onPress={() => setWaterIncrement(0)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.waterResetText} allowFontScaling={false}>{t('symptoms.reset')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
         {/* Feelings Section */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle} allowFontScaling={false}>Confirm your feelings:</Text>
+          <Text style={styles.sectionTitle} allowFontScaling={false}>{t('symptoms.confirm')}</Text>
           {feelings.map((feeling, index) => {
             const isSelected = selectedFeelingIds.includes(feeling.id);
             const isLast = index === feelings.length - 1;
@@ -312,7 +429,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({
 
       {/* Fixed Apply Button */}
       <View style={styles.applyButtonContainer}>
-        <Button title="Apply" onPress={handleApply} />
+        <Button title={t('symptoms.apply')} onPress={handleApply} />
       </View>
     </View>
   );

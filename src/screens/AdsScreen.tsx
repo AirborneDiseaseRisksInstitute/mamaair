@@ -24,7 +24,6 @@ export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
   useEffect(() => {
     if (timeLeft === 0) {
       setCanClose(true);
-      onClose?.();
       return;
     }
 

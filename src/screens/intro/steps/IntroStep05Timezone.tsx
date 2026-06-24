@@ -5,6 +5,7 @@ import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, Drop
 import { useUserStore } from '../../../store/useUserStore';
 import { getDeviceTimezone, getTimezoneList } from '../../../utils/timezoneUtils';
 import { FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -12,6 +13,7 @@ interface IntroStep05TimezoneProps { onNext?: () => void; onBack?: () => void; }
 
 export const IntroStep05Timezone: React.FC<IntroStep05TimezoneProps> = ({ onNext, onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { setTimezone, profile } = useUserStore();
   const [selectedTimezone, setSelectedTimezone] = useState<string | null>(
     profile.timezone || getDeviceTimezone()
@@ -46,19 +48,19 @@ export const IntroStep05Timezone: React.FC<IntroStep05TimezoneProps> = ({ onNext
         <BackButton onPress={onBack} />
         <ProgressBar progress={0.4} />
         <View style={styles.contentWrapper}>
-          <IntroTitleBox title="Set your time zone" onLayout={setTitleBoxCenterY} />
+          <IntroTitleBox title={t('intro.step05timezone_title')} onLayout={setTitleBoxCenterY} />
           <Text style={styles.questionText} allowFontScaling={false}>
-            We use your device&apos;s time zone by default. You can change it if needed.
+            {t('intro.step05timezone_desc')}
           </Text>
           <Dropdown
-            label="Select time zone"
+            label={t('intro.step05timezone_select')}
             value={selectedTimezone}
             onPress={() => setTimezoneSheetVisible(true)}
           />
         </View>
       </ScrollView>
       <FixedButtonContainer>
-        <Button title="CONTINUE" onPress={handleNext} disabled={!selectedTimezone} />
+        <Button title={t('common.continue')} onPress={handleNext} disabled={!selectedTimezone} />
       </FixedButtonContainer>
       <BottomSheet visible={timezoneSheetVisible} onClose={() => setTimezoneSheetVisible(false)}>
         <ScrollView

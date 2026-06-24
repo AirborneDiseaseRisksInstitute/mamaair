@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import { BackButton, ReminderTimePicker, useToast } from '../components/ui';
 import { BEHAVIOUR_SVG, RUNNING_SVG, DIET_SVG } from '../utils/svgIcons';
 import { SvgXml } from 'react-native-svg';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { AdviceService } from '../services/api/AdviceService';
+import { useTranslation } from 'react-i18next';
 
 interface RemindersScreenProps {
   onBack?: () => void;
@@ -52,9 +54,26 @@ const REMINDER_CARDS = [
 
 export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [reminderPickerVisible, setReminderPickerVisible] = useState(false);
   const [reminderTaskTitle, setReminderTaskTitle] = useState<string | null>(null);
+  const [adviceByCategory, setAdviceByCategory] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    AdviceService.getAdvice()
+      .then((data: any) => {
+        const recs: any[] = data?.recommendations ?? [];
+        const map: Record<string, string> = {};
+        for (const rec of recs) {
+          if (rec.category && rec.message) {
+            map[rec.category] = rec.message;
+          }
+        }
+        setAdviceByCategory(map);
+      })
+      .catch(() => {});
+  }, []);
 
   const openReminderPicker = (taskTitle: string) => {
     setReminderTaskTitle(taskTitle);
@@ -168,7 +187,7 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
 
       <View style={styles.header}>
         <Text style={styles.headerTitle} allowFontScaling={false}>
-          Reminders
+          {t('reminders.title')}
         </Text>
       </View>
 
@@ -201,7 +220,7 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
                   <SvgXml xml={card.svg} width={20} height={20} />
                 </View>
                 <Text style={styles.cardTitle} allowFontScaling={false}>
-                  {card.title}
+                  {card.id === 'behavior' ? t('today.behaviour') : card.id === 'activity' ? t('today.activity') : t('today.diet')}
                 </Text>
               </View>
               <TouchableOpacity
@@ -220,7 +239,7 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
               </TouchableOpacity>
             </View>
             <Text style={styles.cardDescription} allowFontScaling={false}>
-              {card.description}
+              {adviceByCategory[card.id] ?? adviceByCategory['general'] ?? card.description}
             </Text>
           </View>
         ))}

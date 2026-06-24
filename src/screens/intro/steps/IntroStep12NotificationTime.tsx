@@ -3,7 +3,9 @@ import { View, Text, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 're
 import { useTheme, spacing } from '../../../theme';
 import { OrangeHalo, BackButton, ProgressBar, IntroTitleBox, NotificationTimeSettings } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
+import { scheduleReminders } from '../../../services/NotificationService';
 import { FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -14,6 +16,7 @@ interface IntroStep12NotificationTimeProps {
 
 export const IntroStep12NotificationTime: React.FC<IntroStep12NotificationTimeProps> = ({ onNext, onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [titleBoxCenterY, setTitleBoxCenterY] = useState(SCREEN_HEIGHT * 0.35);
   const { profile, setNotifTime } = useUserStore();
   const fromHour = profile.notifTimeFromHour ?? 9;
@@ -47,9 +50,9 @@ export const IntroStep12NotificationTime: React.FC<IntroStep12NotificationTimePr
         <BackButton onPress={onBack} />
         <ProgressBar progress={0.9} />
         <View style={styles.contentWrapper}>
-          <IntroTitleBox title="When do you want to receive notifications?" onLayout={setTitleBoxCenterY} />
+          <IntroTitleBox title={t('intro.step12_notif_time_title')} onLayout={setTitleBoxCenterY} />
           <Text style={styles.questionText} allowFontScaling={false}>
-            Choose the time window and days for your alerts.
+            {t('intro.step12_notif_time_desc')}
           </Text>
           <NotificationTimeSettings
             fromHour={fromHour}
@@ -59,10 +62,11 @@ export const IntroStep12NotificationTime: React.FC<IntroStep12NotificationTimePr
             days={daysStr}
             onSave={(from, to, days) => {
               setNotifTime(from, to, days);
+              scheduleReminders(from.hour, from.minute, days).catch(() => {});
               onNext?.();
             }}
             showSaveButton={true}
-            saveButtonTitle="CONTINUE"
+            saveButtonTitle={t('common.continue')}
             variant="intro"
           />
         </View>

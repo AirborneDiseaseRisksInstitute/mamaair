@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, Dimensions, Image, Pressable, Lin
 import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { useTheme, spacing, radius } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, useToast } from '../../../components/ui';
+import { useTranslation } from 'react-i18next';
 import { ms, fs, s, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -15,6 +16,7 @@ const SHADOW_OFFSET_2 = 12;
 
 export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications, onSkip, onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [_checking, setChecking] = useState(true);
   const { showToast } = useToast();
 
@@ -81,7 +83,7 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
         <View style={styles.contentWrapper}>
           <Text style={styles.descriptionText} allowFontScaling={false}>
             <Text style={styles.boldText} allowFontScaling={false}>Mama Air</Text>
-            {' uses notifications to keep you informed when your health data or environmental risks increase. Timely alerts help you take action and protect yourself and your baby - wherever you are.'}
+            {' '}{t('intro.step12_description')}
           </Text>
           <View style={styles.cardContainer}>
             <View style={styles.cardShadow2} />
@@ -89,8 +91,8 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
             <View style={styles.card}>
               <Image source={notifThumb} style={styles.cardImage} resizeMode="cover" />
               <View style={styles.cardContent}>
-                <Text style={styles.cardTitle} allowFontScaling={false}>💚 You're doing great rest matters just as much as movement 💖</Text>
-                <Text style={styles.cardSubtitle} allowFontScaling={false}>Allow yourself some rest today</Text>
+                <Text style={styles.cardTitle} allowFontScaling={false}>{t('intro.step12_card_title')}</Text>
+                <Text style={styles.cardSubtitle} allowFontScaling={false}>{t('intro.step12_card_subtitle')}</Text>
               </View>
             </View>
           </View>
@@ -98,8 +100,8 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonsContainer}>
-          <Button title="Turns on notification" onPress={handleEnableNotifications} />
-          <Pressable style={styles.notNowButton} onPress={onSkip || (() => {})}><Text style={styles.notNowText} allowFontScaling={false}>Not now</Text></Pressable>
+          <Button title={t('intro.step12_enable')} onPress={handleEnableNotifications} />
+          <Pressable style={styles.notNowButton} onPress={onSkip || (() => {})}><Text style={styles.notNowText} allowFontScaling={false}>{t('intro.step12_not_now')}</Text></Pressable>
         </View>
       </FixedButtonContainer>
     </SafeAreaView>

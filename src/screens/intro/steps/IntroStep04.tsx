@@ -2,29 +2,31 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing } from '../../../theme';
-import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, IntroTitleBox } from '../../../components/ui';
-import { ENGLISH_FLAG_SVG, FRENCH_FLAG_SVG, YORUBA_FLAG_SVG, SWAHILI_FLAG_SVG, ARABIC_FLAG_SVG } from '../../../utils/svgIcons';
+import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, IntroTitleBox, LanguagePickerSheet } from '../../../components/ui';
+import { ENGLISH_FLAG_SVG, FRENCH_FLAG_SVG, SWAHILI_FLAG_SVG } from '../../../utils/svgIcons';
 import { useUserStore } from '../../../store/useUserStore';
+import { useMetaChoices } from '../../../hooks/useMetaChoices';
+import { useTranslation } from 'react-i18next';
 import { fs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface IntroStep04Props { onNext?: () => void; onBack?: () => void; }
-type Language = 'english' | 'french' | 'yoruba' | 'swahili' | 'arabic';
 
-const LANGUAGES: Array<{ id: Language; label: string; iconSvg: string }> = [
-  { id: 'english', label: 'English', iconSvg: ENGLISH_FLAG_SVG },
-  { id: 'french', label: 'French', iconSvg: FRENCH_FLAG_SVG },
-  { id: 'yoruba', label: 'Yoruba', iconSvg: YORUBA_FLAG_SVG },
-  { id: 'swahili', label: 'Swahili', iconSvg: SWAHILI_FLAG_SVG },
-  { id: 'arabic', label: 'Arabic', iconSvg: ARABIC_FLAG_SVG },
-];
+const LANGUAGE_FLAG_MAP: Record<string, string | undefined> = {
+  en: ENGLISH_FLAG_SVG,
+  fr: FRENCH_FLAG_SVG,
+  sw: SWAHILI_FLAG_SVG,
+};
 
 export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { setLanguage, profile } = useUserStore();
-  const [selectedLanguage, setSelectedLanguageLocal] = useState<Language | null>(profile.language as Language || null);
+  const { languages } = useMetaChoices();
+  const [selectedLanguage, setSelectedLanguageLocal] = useState<string | null>(profile.language || null);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
+  const [showLangSheet, setShowLangSheet] = useState(true);
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },
@@ -41,18 +43,39 @@ export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
       <ProgressBar progress={0.286} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.contentWrapper}>
-          <IntroTitleBox title="Let's set your language." onLayout={setTitleBoxCenterY} />
-          <Text style={styles.pickLanguageText} allowFontScaling={false}>Pick your language</Text>
+          <IntroTitleBox title={t('intro.step04_title')} onLayout={setTitleBoxCenterY} />
+          <Text style={styles.pickLanguageText} allowFontScaling={false}>{t('intro.step04_pick')}</Text>
           <View style={styles.optionsContainer}>
-            {LANGUAGES.map((language) => (
-              <RadioOption key={language.id} iconSvg={language.iconSvg} label={language.label} selected={selectedLanguage === language.id} onPress={() => setSelectedLanguageLocal(language.id)} />
+            {languages.map((lang) => (
+              <RadioOption
+                key={lang.value}
+                iconSvg={LANGUAGE_FLAG_MAP[lang.value]}
+                label={lang.label}
+                selected={selectedLanguage === lang.value}
+                onPress={() => setSelectedLanguageLocal(lang.value)}
+              />
             ))}
           </View>
         </View>
       </ScrollView>
       <FixedButtonContainer>
-        <Button title="CONTINUE" onPress={() => { if (selectedLanguage) { setLanguage(selectedLanguage); onNext?.(); } }} disabled={!selectedLanguage} />
+        <Button
+          title={t('common.continue')}
+          onPress={() => { if (selectedLanguage) { setLanguage(selectedLanguage); onNext?.(); } }}
+          disabled={!selectedLanguage}
+        />
       </FixedButtonContainer>
+
+      <LanguagePickerSheet
+        visible={showLangSheet}
+        selectedLanguage={selectedLanguage}
+        onConfirm={(lang) => {
+          setSelectedLanguageLocal(lang);
+          setLanguage(lang);
+          setShowLangSheet(false);
+        }}
+        onClose={() => setShowLangSheet(false)}
+      />
     </SafeAreaView>
   );
 };
