@@ -50,6 +50,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { ProfileService } from '../services/api/ProfileService';
 import { LanguageService } from '../services/api/LanguageService';
 import { FIXED_BUTTON_AREA_HEIGHT, ms, vs } from '../utils/responsive';
+import { formatLocalDate } from '../utils/dateUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { useMetaChoices } from '../hooks/useMetaChoices';
 import { AdsScreen } from './AdsScreen';
@@ -159,7 +160,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     if (editLanguage) patch.language = editLanguage;
     if (editHeight) patch.height = editHeight;
     if (editWeight) patch.weight_pre_pregnancy = editWeight;
-    if (editBirthday) patch.date_of_birth = editBirthday.toISOString().split('T')[0];
+    if (editBirthday) patch.date_of_birth = formatLocalDate(editBirthday);
     if (Object.keys(patch).length > 0) {
       ProfileService.patchProfile(patch).catch(() => {});
     }

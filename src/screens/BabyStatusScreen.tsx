@@ -9,6 +9,7 @@ import { SVG_ICONS, WAVE_BACKGROUND_SVG, MOTHER_RISK_SVG, BABY_RISK_SVG, BEHAVIO
 import { WEEKS_DATA } from './HomeScreen';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { formatLocalDate } from '../utils/dateUtils';
 import { SummaryService, type SummaryResponse } from '../services/api/SummaryService';
 import { RecommendationCompletionService, type RecommendationCompletion } from '../services/api/RecommendationCompletionService';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +21,7 @@ function getCurrentWeekDates(): string[] {
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() + diff + i);
-    return d.toISOString().split('T')[0];
+    return formatLocalDate(d);
   });
 }
 

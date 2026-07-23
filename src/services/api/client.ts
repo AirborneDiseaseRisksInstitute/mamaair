@@ -1,7 +1,13 @@
 import axios from 'axios';
 import { storage } from '../../store/useAuthStore';
+import { resetToAuthLoading } from '../../App/navigationRef';
 
-const BASE_URL = 'https://api.mamaair.app/api';
+const BASE_URL = 'https://api.mamaair.work/api';
+
+// Single source of truth for the mobile API key (was duplicated below).
+// NOTE: this is still shipped in the bundle — moving it to env/secure storage
+// and per-device auth is tracked separately and needs backend coordination.
+const API_KEY = 'super-secret-mobile-key';
 
 // Custom transformResponse: axios's default calls JSON.parse on any response with
 // Content-Type: application/json — including 204 No Content bodies, which throws.
@@ -18,7 +24,7 @@ const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-    'X-API-Key': 'super-secret-mobile-key',
+    'X-API-Key': API_KEY,
   },
   transformResponse: [safeJsonTransform],
 });
@@ -58,6 +64,7 @@ api.interceptors.response.use(
     if (!refreshToken) {
       storage.remove('auth_token');
       storage.remove('auth_refresh_token');
+      resetToAuthLoading();
       return Promise.reject(error);
     }
 
@@ -79,7 +86,7 @@ api.interceptors.response.use(
       const { data } = await axios.post(
         `${BASE_URL}/auth/token/refresh/`,
         { refresh: refreshToken },
-        { headers: { 'Content-Type': 'application/json', 'X-API-Key': 'super-secret-mobile-key' } },
+        { headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY } },
       );
 
       const newToken: string = data.access;
@@ -92,6 +99,7 @@ api.interceptors.response.use(
       drainQueue(refreshError, null);
       storage.remove('auth_token');
       storage.remove('auth_refresh_token');
+      resetToAuthLoading();
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

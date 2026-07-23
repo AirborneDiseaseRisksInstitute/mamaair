@@ -189,22 +189,39 @@ class LocationTracker {
     }
 
     if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.requestMultiple([
+      // Step 1 — foreground location (fine/coarse). On Android 11+ the background
+      // permission MUST NOT be requested in the same call: the system silently
+      // denies it when bundled with foreground. Request foreground first.
+      const fg = await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
       ]);
 
-      const fineGranted = granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
-      const bgGranted = granted['android.permission.ACCESS_BACKGROUND_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
+      const fineResult = fg['android.permission.ACCESS_FINE_LOCATION'];
+      if (fineResult !== PermissionsAndroid.RESULTS.GRANTED) {
+        if (fineResult === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) return 'blocked';
+        return 'denied';
+      }
 
-      if (fineGranted && bgGranted) return 'granted';
-      // NEVER_ASK_AGAIN means blocked
+      // Step 2 — background location, requested separately and only on Android 10+
+      // (API 29+). Best-effort: foreground tracking (with the foreground service)
+      // still works if the user declines "Allow all the time", so a background
+      // denial must not block tracking from starting.
       if (
-        granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN ||
-        granted['android.permission.ACCESS_BACKGROUND_LOCATION'] === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN
-      ) return 'blocked';
-      return 'denied';
+        typeof Platform.Version === 'number' &&
+        Platform.Version >= 29 &&
+        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
+      ) {
+        try {
+          await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+          );
+        } catch {
+          // ignore — foreground permission is enough to start tracking
+        }
+      }
+
+      return 'granted';
     }
 
     return 'unavailable';

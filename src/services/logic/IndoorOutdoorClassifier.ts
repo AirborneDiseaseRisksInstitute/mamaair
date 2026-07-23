@@ -20,6 +20,9 @@ export class IndoorOutdoorClassifier {
     goodAccuracy: 30.0,
     indoorDistance: 35.0,
     outdoorDistance: 55.0,
+    // GPS speed is virtually never exactly 0 due to sensor noise, so treat
+    // anything below this (m/s, ~1.8 km/h) as "stationary".
+    stationarySpeed: 0.5,
   };
 
   // State
@@ -58,10 +61,13 @@ export class IndoorOutdoorClassifier {
     this.updateSpeedBuffer(location.speed);
 
     // Night Mode Rule
-    // "If speed == 0 AND time is between 23:00 - 06:00 -> Indoor"
+    // "If (near-)stationary AND time is between 23:00 - 06:00 -> Indoor"
+    // Uses a small threshold instead of `=== 0` because GPS speed is noisy and
+    // rarely reports an exact zero. A valid (>= 0) reading is required so an
+    // "unknown speed" (-1) doesn't falsely trigger Indoor.
     const hour = new Date().getHours();
     const isNight = hour >= 23 || hour < 6;
-    if (location.speed === 0 && isNight) {
+    if (location.speed >= 0 && location.speed < this.THRESHOLDS.stationarySpeed && isNight) {
       return 'Indoor';
     }
 
@@ -87,29 +93,11 @@ export class IndoorOutdoorClassifier {
       }
     }
 
-    // If API not called, return last known API-based state
-    // Or should we return Unknown? The logic implies we fallback to something.
-    // "If distance from previous request > 100m -> Outdoor"
-    // If we didn't call API, we can still check displacement from LAST API CALL.
-    if (this.lastApiCheckLocation) {
-      const dist = this.getDistanceFromLatLonInM(
-        location.latitude,
-        location.longitude,
-        this.lastApiCheckLocation.latitude,
-        this.lastApiCheckLocation.longitude
-      );
-      if (dist > 100) {
-        // This effectively forces an update if we moved far, 
-        // but technically if we moved > 100m, `shouldCallApi` would likely return true (if MIN_DISTANCE is < 100).
-        // If we are here, it means we didn't call API.
-        // So either dist < MIN_DISTANCE (50) or time < MIN_TIME.
-        // If dist > 100, we WOULD have called API.
-        // So this block might be redundant if shouldCallApi logic covers it.
-        // But strictly following rules:
-        return 'Outdoor';
-      }
-    }
-
+    // API not called this tick (not enough time/distance elapsed): keep the last
+    // API-based classification. The previous ">100m -> Outdoor" shortcut here was
+    // dead code — moving more than 100m always makes shouldCallApi() return true
+    // (its distance threshold is 50m), so the API branch above is taken instead
+    // and this point is never reached with a >100m displacement.
     return this.lastApiBasedState;
   }
 
@@ -176,11 +164,12 @@ export class IndoorOutdoorClassifier {
       return 'Outdoor';
     }
     
-    // Default if no rule matches?
-    // The rules don't cover the gap between 35m and 55m, or other combinations.
-    // I'll default to Unknown or maintain last state.
-    // Given the strict rules, if nothing matches, Unknown is safest.
-    return 'Unknown';
+    // Distances in the ambiguous 35–55m band (and other non-matching
+    // combinations) don't clearly indicate indoor or outdoor. Rather than
+    // flapping to Unknown on every such reading, keep the last API-based
+    // classification (still 'Unknown' until the first decisive reading). The
+    // majority vote over recent states then smooths out the ambiguity.
+    return this.lastApiBasedState;
   }
 
   private updateSpeedBuffer(speed: number) {

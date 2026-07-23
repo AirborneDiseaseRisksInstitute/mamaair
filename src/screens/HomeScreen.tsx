@@ -22,12 +22,13 @@ import { SvgXml } from 'react-native-svg';
 import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
 import { useTheme, spacing } from '../theme';
 import { useUserStore } from '../store/useUserStore';
-import { BIRTHDAY_SVG, SUN_SVG, CLOUD_SVG } from '../utils/svgIcons';
+import { SUN_SVG, CLOUD_SVG } from '../utils/svgIcons';
 import { WeekCycleView, MainHeader, FloatingActionButton, AccessLocationBottomSheet, TransitionLoader } from '../components/ui';
 import { locationTracker } from '../services/tracking/LocationTracker';
 import { SummaryService, SummaryResponse } from '../services/api/SummaryService';
 import { ProfileService } from '../services/api/ProfileService';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { formatLocalDate } from '../utils/dateUtils';
 import { AdsScreen } from './AdsScreen';
 import { useTranslation } from 'react-i18next';
 
@@ -1275,7 +1276,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
               const updatedWeekDays = updatedWeeksData[wIdx].weekDays.map((dayItem, dIndex) => {
                 const dayDate = new Date(weekStart);
                 dayDate.setDate(weekStart.getDate() + dIndex);
-                const dateStr = dayDate.toISOString().split('T')[0];
+                const dateStr = formatLocalDate(dayDate);
                 const dayName = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
 
                 const historyItem = summary.exposure_history?.items?.find(
@@ -1512,7 +1513,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
 
         {/* Icon inside circle */}
         <View style={styles.iconCircleContainer}>
-          <SvgXml xml={BIRTHDAY_SVG} width={ICON_SIZE * 0.55} height={ICON_SIZE * 0.65} />
+          <Image
+            source={require('../assets/icons/birthdayIcon.png')}
+            style={{ width: ICON_SIZE * 0.55, height: ICON_SIZE * 0.65 }}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Card Content — normal flow so card expands with content */}
@@ -1547,13 +1552,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   // If activeWeek = 1, then in reversed array it's at index (40 - 1) = 39
   // If activeWeek = 40, then in reversed array it's at index (40 - 40) = 0
   const getWeekDescKey = useCallback((week: number): string => {
-    if (week <= 8) return `home.week_desc_w${String(week).padStart(2, '0')}`;
-    if (week <= 10) return 'home.week_desc_w09';
-    if (week === 11) return 'home.week_desc_w11';
-    if (week === 12) return 'home.week_desc_w12';
-    if (week === 13) return 'home.week_desc_w13';
-    if (week === 14) return 'home.week_desc_w14';
-    return 'home.week_desc_w15';
+    const normalizedWeek = Math.max(1, Math.min(40, week));
+    return `home.week_desc_w${String(normalizedWeek).padStart(2, '0')}`;
   }, []);
 
   const renderWeekItem: ListRenderItem<WeekData> = useCallback(({ item, index }) => {
@@ -1598,7 +1598,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       <View style={styles.weekItem} onLayout={index === 0 ? handleWeekItemLayout : undefined}>
         <WeekCycleView
           title={t('home.week_label', { week: weekNumber })}
-          description={item.isApiText ? item.description : t(getWeekDescKey(weekNumber))}
+          description={t(getWeekDescKey(weekNumber))}
           centerImage={item.centerImage}
           circleIcons={item.circleIcons}
           weekDays={updatedWeekDays}

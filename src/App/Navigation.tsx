@@ -41,6 +41,7 @@ import { SymptomsHistoryScreen } from '../screens/SymptomsHistoryScreen';
 import { AuthLoadingScreen } from '../screens/AuthLoadingScreen';
 import { DEV_MODE } from '../config/dev';
 import { useUserStore } from '../store/useUserStore';
+import { navigationRef } from './navigationRef';
 
 export type RootStackParamList = {
   AuthLoading: undefined;
@@ -133,7 +134,7 @@ export const Navigation: React.FC = () => {
   const hasVisitedStep2 = useRef(false);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         initialRouteName={DEV_MODE ? 'IntroStep01' : 'AuthLoading'}
         screenOptions={{

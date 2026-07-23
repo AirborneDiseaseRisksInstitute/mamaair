@@ -21,6 +21,7 @@ import { SymptomsService } from '../services/api/SymptomsService';
 import { useUserStore } from '../store/useUserStore';
 import { useTranslation } from 'react-i18next';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { formatLocalDate } from '../utils/dateUtils';
 
 const WEEK_OPTIONS = Array.from({ length: 40 }, (_, i) => i + 1);
 
@@ -54,7 +55,7 @@ const WEEK_DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const EMPTY_WEEK_DATA = Array(7).fill({ value: 0 });
 
-const fmt = (d: Date) => d.toISOString().split('T')[0];
+const fmt = (d: Date) => formatLocalDate(d);
 
 // Returns the 7 dates (Mon–Sun) for a given pregnancy week number
 function getPregnancyWeekDates(

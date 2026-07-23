@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createMMKV } from 'react-native-mmkv';
+import { formatLocalDate } from '../utils/dateUtils';
 
 export const userStorage = createMMKV();
 
@@ -120,7 +121,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }));
   },
   setBirthday: (birthday) => {
-    const dateString = birthday ? birthday.toISOString().split('T')[0] : null;
+    const dateString = birthday ? formatLocalDate(birthday) : null;
     if (dateString) {
       userStorage.set('user_birthday', dateString);
     } else {
@@ -179,7 +180,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }));
   },
   setPregnancyWeek: (week) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDate(new Date());
     if (week !== null) {
       userStorage.set('user_pregnancy_week', week);
       userStorage.set('user_pregnancy_week_set_date', today);

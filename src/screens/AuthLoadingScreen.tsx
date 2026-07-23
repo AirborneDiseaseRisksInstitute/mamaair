@@ -4,6 +4,9 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useUserStore } from '../store/useUserStore';
 import { AuthService } from '../services/api/AuthService';
 import { LifestyleService } from '../services/api/LifestyleService';
+import { ProfileService } from '../services/api/ProfileService';
+import { getDeviceTimezone } from '../utils/timezoneUtils';
+import { formatLocalDate } from '../utils/dateUtils';
 import { useTheme } from '../theme';
 import { DEV_BYPASS_AUTH, DEV_EMAIL, DEV_PASSWORD } from '../config/dev';
 
@@ -113,7 +116,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         updateIfMissing('pregnancyWeek', mappedProfile.pregnancyWeek);
         // If we got a pregnancy week but have no set date, use today so week advancement starts counting now
         if (mergedProfile.pregnancyWeek && !mergedProfile.pregnancyWeekSetDate) {
-          mergedProfile.pregnancyWeekSetDate = new Date().toISOString().split('T')[0];
+          mergedProfile.pregnancyWeekSetDate = formatLocalDate(new Date());
         }
         // Photo is handled separately usually, but if server sends URL:
         updateIfMissing('photo', mappedProfile.avatar_url || mappedProfile.photo);
@@ -137,8 +140,73 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         // This ensures we don't wipe local data with empty server data
         setProfile(mergedProfile);
         
-        // 4. Check if we need to sync LOCAL -> SERVER
-        // ... (omitted for brevity)
+        // 4. Sync LOCAL -> SERVER when the server is missing data we hold locally.
+        // Fixes data loss: if the initial profile/lifestyle save failed or was
+        // done offline, the local-only data would otherwise never reach the
+        // server — and after a reinstall the user would be forced through
+        // onboarding again because the server can't return those fields.
+        const serverMissingProfile =
+          !profileData?.week_of_pregnancy || !profileData?.timezone || !profileData?.name;
+        const serverMissingLifestyle =
+          !lifestyleData?.work_type ||
+          !lifestyleData?.cooking_method ||
+          !lifestyleData?.ventilation_level ||
+          !lifestyleData?.time_spent ||
+          !lifestyleData?.time_of_day;
+        const hasLocalData = !!(mergedProfile.name && mergedProfile.pregnancyWeek);
+
+        if (hasLocalData && (serverMissingProfile || serverMissingLifestyle)) {
+          // Best-effort and non-blocking: navigation proceeds regardless, and a
+          // failure simply retries on the next launch.
+          void (async () => {
+            try {
+              const VENTILATION_LEVEL: Record<string, string> = {
+                good: 'high',
+                moderate: 'medium',
+                poor: 'low',
+              };
+              const avatarUrl =
+                mergedProfile.photo && mergedProfile.photo.startsWith('http')
+                  ? mergedProfile.photo
+                  : `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                      mergedProfile.name || 'Mama Air',
+                    )}&background=FF8C00&color=fff`;
+
+              const updated = await ProfileService.patchProfile({
+                name: mergedProfile.name || '',
+                avatar_url: avatarUrl,
+                date_of_birth: mergedProfile.birthday || null,
+                height: mergedProfile.height || 0,
+                weight_pre_pregnancy: mergedProfile.weight || 0,
+                language: mergedProfile.language || 'en',
+                country: mergedProfile.country || 'other',
+                week_of_pregnancy: mergedProfile.pregnancyWeek || 1,
+                timezone: mergedProfile.timezone || getDeviceTimezone(),
+                is_first_pregnancy: mergedProfile.pregnancyNumber === 'first',
+                consent: true,
+                tracking_enabled: true,
+                notifications_enabled: true,
+              });
+
+              await LifestyleService.patchLifestyle({
+                user: updated?.id ?? profileData?.id,
+                average_sleep_hours: mergedProfile.sleepHours || 0,
+                work_type: mergedProfile.workType || null,
+                diet_type: mergedProfile.diet || null,
+                cooking_method: mergedProfile.cookingMethod || null,
+                activity_duration_minutes: Math.round((mergedProfile.activeHours || 0) * 60),
+                area: mergedProfile.area || '',
+                ventilation: mergedProfile.ventilation || null,
+                ventilation_level: VENTILATION_LEVEL[mergedProfile.ventilation || ''] || 'medium',
+                time_spent: mergedProfile.timeSpent || null,
+                time_of_day: mergedProfile.timeOfDay || null,
+              });
+              console.log('[AuthLoading] Synced local profile/lifestyle to server.');
+            } catch (e) {
+              console.warn('[AuthLoading] Local->server sync failed (will retry next launch):', e);
+            }
+          })();
+        }
 
         // 5. Navigation Decision
         // Check if user has completed all necessary onboarding steps (including new fields)
@@ -166,11 +234,32 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         // Let's rely on Agreement for now to be legally safe, but ensuring Sync happens above fixes the data loss.
         
         onComplete('Intro');
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to fetch profile:', error);
-        // If 401, token invalid
-        logout();
-        onComplete('Auth');
+        // Only a real 401 means the token is invalid — then log out.
+        if (error?.response?.status === 401) {
+          logout();
+          onComplete('Auth');
+          return;
+        }
+        // Network/transient error (e.g. offline launch): keep the session and
+        // decide navigation from the locally cached profile so we don't log the
+        // user out or lose their data.
+        const local = useUserStore.getState().profile;
+        const localOnboardingComplete =
+          local?.pregnancyWeek &&
+          local?.timezone &&
+          local?.timeSpent &&
+          local?.timeOfDay &&
+          local?.workType &&
+          local?.cookingMethod &&
+          local?.ventilation;
+        if (localOnboardingComplete) {
+          setAgreementAccepted(true);
+          onComplete('Home');
+        } else {
+          onComplete('Intro');
+        }
       }
     };
 
