@@ -5,6 +5,7 @@ import { BackButton, NotificationTimeSettings } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
 import { scheduleReminders } from '../services/NotificationService';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { useTranslation } from 'react-i18next';
 
 interface NotificationTimeScreenProps {
   onBack?: () => void;
@@ -12,6 +13,7 @@ interface NotificationTimeScreenProps {
 
 export const NotificationTimeScreen: React.FC<NotificationTimeScreenProps> = ({ onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { profile, setNotifTime } = useUserStore();
 
   const styles = useMemo(
@@ -58,12 +60,12 @@ export const NotificationTimeScreen: React.FC<NotificationTimeScreenProps> = ({ 
       <BackButton onPress={onBack} />
       <View style={styles.header}>
         <Text style={styles.headerTitle} allowFontScaling={false}>
-          Notification Time
+          {t('settings.notification_time_title')}
         </Text>
       </View>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.description} allowFontScaling={false}>
-          Set when you want to receive notifications.
+          {t('settings.notification_time_desc')}
         </Text>
         <NotificationTimeSettings
           fromHour={profile.notifTimeFromHour ?? 9}
@@ -73,11 +75,17 @@ export const NotificationTimeScreen: React.FC<NotificationTimeScreenProps> = ({ 
           days={profile.notifDays ?? '1111111'}
           onSave={(from, to, days) => {
             setNotifTime(from, to, days);
-            scheduleReminders(from.hour, from.minute, days).catch(() => {});
+            scheduleReminders(
+              from.hour,
+              from.minute,
+              days,
+              to.hour,
+              to.minute,
+            ).catch(() => {});
             onBack?.();
           }}
           showSaveButton={true}
-          saveButtonTitle="Save"
+          saveButtonTitle={t('common.save')}
         />
       </ScrollView>
     </SafeAreaView>

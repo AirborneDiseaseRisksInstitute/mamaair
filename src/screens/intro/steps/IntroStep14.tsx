@@ -23,7 +23,6 @@ import {
 } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
 import { locationTracker } from '../../../services/tracking/LocationTracker';
-import { AuthService } from '../../../services/api/AuthService';
 import { ProfileService } from '../../../services/api/ProfileService';
 import { LifestyleService } from '../../../services/api/LifestyleService';
 import { LanguageService } from '../../../services/api/LanguageService';
@@ -37,6 +36,7 @@ import {
 } from '../../../utils/responsive';
 import { useTranslation } from 'react-i18next';
 import { getDeviceTimezone } from '../../../utils/timezoneUtils';
+import { DEV_LOCAL_SESSION } from '../../../config/dev';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const consentCheckImage = require('../../../assets/images/consentCheck.png');
@@ -54,7 +54,7 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { setAgreementAccepted, profile } = useUserStore();
+  const { setAgreementAccepted, setProfile, profile } = useUserStore();
   const [isConsentChecked, setIsConsentChecked] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
@@ -62,6 +62,12 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
   const handleNext = async () => {
     setIsLoading(true);
     try {
+      if (DEV_LOCAL_SESSION) {
+        setAgreementAccepted(true);
+        setShowLocationSheet(true);
+        return;
+      }
+
       // 1. Update Profile
       // Ensure we don't send local file URIs for avatar_url
       const avatarUrl = (profile.photo && profile.photo.startsWith('http')) 
@@ -91,6 +97,9 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
       };
 
       const updatedProfile = await ProfileService.patchProfile(profilePayload);
+      if (updatedProfile?.id !== undefined && updatedProfile?.id !== null) {
+        setProfile({ backendUserId: String(updatedProfile.id) });
+      }
       LanguageService.setLanguage(profile.language || 'en').catch(() => {});
 
       // 2. Update Lifestyle

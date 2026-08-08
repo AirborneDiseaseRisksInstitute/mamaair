@@ -10,8 +10,10 @@ import { useTheme, spacing } from '../../theme';
 import { ms } from '../../utils/responsive';
 import { BottomSheet } from './BottomSheet';
 import { Symptoms } from './Symptoms';
+import { useTranslation } from 'react-i18next';
 
 interface FloatingActionButtonProps {
+  onPress?: () => void;
   onApply?: (data: {
     mood_ids: number[];
     feeling_ids: number[];
@@ -24,6 +26,7 @@ interface FloatingActionButtonProps {
 }
 
 export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
+  onPress,
   onApply,
   initialMoodIds = [],
   initialFeelingIds = [],
@@ -31,6 +34,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   waterTarget = 2000,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [isBottomSheetVisible, setIsBottomSheetVisible] = useState(false);
 
   const FAB_SIZE = ms(64);
@@ -75,7 +79,15 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
         <TouchableOpacity
           style={styles.fab}
           activeOpacity={0.7}
-          onPress={() => setIsBottomSheetVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.open_daily_checkin')}
+          onPress={() => {
+            if (onPress) {
+              onPress();
+              return;
+            }
+            setIsBottomSheetVisible(true);
+          }}
         >
           <FontAwesomeIcon
             icon={faPlus as any}
@@ -85,20 +97,22 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
         </TouchableOpacity>
       </View>
 
-      <BottomSheet
-        visible={isBottomSheetVisible}
-        onClose={handleClose}
-        showHandle={false}
-      >
-        <Symptoms
+      {!onPress ? (
+        <BottomSheet
+          visible={isBottomSheetVisible}
           onClose={handleClose}
-          onApply={handleApply}
-          initialMoodIds={initialMoodIds}
-          initialFeelingIds={initialFeelingIds}
-          waterDailyTotal={waterDailyTotal}
-          waterTarget={waterTarget}
-        />
-      </BottomSheet>
+          showHandle={false}
+        >
+          <Symptoms
+            onClose={handleClose}
+            onApply={handleApply}
+            initialMoodIds={initialMoodIds}
+            initialFeelingIds={initialFeelingIds}
+            waterDailyTotal={waterDailyTotal}
+            waterTarget={waterTarget}
+          />
+        </BottomSheet>
+      ) : null}
     </>
   );
 };

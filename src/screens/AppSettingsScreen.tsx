@@ -20,6 +20,7 @@ import { scheduleReminders } from '../services/NotificationService';
 import { getDeviceTimezone, getTimezoneList } from '../utils/timezoneUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { vs, s } from '../utils/responsive';
+import { useTranslation } from 'react-i18next';
 
 const notifThumb = require('../assets/images/notifThumb.png');
 const SHADOW_OFFSET_1 = 6;
@@ -34,6 +35,7 @@ const CARD_HEIGHT = vs(110);
 
 export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, onNavigateToNotificationTime }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const { profile, setTimezone } = useUserStore();
   const [showUpgradeSubscription, setShowUpgradeSubscription] = useState(false);
@@ -58,8 +60,8 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
       } else {
         showToast({
           type: 'error',
-          title: 'Notifications disabled',
-          message: 'To receive timely alerts, please enable notifications in your device settings.',
+          title: t('settings.notifications_disabled'),
+          message: t('settings.notifications_disabled_message'),
         });
         Linking.openSettings();
       }
@@ -78,13 +80,13 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
   };
 
   const menuItems = [
-    'Notifications',
-    'Notification Time',
-    'Time Zone',
+    'notifications',
+    'notification_time',
+    'time_zone',
     // 'Appearance',
-    'Manage subscription',
+    'manage_subscription',
     // 'Manage account',
-    'Delete account',
+    'delete_account',
   ];
 
   const styles = useMemo(() => StyleSheet.create({
@@ -238,7 +240,7 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
       <BackButton onPress={onBack} />
       
       <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>App Settings</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('settings.title')}</Text>
       </View>
 
       <ScrollView 
@@ -252,13 +254,13 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
                 style={styles.menuItem}
                 activeOpacity={0.7}
                 onPress={() => {
-                  if (item === 'Manage subscription') {
+                  if (item === 'manage_subscription') {
                     setShowUpgradeSubscription(true);
-                  } else if (item === 'Notifications') {
+                  } else if (item === 'notifications') {
                     setShowNotifSheet(true);
-                  } else if (item === 'Time Zone') {
+                  } else if (item === 'time_zone') {
                     setShowTimezoneSheet(true);
-                  } else if (item === 'Notification Time') {
+                  } else if (item === 'notification_time') {
                     onNavigateToNotificationTime?.();
                   } else {
                     console.log(`${item} pressed`);
@@ -268,16 +270,20 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
                 <Text
                   style={[
                     styles.menuText,
-                    item === 'Delete account' ? { color: '#FF4444' } : null,
+                    item === 'delete_account' ? { color: '#FF4444' } : null,
                   ]}
                   allowFontScaling={false}
               >
-                {item === 'Time Zone' ? `${item} (${currentTimezone})` : item === 'Notification Time' ? `${item} (${formatNotifTime()})` : item}
+                {item === 'time_zone'
+                  ? `${t(`settings.${item}`)} (${currentTimezone})`
+                  : item === 'notification_time'
+                    ? `${t(`settings.${item}`)} (${formatNotifTime()})`
+                    : t(`settings.${item}`)}
               </Text>
                 <FontAwesomeIcon
                   icon={faChevronRight as any}
                   size={14}
-                  color={item === 'Delete account' ? '#FF4444' : theme.colors.textSecondary}
+                  color={item === 'delete_account' ? '#FF4444' : theme.colors.textSecondary}
                   style={styles.menuChevron}
                 />
               </TouchableOpacity>
@@ -301,7 +307,7 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
       >
         <View style={{ padding: spacing('md'), paddingBottom: spacing('xl') * 2 }}>
           <Text style={[styles.notifDescriptionText, { marginBottom: spacing('md') }]} allowFontScaling={false}>
-            Select your time zone. Reminders and times will use this setting.
+            {t('settings.time_zone_description')}
           </Text>
           <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={true}>
             {timezoneList.map((tz) => (
@@ -326,7 +332,7 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notifSheetContent}>
           <Text style={styles.notifDescriptionText} allowFontScaling={false}>
             <Text style={styles.notifBoldText} allowFontScaling={false}>Mama Air</Text>
-            {' uses notifications to keep you informed when your health data or environmental risks increase. Timely alerts help you take action and protect yourself and your baby - wherever you are.'}
+            {` ${t('intro.step12_description')}`}
           </Text>
           <View style={styles.notifCardContainer}>
             <View style={styles.notifCardShadow2} />
@@ -334,15 +340,15 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
             <View style={styles.notifCard}>
               <Image source={notifThumb} style={styles.notifCardImage} resizeMode="cover" />
               <View style={styles.notifCardContent}>
-                <Text style={styles.notifCardTitle} allowFontScaling={false}>💚 You're doing great rest matters just as much as movement 💖</Text>
-                <Text style={styles.notifCardSubtitle} allowFontScaling={false}>Allow yourself some rest today</Text>
+                <Text style={styles.notifCardTitle} allowFontScaling={false}>{t('intro.step12_card_title')}</Text>
+                <Text style={styles.notifCardSubtitle} allowFontScaling={false}>{t('intro.step12_card_subtitle')}</Text>
               </View>
             </View>
           </View>
           <View style={styles.notifButtonsContainer}>
-            <Button title="Turns on notification" onPress={handleEnableNotifications} />
+            <Button title={t('settings.turn_on_notifications')} onPress={handleEnableNotifications} />
             <Pressable style={styles.notifNotNowButton} onPress={() => setShowNotifSheet(false)}>
-              <Text style={styles.notifNotNowText} allowFontScaling={false}>Not now</Text>
+              <Text style={styles.notifNotNowText} allowFontScaling={false}>{t('common.not_now')}</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -350,4 +356,3 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
     </SafeAreaView>
   );
 };
-

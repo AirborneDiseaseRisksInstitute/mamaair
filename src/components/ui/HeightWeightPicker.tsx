@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
 } from 'react-native';
-import WheelPicker from 'react-native-wheely';
 import { BottomSheet } from './BottomSheet';
+import { ReliableWheelPicker } from './ReliableWheelPicker';
 import { useTheme, spacing, radius } from '../../theme';
-import { fs, ms } from '../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 
 interface HeightWeightPickerProps {
   visible: boolean;
@@ -37,9 +36,10 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
   onConfirm,
   initialHeight = 170,
   initialWeight = 60,
-  title = 'Select Height and Weight',
+  title,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   const getInitialHeightIndex = useCallback(() => {
     const index = heightOptions.indexOf(initialHeight);
@@ -54,11 +54,6 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
   const [heightIndex, setHeightIndex] = useState(getInitialHeightIndex());
   const [weightIndex, setWeightIndex] = useState(getInitialWeightIndex());
   
-  // Animated opacity for fade in
-  const opacity = useRef(new Animated.Value(0)).current;
-  const [shouldRender, setShouldRender] = useState(false);
-  const mountKey = useRef(0);
-
   // Calculate BMI
   const calculateBMI = (height: number, weight: number): number => {
     const heightInMeters = height / 100;
@@ -75,40 +70,11 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
   };
 
   useEffect(() => {
-    let renderTimer: ReturnType<typeof setTimeout>;
-    let fadeTimer: ReturnType<typeof setTimeout>;
-    
     if (visible) {
-      // Reset immediately
-      opacity.setValue(0);
-      setShouldRender(false);
       setHeightIndex(getInitialHeightIndex());
       setWeightIndex(getInitialWeightIndex());
-      mountKey.current += 1;
-      
-      // Step 1: Wait for BottomSheet to fully open and layout to settle
-      renderTimer = setTimeout(() => {
-        setShouldRender(true);
-        
-        // Step 2: Wait a bit more for WheelPicker to calculate layout
-        fadeTimer = setTimeout(() => {
-          Animated.timing(opacity, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: true,
-          }).start();
-        }, 200);
-      }, 500);
-    } else {
-      opacity.setValue(0);
-      setShouldRender(false);
     }
-    
-    return () => {
-      if (renderTimer) clearTimeout(renderTimer);
-      if (fadeTimer) clearTimeout(fadeTimer);
-    };
-  }, [visible, getInitialHeightIndex, getInitialWeightIndex, opacity]);
+  }, [visible, getInitialHeightIndex, getInitialWeightIndex]);
 
   const selectedHeight = heightOptions[heightIndex];
   const selectedWeight = weightOptions[weightIndex];
@@ -138,7 +104,7 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
         {/* Title */}
         <View style={styles.titleContainer}>
           <Text style={[styles.title, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            {title}
+            {title ?? t('profile.select_height_weight')}
           </Text>
         </View>
 
@@ -146,69 +112,66 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
         <View style={styles.labelsContainer}>
           <View style={styles.labelWrapper}>
             <Text style={[styles.label, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-              Height
+              {t('common.height')}
             </Text>
           </View>
           <View style={styles.labelWrapper}>
             <Text style={[styles.label, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-              Weight
+              {t('common.weight')}
             </Text>
           </View>
         </View>
 
         {/* Pickers Container */}
         <View style={[styles.pickersContainer, { height: pickerHeight }]}>
-          {shouldRender && (
-            <Animated.View style={[styles.pickersAnimatedContainer, { opacity }]}>
-              {/* Height Picker */}
-              <View style={styles.pickerWrapper}>
-                <WheelPicker
-                  key={`height-${mountKey.current}`}
-                  selectedIndex={heightIndex}
-                  options={heightLabels}
-                  onChange={setHeightIndex}
-                  visibleRest={VISIBLE_REST}
-                  itemHeight={ITEM_HEIGHT}
-                  itemTextStyle={itemTextStyle}
-                  selectedIndicatorStyle={styles.selectedIndicator}
-                  containerStyle={styles.wheelContainer}
-                  scaleFunction={scaleFunction}
-                  opacityFunction={opacityFunction}
-                  decelerationRate="fast"
-                />
-              </View>
+          <View style={styles.pickersAnimatedContainer}>
+            {/* Height Picker */}
+            <View style={styles.pickerWrapper}>
+              <ReliableWheelPicker
+                selectedIndex={heightIndex}
+                options={heightLabels}
+                onChange={setHeightIndex}
+                visibleRest={VISIBLE_REST}
+                itemHeight={ITEM_HEIGHT}
+                itemTextStyle={itemTextStyle}
+                selectedIndicatorStyle={styles.selectedIndicator}
+                containerStyle={styles.wheelContainer}
+                scaleFunction={scaleFunction}
+                opacityFunction={opacityFunction}
+                decelerationRate="fast"
+              />
+            </View>
 
-              {/* Weight Picker */}
-              <View style={styles.pickerWrapper}>
-                <WheelPicker
-                  key={`weight-${mountKey.current}`}
-                  selectedIndex={weightIndex}
-                  options={weightLabels}
-                  onChange={setWeightIndex}
-                  visibleRest={VISIBLE_REST}
-                  itemHeight={ITEM_HEIGHT}
-                  itemTextStyle={itemTextStyle}
-                  selectedIndicatorStyle={styles.selectedIndicator}
-                  containerStyle={styles.wheelContainer}
-                  scaleFunction={scaleFunction}
-                  opacityFunction={opacityFunction}
-                  decelerationRate="fast"
-                />
-              </View>
-            </Animated.View>
-          )}
+            {/* Weight Picker */}
+            <View style={styles.pickerWrapper}>
+              <ReliableWheelPicker
+                selectedIndex={weightIndex}
+                options={weightLabels}
+                onChange={setWeightIndex}
+                visibleRest={VISIBLE_REST}
+                itemHeight={ITEM_HEIGHT}
+                itemTextStyle={itemTextStyle}
+                selectedIndicatorStyle={styles.selectedIndicator}
+                containerStyle={styles.wheelContainer}
+                scaleFunction={scaleFunction}
+                opacityFunction={opacityFunction}
+                decelerationRate="fast"
+              />
+            </View>
+          </View>
         </View>
 
         {/* BMI Display */}
         <View style={styles.bmiContainer}>
           <Text style={[styles.bmiText, { color: theme.colors.textSecondary }]} allowFontScaling={false}>
-            Your BMI is{' '}
+            {t('common.bmi_label')}{' '}
             <Text
               style={{
                 color: theme.colors.textPrimary,
                 fontFamily: theme.typography.fontFamily.bold,
               }}
-             allowFontScaling={false}>
+              allowFontScaling={false}
+            >
               {calculateBMI(selectedHeight, selectedWeight)}
             </Text>
           </Text>
@@ -227,7 +190,7 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
                 { color: theme.colors.textSecondary },
               ]}
              allowFontScaling={false}>
-              Cancel
+              {t('common.cancel')}
             </Text>
           </TouchableOpacity>
 
@@ -248,12 +211,11 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
                 style={[
                   styles.okButtonText,
                   {
-                    color: '#FFFFFF',
                     fontFamily: theme.typography.fontFamily.extraBold,
                   },
                 ]}
                allowFontScaling={false}>
-                Ok
+                {t('common.ok')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -352,6 +314,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   okButtonText: {
+    color: '#FFFFFF',
     fontSize: 18,
     textAlign: 'center',
   },

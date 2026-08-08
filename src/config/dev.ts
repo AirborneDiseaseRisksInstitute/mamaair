@@ -10,11 +10,21 @@
 
 const DEV_ENABLED = false;
 
-// Skip sign in and go directly to IntroStep01
-export const DEV_MODE = DEV_ENABLED;
+// DEV features must never be available in a release bundle, even if this
+// source flag is accidentally left enabled.
+export const DEV_MODE: boolean = __DEV__ && DEV_ENABLED;
 
-// Auto-login with credentials below and bypass login UI entirely
-// (useful for Genymotion/emulator where manual sign-in is problematic)
-export const DEV_BYPASS_AUTH = DEV_ENABLED;
-export const DEV_EMAIL = 'alireza@gmail.com';
-export const DEV_PASSWORD = '12345678';
+/**
+ * Runs the app as a local, unauthenticated development session.
+ *
+ * Authenticated API reads/writes are skipped or allowed to fail locally
+ * without redirecting the app to Sign In. The normal API-first session is
+ * unchanged when this flag is false.
+ */
+export const DEV_LOCAL_SESSION: boolean = DEV_MODE;
+
+/**
+ * Increment to clear the local DEV profile and feature-owned demo state once
+ * on the next launch. This reset is ignored outside a development bundle.
+ */
+export const DEV_LOCAL_SESSION_RESET_TOKEN = 0;

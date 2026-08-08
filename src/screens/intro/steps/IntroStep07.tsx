@@ -5,7 +5,7 @@ import { useUserStore } from '../../../store/useUserStore';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, Dropdown, BottomSheet, BottomSheetOption, IntroTitleBox } from '../../../components/ui';
 import { useMetaChoices } from '../../../hooks/useMetaChoices';
 import { useTranslation } from 'react-i18next';
-import { fs, s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -56,7 +56,7 @@ export const IntroStep07: React.FC<IntroStep07Props> = ({ onNext, onBack, onSkip
       <OrangeHalo cx={SCREEN_WIDTH / 2} cy={titleBoxCenterY} radius={SCREEN_WIDTH * 0.6} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <BackButton onPress={onBack} />
-        <ProgressBar progress={0.5} />
+        <ProgressBar progress={0.571} />
         <View style={styles.contentWrapper}>
           <IntroTitleBox title={t('intro.step07_title')} onLayout={setTitleBoxCenterY} />
           <Text style={styles.pickLocationText} allowFontScaling={false}>{t('intro.step07_cooking')}</Text>

@@ -1,6 +1,14 @@
-import React, { useRef } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
+import {
+  NavigationContainer,
+  type ScreenLayoutArgs,
+} from '@react-navigation/native';
+import {
+  createNativeStackNavigator,
+  type NativeStackNavigationOptions,
+  type NativeStackNavigationProp,
+} from '@react-navigation/native-stack';
 import { IntroStep01 } from '../screens/intro/steps/IntroStep01';
 import { IntroStep02 } from '../screens/intro/steps/IntroStep02';
 import { IntroStep03 } from '../screens/intro/steps/IntroStep03';
@@ -26,6 +34,7 @@ import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { TodayScreen } from '../screens/TodayScreen';
 import { UserProfileScreen } from '../screens/UserProfileScreen';
+import { ProfileInformationScreen } from '../screens/ProfileInformationScreen';
 import { BabyTwinScreen } from '../screens/BabyTwinScreen';
 import { MotherTwinScreen } from '../screens/MotherTwinScreen';
 import { ReferAppScreen } from '../screens/ReferAppScreen';
@@ -37,11 +46,38 @@ import { PrivacySettingsScreen } from '../screens/PrivacySettingsScreen';
 import { PlanBirthdayScreen } from '../screens/PlanBirthdayScreen';
 import { RemindersScreen } from '../screens/RemindersScreen';
 import { SymptomsHistoryScreen } from '../screens/SymptomsHistoryScreen';
+import { FeelingCheckInScreen } from '../screens/FeelingCheckInScreen';
+import { WeeklySummaryScreen } from '../screens/WeeklySummaryScreen';
+import { FloatingActionButton } from '../components/ui';
 
 import { AuthLoadingScreen } from '../screens/AuthLoadingScreen';
-import { DEV_MODE } from '../config/dev';
+import { DEV_LOCAL_SESSION } from '../config/dev';
 import { useUserStore } from '../store/useUserStore';
 import { navigationRef } from './navigationRef';
+import {
+  consumePendingActionReminderPress,
+  getInitialActionReminderPress,
+  subscribeToActionReminderPress,
+  scheduleReminders,
+  type ActionReminderPressPayload,
+} from '../services/NotificationService';
+import { loadDailyPlanExperience } from '../services/recommendationExperience/DailyPlanRepository';
+import { loadFeelingCheckInExperience } from '../services/recommendationExperience/FeelingCheckInRepository';
+import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
+import {
+  isWeeklyCheckpointAvailable,
+  resolveLongitudinalJourneyStep,
+} from '../services/recommendationExperience/LongitudinalJourneyRepository';
+import { formatLocalDate } from '../utils/dateUtils';
+import { ProductAnalytics } from '../services/recommendationExperience/ProductAnalytics';
+import { resolvePregnancyProgression } from '../services/recommendationExperience/ProgressionRepository';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import {
+  resolveQuickSymptomSource,
+  shouldShowSymptomFab,
+} from '../utils/symptomFabRoutes';
+import { resolveIntroCompletionRoute } from '../utils/introNavigation';
+import { resolveNextIntroStep } from '../utils/introFlow';
 
 export type RootStackParamList = {
   AuthLoading: undefined;
@@ -64,9 +100,19 @@ export type RootStackParamList = {
   IntroStep14: undefined;
   IntroLoading: undefined;
   StartFirstDay: undefined;
+  FeelingCheckIn: {
+    source: 'intro' | 'home' | 'today' | 'app';
+    mode?: 'full' | 'quick';
+  };
   Home: undefined;
-  Today: undefined;
+  Today:
+    | {
+        actionKey?: string;
+        focus?: 'plan' | 'progress';
+      }
+    | undefined;
   UserProfile: undefined;
+  ProfileInformation: undefined;
   BabyTwin: undefined;
   MotherTwin: undefined;
   ReferApp: undefined;
@@ -78,65 +124,169 @@ export type RootStackParamList = {
   Ads: undefined;
   BabyStatus: undefined;
   SymptomsHistory: undefined;
+  WeeklySummary:
+    | {
+        pregnancyWeek?: number;
+        endDate?: string;
+        mode?: 'checkpoint' | 'review';
+      }
+    | undefined;
   SignIn: undefined;
   SignUp: undefined;
   ForgotPassword: undefined;
 };
 
+type AppScreenLayoutProps = ScreenLayoutArgs<
+  RootStackParamList,
+  keyof RootStackParamList,
+  NativeStackNavigationOptions,
+  NativeStackNavigationProp<RootStackParamList, keyof RootStackParamList>
+>;
+
+const AppScreenLayout = ({
+  children,
+  navigation,
+  route,
+}: AppScreenLayoutProps): React.ReactElement => (
+  <>
+    {children}
+    {shouldShowSymptomFab(route.name) ? (
+      <FloatingActionButton
+        onPress={() =>
+          navigation.navigate('FeelingCheckIn', {
+            source: resolveQuickSymptomSource(route.name),
+            mode: 'quick',
+          })
+        }
+      />
+    ) : null}
+  </>
+);
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Ordered intro step definitions — the actual flow order the user should experience.
-// Language is FIRST so the rest of the intro is shown in the chosen language.
-// Each step has a screen name, the index Navigation.tsx passes when leaving that screen,
-// and a completion check against the profile.
-type UserProfile = ReturnType<typeof useUserStore.getState>['profile'];
-const INTRO_STEP_FLOW: Array<{
-  fromIndex: number;
-  screen: keyof RootStackParamList;
-  isComplete: (p: UserProfile) => boolean;
-}> = [
-  { fromIndex: 4,  screen: 'IntroStep04',          isComplete: () => false }, // always shown — user picks language first
-  { fromIndex: 2,  screen: 'IntroStep02',          isComplete: p => !!(p.name && p.email) },
-  { fromIndex: 3,  screen: 'IntroStep03',          isComplete: p => !!(p.birthday && p.height && p.weight) },
-  { fromIndex: 5,  screen: 'IntroStep05',          isComplete: p => !!(p.country && p.area) },
-  { fromIndex: 6,  screen: 'IntroStep05Timezone',  isComplete: p => !!p.timezone },
-  { fromIndex: 7,  screen: 'IntroStep06',          isComplete: p => !!(p.timeSpent && p.timeOfDay) },
-  { fromIndex: 8,  screen: 'IntroStep07',          isComplete: p => !!(p.cookingMethod && p.ventilation) },
-  { fromIndex: 9,  screen: 'IntroStep08',          isComplete: p => !!(p.sleepHours && p.activeHours) },
-  { fromIndex: 10, screen: 'IntroStep09',          isComplete: p => !!p.workType },
-  { fromIndex: 11, screen: 'IntroStep10',          isComplete: p => !!p.diet },
-  { fromIndex: 12, screen: 'IntroStep10Pregnancy', isComplete: p => !!p.pregnancyNumber },
-  { fromIndex: 13, screen: 'IntroStep11',          isComplete: p => !!p.pregnancyWeek },
-  { fromIndex: 14, screen: 'IntroStep12',          isComplete: () => false }, // always shown
-  { fromIndex: 15, screen: 'IntroStep13',          isComplete: () => false },
-  { fromIndex: 16, screen: 'IntroStep14',          isComplete: () => false },
-];
-
-// Returns the next screen the user should visit, starting from after `currentStepIndex`.
-// currentStepIndex = 1 means "just left IntroStep01" → scan from the top of the flow.
-const getNextIntroStep = (currentStepIndex: number): keyof RootStackParamList => {
+const getNextIntroStep = (
+  currentStepIndex: number,
+): keyof RootStackParamList => {
   const { profile } = useUserStore.getState();
-
-  // Find where we are in the ordered flow; -1 means before the flow (step 01)
-  const currentPos = INTRO_STEP_FLOW.findIndex(s => s.fromIndex === currentStepIndex);
-
-  // Steps that still need to be visited (everything after current position)
-  const remaining = currentPos === -1 ? INTRO_STEP_FLOW : INTRO_STEP_FLOW.slice(currentPos + 1);
-
-  for (const step of remaining) {
-    if (!step.isComplete(profile)) return step.screen;
-  }
-
-  return 'IntroStep14'; // fallback
+  return resolveNextIntroStep(currentStepIndex, profile);
 };
 
 export const Navigation: React.FC = () => {
+  const sessionProfile = useUserStore(state => state.profile);
   const hasVisitedStep2 = useRef(false);
+  const pendingReminder = useRef<ActionReminderPressPayload | null>(null);
+
+  const openActionReminder = useCallback(
+    (payload: ActionReminderPressPayload) => {
+      if (!navigationRef.isReady()) {
+        pendingReminder.current = payload;
+        return;
+      }
+      navigationRef.navigate('Today', {
+        actionKey: payload.actionKey,
+        focus: 'plan',
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const unsubscribe = subscribeToActionReminderPress(openActionReminder);
+    let pendingReadTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const openRememberedReminder = () => {
+      const payload = consumePendingActionReminderPress();
+      if (payload) openActionReminder(payload);
+    };
+
+    getInitialActionReminderPress()
+      .then(payload => {
+        if (payload) openActionReminder(payload);
+      })
+      .catch(() => {});
+
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      nextState => {
+        if (nextState !== 'active') return;
+        openRememberedReminder();
+        pendingReadTimeout = setTimeout(openRememberedReminder, 250);
+      },
+    );
+
+    return () => {
+      unsubscribe();
+      appStateSubscription.remove();
+      if (pendingReadTimeout) clearTimeout(pendingReadTimeout);
+    };
+  }, [openActionReminder]);
+
+  useEffect(() => {
+    scheduleReminders(
+      sessionProfile.notifTimeFromHour ?? 9,
+      sessionProfile.notifTimeFromMinute ?? 0,
+      sessionProfile.notifDays ?? '1111111',
+      sessionProfile.notifTimeToHour ?? 21,
+      sessionProfile.notifTimeToMinute ?? 0,
+    ).catch(() => {});
+  }, [
+    sessionProfile.notifDays,
+    sessionProfile.notifTimeFromHour,
+    sessionProfile.notifTimeFromMinute,
+    sessionProfile.notifTimeToHour,
+    sessionProfile.notifTimeToMinute,
+    sessionProfile.timezone,
+  ]);
+
+  useEffect(() => {
+    const identity = {
+      backendUserId: sessionProfile.backendUserId,
+      email: sessionProfile.email,
+    };
+    const pregnancyWeek =
+      getCurrentPregnancyWeek(
+        sessionProfile.pregnancyWeek,
+        sessionProfile.pregnancyWeekSetDate,
+      ) ?? 1;
+    const progression = resolvePregnancyProgression(pregnancyWeek);
+    const startedAt = Date.now();
+    ProductAnalytics.track(identity, 'application_session_start', {
+      pregnancyWeek,
+      trimester: progression.trimester,
+    });
+    ProductAnalytics.track(identity, 'pregnancy_chapter_progression', {
+      pregnancyWeek,
+      trimester: progression.trimester,
+    });
+    return () => {
+      ProductAnalytics.track(identity, 'session_duration', {
+        durationSeconds: Math.max(
+          1,
+          Math.round((Date.now() - startedAt) / 1000),
+        ),
+      });
+    };
+  }, [
+    sessionProfile.backendUserId,
+    sessionProfile.email,
+    sessionProfile.pregnancyWeek,
+    sessionProfile.pregnancyWeekSetDate,
+  ]);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        if (!pendingReminder.current) return;
+        const payload = pendingReminder.current;
+        pendingReminder.current = null;
+        openActionReminder(payload);
+      }}
+    >
       <Stack.Navigator
-        initialRouteName={DEV_MODE ? 'IntroStep01' : 'AuthLoading'}
+        initialRouteName="AuthLoading"
+        screenLayout={AppScreenLayout}
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
@@ -147,22 +297,22 @@ export const Navigation: React.FC = () => {
         <Stack.Screen name="AuthLoading">
           {({ navigation }) => (
             <AuthLoadingScreen
-              onComplete={(target) => {
+              onComplete={target => {
                 if (target === 'Home') {
                   navigation.reset({
                     index: 0,
                     routes: [{ name: 'Home' }],
                   });
                 } else if (target === 'Intro') {
-                    navigation.reset({
-                        index: 0,
-                        routes: [{ name: 'IntroStep01' }],
-                      });
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'IntroStep01' }],
+                  });
                 } else {
-                    navigation.reset({
-                        index: 0,
-                        routes: [{ name: 'SignIn' }],
-                      });
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'SignIn' }],
+                  });
                 }
               }}
             />
@@ -185,9 +335,9 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep02
               onNext={() => {
-                  const nextStep = getNextIntroStep(2);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(2);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
             />
@@ -197,9 +347,9 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep03
               onNext={() => {
-                  const nextStep = getNextIntroStep(3);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(3);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
             />
@@ -209,9 +359,9 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep04
               onNext={() => {
-                  const nextStep = getNextIntroStep(4);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(4);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
             />
@@ -221,9 +371,9 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep05
               onNext={() => {
-                  const nextStep = getNextIntroStep(5);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(5);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
             />
@@ -233,9 +383,9 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep05Timezone
               onNext={() => {
-                  const nextStep = getNextIntroStep(6);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(6);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
             />
@@ -245,12 +395,14 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep06
               onNext={() => {
-                  const nextStep = getNextIntroStep(7);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(7);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
@@ -258,12 +410,14 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep07
               onNext={() => {
-                  const nextStep = getNextIntroStep(8);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(8);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
@@ -271,12 +425,14 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep08
               onNext={() => {
-                  const nextStep = getNextIntroStep(9);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(9);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
@@ -284,12 +440,14 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep09
               onNext={() => {
-                  const nextStep = getNextIntroStep(10);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(10);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
@@ -297,12 +455,14 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep10
               onNext={() => {
-                  const nextStep = getNextIntroStep(11);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(11);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
@@ -310,19 +470,25 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <IntroStep10Pregnancy
               onNext={() => {
-                  const nextStep = getNextIntroStep(12);
-                  // @ts-ignore
-                  navigation.navigate(nextStep);
+                const nextStep = getNextIntroStep(12);
+                // @ts-ignore
+                navigation.navigate(nextStep);
               }}
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
         <Stack.Screen name="IntroStep11">
           {({ navigation }) => (
             <IntroStep11
-              onNext={() => navigation.navigate('IntroStep12')}
+              onNext={() => {
+                const nextStep = getNextIntroStep(13);
+                // @ts-ignore
+                navigation.navigate(nextStep);
+              }}
               onBack={() => navigation.goBack()}
             />
           )}
@@ -330,8 +496,12 @@ export const Navigation: React.FC = () => {
         <Stack.Screen name="IntroStep12">
           {({ navigation }) => (
             <IntroStep12
-              onEnableNotifications={() => navigation.navigate('IntroStep12NotificationTime')}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onEnableNotifications={() =>
+                navigation.navigate('IntroStep12NotificationTime')
+              }
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
               onBack={() => navigation.goBack()}
             />
           )}
@@ -349,16 +519,22 @@ export const Navigation: React.FC = () => {
             <IntroStep13
               onNext={() => navigation.navigate('IntroStep14')}
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
         <Stack.Screen name="IntroStep14">
           {({ navigation }) => (
             <IntroStep14
-              onNext={() => navigation.navigate('IntroLoading')}
+              onNext={() =>
+                navigation.navigate(resolveIntroCompletionRoute('completed'))
+              }
               onBack={() => navigation.goBack()}
-              onSkip={() => navigation.navigate('StartFirstDay')}
+              onSkip={() =>
+                navigation.navigate(resolveIntroCompletionRoute('skipped'))
+              }
             />
           )}
         </Stack.Screen>
@@ -373,29 +549,128 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <StartFirstDay
               onNext={() => {
-                  navigation.reset({
-                      index: 0,
-                      routes: [{ name: 'Home' }],
-                  });
+                navigation.reset({
+                  index: 1,
+                  routes: [
+                    { name: 'Home' },
+                    {
+                      name: 'FeelingCheckIn',
+                      params: {
+                        source: 'intro',
+                        mode: 'full',
+                      },
+                    },
+                  ],
+                });
               }}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="FeelingCheckIn">
+          {({ navigation, route }) => (
+            <FeelingCheckInScreen
+              source={route.params.source}
+              mode={route.params.mode}
+              onComplete={() => {
+                const isQuickEntry =
+                  route.params.mode === 'quick' ||
+                  (!route.params.mode && route.params.source !== 'intro');
+                if (isQuickEntry) {
+                  navigation.goBack();
+                  return;
+                }
+                navigation.replace('Today');
+              }}
+              onSkip={() => navigation.goBack()}
             />
           )}
         </Stack.Screen>
         <Stack.Screen name="Home">
           {({ navigation }) => (
-            <HomeScreen 
-              onNavigateToToday={() => navigation.navigate('Today')}
+            <HomeScreen
+              onNavigateToToday={async () => {
+                const profile = useUserStore.getState().profile;
+                const identity = {
+                  backendUserId: profile.backendUserId,
+                  email: profile.email,
+                };
+                const date = formatLocalDate(new Date());
+                const store = useRecommendationExperienceStore.getState();
+                store.ensureOwner(identity);
+                const [plan, checkIn] = await Promise.all([
+                  loadDailyPlanExperience(identity, date)
+                    .then(result => result.experience)
+                    .catch(() => null),
+                  loadFeelingCheckInExperience(identity, date).catch(
+                    () => null,
+                  ),
+                ]);
+                const step = resolveLongitudinalJourneyStep({
+                  hasSavedCheckIn:
+                    Boolean(
+                      useRecommendationExperienceStore
+                        .getState()
+                        .getCheckIn(date),
+                    ) || checkIn?.recordState === 'recorded',
+                  plan,
+                  reminders:
+                    useRecommendationExperienceStore.getState().reminders[
+                      date
+                    ] ?? {},
+                  restTimers:
+                    useRecommendationExperienceStore.getState().restTimers[
+                      date
+                    ] ?? {},
+                  weeklyCheckpointAvailable: isWeeklyCheckpointAvailable(date),
+                });
+
+                if (step.kind === 'checkIn') {
+                  navigation.navigate('FeelingCheckIn', {
+                    source: 'home',
+                    mode: 'full',
+                  });
+                } else if (step.kind === 'weeklySummary') {
+                  navigation.navigate('WeeklySummary', {
+                    mode: 'checkpoint',
+                  });
+                } else {
+                  navigation.navigate('Today', {
+                    actionKey:
+                      step.kind === 'action' ? step.actionKey : undefined,
+                    focus: step.kind === 'dailyProgress' ? 'progress' : 'plan',
+                  });
+                }
+              }}
               onNavigateToProfile={() => navigation.navigate('UserProfile')}
               onNavigateToBabyStatus={() => navigation.navigate('BabyStatus')}
-              onNavigateToPlanBirthday={() => navigation.navigate('PlanBirthday')}
+              onNavigateToPlanBirthday={() =>
+                navigation.navigate('PlanBirthday')
+              }
+              onNavigateToHistoricalWeek={(pregnancyWeek, endDate) =>
+                navigation.navigate('WeeklySummary', {
+                  pregnancyWeek,
+                  endDate,
+                  mode: 'review',
+                })
+              }
             />
           )}
         </Stack.Screen>
         <Stack.Screen name="Today">
-          {({ navigation }) => (
+          {({ navigation, route }) => (
             <TodayScreen
+              initialActionKey={route.params?.actionKey}
+              initialFocus={route.params?.focus}
               onNavigateToProfile={() => navigation.navigate('UserProfile')}
               onNavigateToBabyStatus={() => navigation.navigate('BabyStatus')}
+              onNavigateToSymptomsHistory={() =>
+                navigation.navigate('SymptomsHistory')
+              }
+              onNavigateToWeeklySummary={() =>
+                navigation.navigate('WeeklySummary', {
+                  mode: 'checkpoint',
+                })
+              }
               onBackPress={() => navigation.goBack()}
             />
           )}
@@ -408,17 +683,35 @@ export const Navigation: React.FC = () => {
               onNavigateToMotherTwin={() => navigation.navigate('MotherTwin')}
               onNavigateToRefer={() => navigation.navigate('ReferApp')}
               onNavigateToAppSettings={() => navigation.navigate('AppSettings')}
+              onNavigateToProfileInformation={() =>
+                navigation.navigate('ProfileInformation')
+              }
               onNavigateToReminders={() => navigation.navigate('Reminders')}
-              onNavigateToPrivacySettings={() => navigation.navigate('PrivacySettings')}
-              onNavigateToPlanBirthday={() => navigation.navigate('PlanBirthday')}
-              onNavigateToSymptomsHistory={() => navigation.navigate('SymptomsHistory')}
+              onNavigateToPrivacySettings={() =>
+                navigation.navigate('PrivacySettings')
+              }
+              onNavigateToPlanBirthday={() =>
+                navigation.navigate('PlanBirthday')
+              }
+              onNavigateToSymptomsHistory={() =>
+                navigation.navigate('SymptomsHistory')
+              }
               onLogout={() => {
                 navigation.reset({
                   index: 0,
-                  routes: [{ name: 'SignIn' }],
+                  routes: [
+                    {
+                      name: DEV_LOCAL_SESSION ? 'AuthLoading' : 'SignIn',
+                    },
+                  ],
                 });
               }}
             />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="ProfileInformation">
+          {({ navigation }) => (
+            <ProfileInformationScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Screen name="SymptomsHistory">
@@ -426,32 +719,46 @@ export const Navigation: React.FC = () => {
             <SymptomsHistoryScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
+        <Stack.Screen name="WeeklySummary">
+          {({ navigation, route }) => (
+            <WeeklySummaryScreen
+              pregnancyWeek={route.params?.pregnancyWeek}
+              endDate={route.params?.endDate}
+              mode={route.params?.mode}
+              onBack={() => navigation.goBack()}
+              onReturnToPath={() => navigation.navigate('Home')}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen name="BabyTwin">
           {({ navigation }) => (
-            <BabyTwinScreen 
-              onBack={() => navigation.goBack()}
-            />
+            <BabyTwinScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Screen name="MotherTwin">
           {({ navigation }) => (
-            <MotherTwinScreen 
+            <MotherTwinScreen
               onBack={() => navigation.goBack()}
+              onOpenWeeklyReport={() =>
+                navigation.navigate('WeeklySummary', {
+                  mode: 'checkpoint',
+                })
+              }
             />
           )}
         </Stack.Screen>
         <Stack.Screen name="ReferApp">
           {({ navigation }) => (
-            <ReferAppScreen 
-              onBack={() => navigation.goBack()}
-            />
+            <ReferAppScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Screen name="AppSettings">
           {({ navigation }) => (
-            <AppSettingsScreen 
+            <AppSettingsScreen
               onBack={() => navigation.goBack()}
-              onNavigateToNotificationTime={() => navigation.navigate('NotificationTime')}
+              onNavigateToNotificationTime={() =>
+                navigation.navigate('NotificationTime')
+              }
             />
           )}
         </Stack.Screen>
@@ -462,23 +769,19 @@ export const Navigation: React.FC = () => {
         </Stack.Screen>
         <Stack.Screen name="Reminders">
           {({ navigation }) => (
-            <RemindersScreen 
-              onBack={() => navigation.goBack()}
-            />
+            <RemindersScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Screen name="PrivacySettings">
           {({ navigation }) => (
-            <PrivacySettingsScreen 
-              onBack={() => navigation.goBack()}
-            />
+            <PrivacySettingsScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Screen name="PlanBirthday">
           {({ navigation }) => (
-            <PlanBirthdayScreen 
+            <PlanBirthdayScreen
               onBack={() => navigation.goBack()}
-              onConfirm={(date) => {
+              onConfirm={_date => {
                 // Don't navigate back - let the screen handle the state change
               }}
             />
@@ -486,16 +789,12 @@ export const Navigation: React.FC = () => {
         </Stack.Screen>
         <Stack.Screen name="Ads">
           {({ navigation }) => (
-            <AdsScreen 
-              onClose={() => navigation.navigate('Home')}
-            />
+            <AdsScreen onClose={() => navigation.navigate('Home')} />
           )}
         </Stack.Screen>
         <Stack.Screen name="BabyStatus">
           {({ navigation }) => (
-            <BabyStatusScreen 
-              onBack={() => navigation.goBack()}
-            />
+            <BabyStatusScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Screen name="SignIn">

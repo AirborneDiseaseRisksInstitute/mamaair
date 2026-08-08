@@ -1,9 +1,21 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated, Easing } from 'react-native';
-import { useTheme } from '../../../theme';
-import { fs } from '../../../utils/responsive';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import React, { useEffect, useMemo, useRef } from 'react';
+import {
+  Animated,
+  Easing,
+  Image,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import { useTranslation } from 'react-i18next';
+import { spacing, useTheme } from '../../../theme';
+import { INTRO_PLAN_LOADING_DURATION_MS } from '../../../config/introPlanLoading';
 
 interface IntroLoadingProps {
   onComplete?: () => void;
@@ -11,60 +23,159 @@ interface IntroLoadingProps {
 
 export const IntroLoading: React.FC<IntroLoadingProps> = ({ onComplete }) => {
   const theme = useTheme();
-  
-  const ring1 = useRef(new Animated.Value(0)).current;
-  const ring2 = useRef(new Animated.Value(0)).current;
-  const ring3 = useRef(new Animated.Value(0)).current;
-  const ring4 = useRef(new Animated.Value(0)).current;
-  const ring5 = useRef(new Animated.Value(0)).current;
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const progress = useRef(new Animated.Value(0)).current;
+  const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
-    const createPulse = (anim: Animated.Value, delay: number) => {
-      return Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(anim, { toValue: 1, duration: 2000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true })
-        ])
-      );
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    progress.setValue(0);
+    const animation = Animated.timing(progress, {
+      toValue: 1,
+      duration: INTRO_PLAN_LOADING_DURATION_MS,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: false,
+    });
+    animation.start();
+
+    const timeoutId = setTimeout(() => {
+      onCompleteRef.current?.();
+    }, INTRO_PLAN_LOADING_DURATION_MS);
+
+    return () => {
+      animation.stop();
+      clearTimeout(timeoutId);
     };
+  }, [progress]);
 
-    const animations = [
-      createPulse(ring1, 0), createPulse(ring2, 400), createPulse(ring3, 800),
-      createPulse(ring4, 1200), createPulse(ring5, 1600),
-    ];
-    animations.forEach(anim => anim.start());
-
-    const timeoutId = setTimeout(() => { if (onComplete) onComplete(); }, 2500);
-    return () => { animations.forEach(anim => anim.stop()); clearTimeout(timeoutId); };
-  }, [onComplete, ring1, ring2, ring3, ring4, ring5]);
-
-  const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#FF6B3D', justifyContent: 'center', alignItems: 'center' },
-    halosContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
-    halo: { position: 'absolute', backgroundColor: '#fff', borderRadius: SCREEN_WIDTH },
-    textContainer: { zIndex: 10, alignItems: 'center', justifyContent: 'center' },
-    loadingText: { fontSize: 24, fontFamily: theme.typography.fontFamily.medium, color: 'rgba(255, 255, 255, 0.95)', textAlign: 'center', lineHeight: 34 },
+  const imageWidth = Math.min(
+    width - spacing('xl') * 2,
+    520,
+  );
+  const progressWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
   });
-
-  const maxRadius = SCREEN_WIDTH * 1.5;
-
-  const renderRing = (anim: Animated.Value, index: number) => {
-    const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] });
-    const opacity = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.15, 0.05, 0] });
-    return (
-      <Animated.View key={index} style={[styles.halo, { width: maxRadius, height: maxRadius, opacity, transform: [{ scale }] }]} />
-    );
-  };
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: '#FFFFFF',
+        },
+        content: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: spacing('lg'),
+          paddingTop: spacing('lg'),
+        },
+        hintImage: {
+          width: imageWidth,
+          height: imageWidth / 1.5,
+          aspectRatio: 1.5,
+        },
+        hintText: {
+          maxWidth: 360,
+          marginTop: spacing('sm'),
+          color: '#4F4A47',
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 15,
+          lineHeight: 23,
+          textAlign: 'center',
+        },
+        loadingArea: {
+          paddingHorizontal: spacing('lg'),
+          paddingBottom: Math.max(
+            insets.bottom,
+            spacing('lg'),
+          ) + spacing('md'),
+        },
+        loadingCard: {
+          minHeight: 82,
+          justifyContent: 'center',
+          paddingHorizontal: spacing('md'),
+          paddingVertical: spacing('sm'),
+          borderRadius: 22,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: '#F0E9E4',
+          backgroundColor: '#FFFFFF',
+          shadowColor: '#8C4A22',
+          shadowOffset: { width: 0, height: 7 },
+          shadowOpacity: 0.09,
+          shadowRadius: 18,
+          elevation: 4,
+        },
+        loadingText: {
+          marginBottom: spacing('xs'),
+          color: '#6F6864',
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 13,
+          lineHeight: 18,
+          textAlign: 'center',
+        },
+        progressTrack: {
+          height: 9,
+          overflow: 'hidden',
+          borderRadius: 999,
+          backgroundColor: '#F7E8DD',
+        },
+        progressFill: {
+          height: '100%',
+          overflow: 'hidden',
+          borderRadius: 999,
+        },
+        progressGradient: {
+          flex: 1,
+        },
+      }),
+    [imageWidth, insets.bottom, theme],
+  );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.halosContainer}>
-        {renderRing(ring5, 5)}{renderRing(ring4, 4)}{renderRing(ring3, 3)}{renderRing(ring2, 2)}{renderRing(ring1, 1)}
+    <SafeAreaView edges={[]} style={styles.container}>
+      <View style={styles.content}>
+        <Image
+          source={require('../../../assets/images/mamaHint.png')}
+          resizeMode="contain"
+          style={styles.hintImage}
+        />
+        <Text style={styles.hintText}>
+          {t('intro.plan_loading_hint')}
+        </Text>
       </View>
-      <View style={styles.textContainer}>
-        <Text style={styles.loadingText} allowFontScaling={false}>Preparing{'\n'}your journey...</Text>
+
+      <View style={styles.loadingArea}>
+        <View
+          accessibilityRole="progressbar"
+          accessibilityLabel={t('common.preparing_journey')}
+          style={styles.loadingCard}
+        >
+          <Text style={styles.loadingText}>
+            {t('intro.plan_loading_progress')}
+          </Text>
+          <View style={styles.progressTrack}>
+            <Animated.View
+              style={[
+                styles.progressFill,
+                { width: progressWidth },
+              ]}
+            >
+              <LinearGradient
+                colors={['#FFB15A', '#FF7A22', '#FF5A1F']}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.progressGradient}
+              />
+            </Animated.View>
+          </View>
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };

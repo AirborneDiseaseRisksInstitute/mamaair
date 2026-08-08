@@ -1,14 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-} from 'react-native';
-import WheelPicker from 'react-native-wheely';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { BottomSheet } from './BottomSheet';
+import { ReliableWheelPicker } from './ReliableWheelPicker';
 import { useTheme, spacing, radius } from '../../theme';
+import { useTranslation } from 'react-i18next';
 
 interface ReminderTimePickerProps {
   visible: boolean;
@@ -17,13 +12,19 @@ interface ReminderTimePickerProps {
   initialHour?: number;
   initialMinute?: number;
   taskTitle?: string;
+  onRemove?: () => void;
 }
 
-const hourOptions = Array.from({ length: 24 }, (_, i) => i + 1);
-const hourLabels = hourOptions.map((h) => (h < 10 ? `0${h}` : `${h}`));
+const hourOptions = Array.from({ length: 24 }, (_, i) => i);
+const hourLabels = hourOptions.map(h => (h < 10 ? `0${h}` : `${h}`));
 
-const minuteOptions = Array.from({ length: 59 }, (_, i) => i + 1);
-const minuteLabels = minuteOptions.map((m) => (m < 10 ? `0${m}` : `${m}`));
+export const TIME_PICKER_MINUTE_VALUES = Array.from(
+  { length: 60 },
+  (_, minute) => minute,
+);
+export const TIME_PICKER_MINUTE_LABELS = TIME_PICKER_MINUTE_VALUES.map(minute =>
+  minute.toString().padStart(2, '0'),
+);
 
 const ITEM_HEIGHT = 56;
 const VISIBLE_REST = 2;
@@ -35,8 +36,10 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
   initialHour = 9,
   initialMinute = 0,
   taskTitle,
+  onRemove,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   const getInitialHourIndex = useCallback(() => {
     const index = hourOptions.indexOf(initialHour);
@@ -44,19 +47,15 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
   }, [initialHour]);
 
   const getInitialMinuteIndex = useCallback(() => {
-    const index = minuteOptions.indexOf(initialMinute);
+    const index = TIME_PICKER_MINUTE_VALUES.indexOf(initialMinute);
     return index >= 0 ? index : 0;
   }, [initialMinute]);
 
   const [hourIndex, setHourIndex] = useState(getInitialHourIndex());
   const [minuteIndex, setMinuteIndex] = useState(getInitialMinuteIndex());
 
-  const opacity = useRef(new Animated.Value(0)).current;
-  const [shouldRender, setShouldRender] = useState(false);
-  const mountKey = useRef(0);
-
   const handleConfirm = () => {
-    onConfirm(hourOptions[hourIndex], minuteOptions[minuteIndex]);
+    onConfirm(hourOptions[hourIndex], TIME_PICKER_MINUTE_VALUES[minuteIndex]);
     onClose();
   };
 
@@ -65,36 +64,11 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
   };
 
   useEffect(() => {
-    let renderTimer: ReturnType<typeof setTimeout>;
-    let fadeTimer: ReturnType<typeof setTimeout>;
-
     if (visible) {
-      opacity.setValue(0);
-      setShouldRender(false);
       setHourIndex(getInitialHourIndex());
       setMinuteIndex(getInitialMinuteIndex());
-      mountKey.current += 1;
-
-      renderTimer = setTimeout(() => {
-        setShouldRender(true);
-        fadeTimer = setTimeout(() => {
-          Animated.timing(opacity, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: true,
-          }).start();
-        }, 200);
-      }, 500);
-    } else {
-      opacity.setValue(0);
-      setShouldRender(false);
     }
-
-    return () => {
-      if (renderTimer) clearTimeout(renderTimer);
-      if (fadeTimer) clearTimeout(fadeTimer);
-    };
-  }, [visible, getInitialHourIndex, getInitialMinuteIndex, opacity]);
+  }, [visible, getInitialHourIndex, getInitialMinuteIndex]);
 
   const scaleFunction = useCallback((x: number) => {
     return Math.max(0.45, 1 - x * 0.22);
@@ -111,80 +85,101 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
   };
 
   const pickerHeight = ITEM_HEIGHT * (VISIBLE_REST * 2 + 1);
-  const title = taskTitle ? `Set reminder: ${taskTitle}` : 'Set reminder time';
+  const title = taskTitle
+    ? t('picker.set_reminder_for', { task: taskTitle })
+    : t('picker.set_reminder_time');
 
   return (
     <BottomSheet visible={visible} onClose={onClose} showHandle>
       <View style={styles.container}>
         <View style={styles.titleContainer}>
-          <Text style={[styles.title, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
+          <Text
+            style={[styles.title, { color: theme.colors.textPrimary }]}
+            allowFontScaling={false}
+          >
             {title}
           </Text>
         </View>
 
         <View style={styles.labelsContainer}>
           <View style={styles.labelWrapper}>
-            <Text style={[styles.label, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-              Hour
+            <Text
+              style={[styles.label, { color: theme.colors.textPrimary }]}
+              allowFontScaling={false}
+            >
+              {t('common.hour')}
             </Text>
           </View>
           <View style={styles.labelWrapper}>
-            <Text style={[styles.label, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-              Minute
+            <Text
+              style={[styles.label, { color: theme.colors.textPrimary }]}
+              allowFontScaling={false}
+            >
+              {t('common.minute')}
             </Text>
           </View>
         </View>
 
         <View style={[styles.pickersContainer, { height: pickerHeight }]}>
-          {shouldRender && (
-            <Animated.View style={[styles.pickersAnimatedContainer, { opacity }]}>
-              <View style={styles.pickerWrapper}>
-                <WheelPicker
-                  key={`hour-${mountKey.current}`}
-                  selectedIndex={hourIndex}
-                  options={hourLabels}
-                  onChange={setHourIndex}
-                  visibleRest={VISIBLE_REST}
-                  itemHeight={ITEM_HEIGHT}
-                  itemTextStyle={itemTextStyle}
-                  selectedIndicatorStyle={styles.selectedIndicator}
-                  containerStyle={styles.wheelContainer}
-                  scaleFunction={scaleFunction}
-                  opacityFunction={opacityFunction}
-                  decelerationRate="fast"
-                />
-              </View>
-              <View style={styles.pickerWrapper}>
-                <WheelPicker
-                  key={`minute-${mountKey.current}`}
-                  selectedIndex={minuteIndex}
-                  options={minuteLabels}
-                  onChange={setMinuteIndex}
-                  visibleRest={VISIBLE_REST}
-                  itemHeight={ITEM_HEIGHT}
-                  itemTextStyle={itemTextStyle}
-                  selectedIndicatorStyle={styles.selectedIndicator}
-                  containerStyle={styles.wheelContainer}
-                  scaleFunction={scaleFunction}
-                  opacityFunction={opacityFunction}
-                  decelerationRate="fast"
-                />
-              </View>
-            </Animated.View>
-          )}
+          <View style={styles.pickersAnimatedContainer}>
+            <View style={styles.pickerWrapper}>
+              <ReliableWheelPicker
+                selectedIndex={hourIndex}
+                options={hourLabels}
+                onChange={setHourIndex}
+                visibleRest={VISIBLE_REST}
+                itemHeight={ITEM_HEIGHT}
+                itemTextStyle={itemTextStyle}
+                selectedIndicatorStyle={styles.selectedIndicator}
+                containerStyle={styles.wheelContainer}
+                scaleFunction={scaleFunction}
+                opacityFunction={opacityFunction}
+                decelerationRate="fast"
+              />
+            </View>
+            <View style={styles.pickerWrapper}>
+              <ReliableWheelPicker
+                selectedIndex={minuteIndex}
+                options={TIME_PICKER_MINUTE_LABELS}
+                onChange={setMinuteIndex}
+                visibleRest={VISIBLE_REST}
+                itemHeight={ITEM_HEIGHT}
+                itemTextStyle={itemTextStyle}
+                selectedIndicatorStyle={styles.selectedIndicator}
+                containerStyle={styles.wheelContainer}
+                scaleFunction={scaleFunction}
+                opacityFunction={opacityFunction}
+                decelerationRate="fast"
+              />
+            </View>
+          </View>
         </View>
 
         <View style={styles.actionsContainer}>
+          {onRemove ? (
+            <TouchableOpacity
+              style={styles.removeButton}
+              onPress={onRemove}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.removeButtonText} allowFontScaling={false}>
+                {t('common.remove')}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
             style={styles.cancelButton}
             onPress={handleCancel}
             activeOpacity={0.7}
           >
             <Text
-              style={[styles.cancelButtonText, { color: theme.colors.textSecondary }]}
+              style={[
+                styles.cancelButtonText,
+                { color: theme.colors.textSecondary },
+              ]}
               allowFontScaling={false}
             >
-              Cancel
+              {t('common.cancel')}
             </Text>
           </TouchableOpacity>
           <View style={styles.okButtonContainer}>
@@ -203,11 +198,13 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
               <Text
                 style={[
                   styles.okButtonText,
-                  { color: '#FFFFFF', fontFamily: theme.typography.fontFamily.extraBold },
+                  {
+                    fontFamily: theme.typography.fontFamily.extraBold,
+                  },
                 ]}
                 allowFontScaling={false}
               >
-                Ok
+                {t('common.ok')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -273,6 +270,17 @@ const styles = StyleSheet.create({
     gap: spacing('md'),
     paddingTop: spacing('lg'),
   },
+  removeButton: {
+    flex: 1,
+    paddingVertical: spacing('md'),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeButtonText: {
+    color: '#B93838',
+    fontSize: 14,
+    fontFamily: 'MPLUSRounded1c-Medium',
+  },
   cancelButton: {
     flex: 1,
     paddingVertical: spacing('md'),
@@ -296,6 +304,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   okButtonText: {
+    color: '#FFFFFF',
     fontSize: 18,
     textAlign: 'center',
   },

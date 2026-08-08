@@ -13,6 +13,7 @@ import {
 import { useTheme, spacing } from '../theme';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faTimes, faLink, faShare2 } from '@fortawesome/free-solid-svg-icons';
+import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -22,6 +23,7 @@ interface ReferAppScreenProps {
 
 export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [emailInput, setEmailInput] = React.useState('');
 
   const referImage = require('../assets/images/referApp.png');
@@ -173,19 +175,19 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
 
         {/* Title */}
         <Text style={styles.titleText} allowFontScaling={false}>
-          Invite your{'\n'}friends & family
+          {t('refer.title')}
         </Text>
 
         {/* Description */}
         <Text style={styles.descriptionText} allowFontScaling={false}>
-          Once they register using your link and complete their first international money transfer, you'll get 2$ credited to your account.
+          {t('refer.description')}
         </Text>
 
         {/* Email Input with Send Button */}
         <View style={styles.emailInputContainer}>
           <TextInput
             style={styles.emailInput}
-            placeholder="Email or username"
+            placeholder={t('refer.email_or_username')}
             placeholderTextColor={theme.colors.neutral400}
             value={emailInput}
             onChangeText={setEmailInput}
@@ -202,7 +204,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
               setEmailInput('');
             }}
           >
-            <Text style={styles.sendButtonText} allowFontScaling={false}>Send invite</Text>
+            <Text style={styles.sendButtonText} allowFontScaling={false}>{t('refer.send_invite')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -221,7 +223,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
               size={16}
               style={styles.actionIcon}
             />
-            <Text style={styles.actionButtonText} allowFontScaling={false}>Copy link</Text>
+            <Text style={styles.actionButtonText} allowFontScaling={false}>{t('refer.copy_link')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -237,7 +239,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
               size={16}
               style={styles.actionIcon}
             />
-            <Text style={styles.actionButtonText} allowFontScaling={false}>Share on</Text>
+            <Text style={styles.actionButtonText} allowFontScaling={false}>{t('refer.share_on')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

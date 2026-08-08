@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -28,39 +28,45 @@ import {
   faCamera,
   faUser,
   faHeartPulse,
-  faGlobe,
 } from '@fortawesome/free-solid-svg-icons';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
-import { useTheme, spacing, radius } from '../theme';
+import { useTheme, spacing } from '../theme';
 import {
   BackButton,
   BottomSheet,
   BottomSheetOption,
   Button,
-  DatePicker,
-  Dropdown,
   FixedButtonContainer,
-  HeightWeightPicker,
-  Input,
-  TransitionLoader,
 } from '../components/ui';
+import {
+  ProfileEditSheet,
+  type ProfileEditSection,
+} from '../components/profile/ProfileEditSheet';
 import { useUserStore } from '../store/useUserStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { ProfileService } from '../services/api/ProfileService';
-import { LanguageService } from '../services/api/LanguageService';
-import { FIXED_BUTTON_AREA_HEIGHT, ms, vs } from '../utils/responsive';
+import { FIXED_BUTTON_AREA_HEIGHT, ms } from '../utils/responsive';
 import { formatLocalDate } from '../utils/dateUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { useMetaChoices } from '../hooks/useMetaChoices';
 import { AdsScreen } from './AdsScreen';
 import { useTranslation } from 'react-i18next';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { loadWeeklySummaryExperience } from '../services/recommendationExperience/PresentationJourneyRepository';
+import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
+import type { RecommendationExperienceIdentity } from '../types/recommendationExperience';
+import {
+  SummaryService,
+  type SummaryResponse,
+} from '../services/api/SummaryService';
+import { DEV_LOCAL_SESSION } from '../config/dev';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEALTH_CARD_PADDING = 16 * 2;
-const HEALTH_CARD_WIDTH = SCREEN_WIDTH - HEALTH_CARD_PADDING - spacing('md') * 2;
+const HEALTH_CARD_WIDTH =
+  SCREEN_WIDTH - HEALTH_CARD_PADDING - spacing('md') * 2;
 const HEALTH_CARD_HEIGHT = HEALTH_CARD_WIDTH * 0.75; // Increased to 0.75 to ensure button stays inside
-const HEALTH_ICON_SIZE = HEALTH_CARD_WIDTH * 0.20;
+const HEALTH_ICON_SIZE = HEALTH_CARD_WIDTH * 0.2;
 const HEALTH_NOTCH_DEPTH = HEALTH_ICON_SIZE * 0.7;
 
 interface UserProfileScreenProps {
@@ -69,6 +75,7 @@ interface UserProfileScreenProps {
   onNavigateToMotherTwin?: () => void;
   onNavigateToRefer?: () => void;
   onNavigateToAppSettings?: () => void;
+  onNavigateToProfileInformation?: () => void;
   onNavigateToReminders?: () => void;
   onNavigateToPrivacySettings?: () => void;
   onNavigateToPlanBirthday?: () => void;
@@ -82,6 +89,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   onNavigateToMotherTwin,
   onNavigateToRefer,
   onNavigateToAppSettings,
+  onNavigateToProfileInformation,
   onNavigateToReminders,
   onNavigateToPrivacySettings,
   onNavigateToPlanBirthday,
@@ -89,17 +97,40 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   onLogout,
 }) => {
   const theme = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale =
+    i18n.resolvedLanguage === 'fr'
+      ? 'fr-FR'
+      : i18n.resolvedLanguage === 'sw'
+      ? 'sw-KE'
+      : 'en-US';
   const insets = useSafeAreaInsets();
-  const { profile, setPhoto, setName, setCountry, setArea, setWeight, setHeight, setBirthday, setLanguage } = useUserStore();
+  const { profile, setPhoto } = useUserStore();
+  const checkIns = useRecommendationExperienceStore(state => state.checkIns);
+  const actionCompletions = useRecommendationExperienceStore(
+    state => state.actionCompletions,
+  );
+  const restTimers = useRecommendationExperienceStore(
+    state => state.restTimers,
+  );
+  const dailyMoments = useRecommendationExperienceStore(
+    state => state.dailyMoments,
+  );
   const { logout } = useAuthStore();
   const { countries, languages } = useMetaChoices();
   const [showBabyTwinAds, setShowBabyTwinAds] = useState(false);
-  const [isEditSheetVisible, setIsEditSheetVisible] = useState(false);
-  const [isHealthServiceSheetVisible, setIsHealthServiceSheetVisible] = useState(false);
-  const [isHealthRequestSheetVisible, setIsHealthRequestSheetVisible] = useState(false);
+  const [isProfileEditMenuVisible, setIsProfileEditMenuVisible] =
+    useState(false);
+  const [activeProfileEditSection, setActiveProfileEditSection] =
+    useState<ProfileEditSection | null>(null);
+  const [isHealthServiceSheetVisible, setIsHealthServiceSheetVisible] =
+    useState(false);
+  const [isHealthRequestSheetVisible, setIsHealthRequestSheetVisible] =
+    useState(false);
   const [isAgreementSheetVisible, setIsAgreementSheetVisible] = useState(false);
-  const [selectedHealthServices, setSelectedHealthServices] = useState<string[]>([]);
+  const [selectedHealthServices, setSelectedHealthServices] = useState<
+    string[]
+  >([]);
   const [isDataConsentChecked, setIsDataConsentChecked] = useState(false);
   const [isAgreementAccepted, setIsAgreementAccepted] = useState(false);
   const [isSuccessDialogVisible, setIsSuccessDialogVisible] = useState(false);
@@ -107,94 +138,36 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   // Photo picker sheet
   const [isPhotoSheetVisible, setIsPhotoSheetVisible] = useState(false);
 
-  // Edit sub-sheets
-  const [isCountrySheetVisible, setIsCountrySheetVisible] = useState(false);
-  const [isAreaSheetVisible, setIsAreaSheetVisible] = useState(false);
-  const [isLanguageSheetVisible, setIsLanguageSheetVisible] = useState(false);
-  const [isLanguagePickerFromMenu, setIsLanguagePickerFromMenu] = useState(false);
-  const [isChangingLanguage, setIsChangingLanguage] = useState(false);
-  const [isHWPickerVisible, setIsHWPickerVisible] = useState(false);
-  const [isBirthdayPickerVisible, setIsBirthdayPickerVisible] = useState(false);
-
-  // Edit local state - mirrors profile, flushed to store on Save
-  const [editName, setEditName] = useState<string>('');
-  const [editCountry, setEditCountry] = useState<string>('');
-  const [editArea, setEditArea] = useState<string>('');
-  const [editLanguage, setEditLanguage] = useState<string>('');
-  const [editHeight, setEditHeight] = useState<number | null>(null);
-  const [editWeight, setEditWeight] = useState<number | null>(null);
-  const [editBirthday, setEditBirthday] = useState<Date | null>(null);
-
-  type AreaType = 'urban' | 'peri-urban' | 'rural';
-
-  const AREA_TYPES: Array<{ id: AreaType; label: string }> = [
-    { id: 'urban', label: 'Urban' },
-    { id: 'peri-urban', label: 'Peri-Urban' },
-    { id: 'rural', label: 'Rural' },
-  ];
-
-  const openEditSheet = () => {
-    setEditName(profile.name || '');
-    setEditCountry(profile.country || '');
-    setEditArea(profile.area || '');
-    setEditLanguage(profile.language || '');
-    setEditHeight(profile.height);
-    setEditWeight(profile.weight);
-    setEditBirthday(profile.birthday ? new Date(profile.birthday) : null);
-    setIsEditSheetVisible(true);
-  };
-
-  const handleSaveProfile = () => {
-    if (editName.trim()) setName(editName.trim());
-    if (editCountry) setCountry(editCountry);
-    if (editArea) setArea(editArea);
-    if (editLanguage) setLanguage(editLanguage);
-    if (editHeight) setHeight(editHeight);
-    if (editWeight) setWeight(editWeight);
-    if (editBirthday) setBirthday(editBirthday);
-    setIsEditSheetVisible(false);
-
-    const patch: Record<string, any> = {};
-    if (editName.trim()) patch.name = editName.trim();
-    if (editCountry) patch.country = editCountry;
-    if (editLanguage) patch.language = editLanguage;
-    if (editHeight) patch.height = editHeight;
-    if (editWeight) patch.weight_pre_pregnancy = editWeight;
-    if (editBirthday) patch.date_of_birth = formatLocalDate(editBirthday);
-    if (Object.keys(patch).length > 0) {
-      ProfileService.patchProfile(patch).catch(() => {});
-    }
-    if (editLanguage) {
-      LanguageService.setLanguage(editLanguage).catch(() => {});
-    }
-  };
-
   const handlePickPhotoCamera = () => {
     setIsPhotoSheetVisible(false);
     launchCamera(
-      { mediaType: 'photo', quality: 0.8, cameraType: 'front', presentationStyle: 'fullScreen' },
-      (r) => { if (!r.didCancel && !r.errorCode && r.assets?.[0]?.uri) setPhoto(r.assets[0].uri); },
+      {
+        mediaType: 'photo',
+        quality: 0.8,
+        cameraType: 'front',
+        presentationStyle: 'fullScreen',
+      },
+      r => {
+        if (!r.didCancel && !r.errorCode && r.assets?.[0]?.uri)
+          setPhoto(r.assets[0].uri);
+      },
     );
   };
 
   const handlePickPhotoLibrary = () => {
     setIsPhotoSheetVisible(false);
     launchImageLibrary(
-      { mediaType: 'photo', quality: 0.8, selectionLimit: 1, presentationStyle: 'fullScreen' },
-      (r) => { if (!r.didCancel && !r.errorCode && r.assets?.[0]?.uri) setPhoto(r.assets[0].uri); },
+      {
+        mediaType: 'photo',
+        quality: 0.8,
+        selectionLimit: 1,
+        presentationStyle: 'fullScreen',
+      },
+      r => {
+        if (!r.didCancel && !r.errorCode && r.assets?.[0]?.uri)
+          setPhoto(r.assets[0].uri);
+      },
     );
-  };
-
-  const formatHeightWeight = (): string => {
-    if (editHeight && editWeight) return `${editHeight} cm  •  ${editWeight} kg`;
-    if (profile.height && profile.weight) return `${profile.height} cm  •  ${profile.weight} kg`;
-    return '';
-  };
-
-  const formatDate = (date: Date): string => {
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${m}/${d}/${date.getFullYear()}`;
   };
 
   // Calculate expected due date from pregnancyWeek recorded during registration
@@ -202,1677 +175,1806 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     if (!profile.pregnancyWeek || !profile.pregnancyWeekSetDate) return null;
     const setDate = new Date(profile.pregnancyWeekSetDate);
     const weeksRemaining = 40 - profile.pregnancyWeek;
-    const due = new Date(setDate.getTime() + weeksRemaining * 7 * 24 * 60 * 60 * 1000);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${months[due.getMonth()]} ${due.getDate()}, ${due.getFullYear()}`;
-  }, [profile.pregnancyWeek, profile.pregnancyWeekSetDate]);
+    const due = new Date(
+      setDate.getTime() + weeksRemaining * 7 * 24 * 60 * 60 * 1000,
+    );
+    return due.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }, [locale, profile.pregnancyWeek, profile.pregnancyWeekSetDate]);
+
+  const currentPregnancyWeek =
+    getCurrentPregnancyWeek(
+      profile.pregnancyWeek,
+      profile.pregnancyWeekSetDate,
+    ) || 1;
+  const experienceIdentity = useMemo<RecommendationExperienceIdentity>(
+    () => ({
+      backendUserId: profile.backendUserId,
+      email: profile.email,
+    }),
+    [profile.backendUserId, profile.email],
+  );
+  const [backendSummary, setBackendSummary] = useState<SummaryResponse | null>(
+    null,
+  );
+  useEffect(() => {
+    if (DEV_LOCAL_SESSION) return;
+    let mounted = true;
+    SummaryService.getSummary()
+      .then(value => {
+        if (mounted) setBackendSummary(value);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  const weeklyProgress = useMemo(
+    () =>
+      loadWeeklySummaryExperience({
+        identity: experienceIdentity,
+        pregnancyWeek: currentPregnancyWeek,
+        endDate: formatLocalDate(new Date()),
+        milestone: '',
+        backendSummary,
+        localData: {
+          checkIns,
+          actionCompletions,
+          restTimers,
+          dailyMoments,
+        },
+      }),
+    [
+      actionCompletions,
+      backendSummary,
+      checkIns,
+      currentPregnancyWeek,
+      dailyMoments,
+      experienceIdentity,
+      restTimers,
+    ],
+  );
 
   const defaultPhotoSource = require('../assets/images/addPhoto.png');
-  const profilePhotoSource = profile.photo ? { uri: profile.photo } : defaultPhotoSource;
+  const profilePhotoSource = profile.photo
+    ? { uri: profile.photo }
+    : defaultPhotoSource;
+  const profileAreaLabel = profile.area
+    ? profile.area === 'peri-urban'
+      ? t('profile.peri_urban')
+      : profile.area === 'urban' || profile.area === 'rural'
+      ? t(`profile.${profile.area}`)
+      : profile.area
+    : '-';
 
-  const styles = useMemo(() => StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: '#fff',
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: spacing('md'),
-      paddingTop: 50,
-      paddingBottom: spacing('md'),
-      backgroundColor: '#fff',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 3,
-      elevation: 3,
-    },
-    headerTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(18),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    content: {
-      flex: 1,
-      paddingHorizontal: spacing('md'),
-      paddingTop: spacing('lg'),
-    },
-    profileCard: {
-      backgroundColor: '#FFF',
-      borderRadius: 12,
-      padding: spacing('lg'),
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 3,
-      elevation: 2,
-    },
-    profileHeader: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      marginBottom: spacing('md'),
-    },
-    profileImageContainer: {
-      marginRight: spacing('md'),
-      position: 'relative',
-    },
-    profileImage: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-      resizeMode: 'cover',
-    },
-    photoEditBadge: {
-      position: 'absolute',
-      bottom: 0,
-      right: 0,
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: theme.colors.orange500,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 2,
-      borderColor: '#fff',
-    },
-    profileInfo: {
-      flex: 1,
-      justifyContent: 'center',
-    },
-    profileName: {
-      fontSize: responsiveUtils.getFixedFontSize(24),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginBottom: spacing('xs'),
-    },
-    profileEmail: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-    },
-    editButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.colors.neutral200,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    divider: {
-      height: 1,
-      backgroundColor: theme.colors.neutral200,
-      marginBottom: spacing('md'),
-    },
-    detailsContainer: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing('md'),
-    },
-    detailItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: spacing('sm'),
-    },
-    detailLabel: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-      marginRight: spacing('xs'),
-    },
-    detailValue: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    digitalTwinCard: {
-      backgroundColor: '#E6F2FF',
-      borderRadius: 12,
-      paddingVertical:12,
-      paddingHorizontal:16,
-      marginTop: spacing('lg'),
-      borderWidth: 1,
-      borderColor: '#B3D9FF',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 3,
-      elevation: 2,
-    },
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: '#fff',
+        },
+        header: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: spacing('md'),
+          paddingTop: 50,
+          paddingBottom: spacing('md'),
+          backgroundColor: '#fff',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.08,
+          shadowRadius: 3,
+          elevation: 3,
+        },
+        headerTitle: {
+          fontSize: responsiveUtils.getFixedFontSize(18),
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+        },
+        content: {
+          flex: 1,
+          paddingHorizontal: spacing('md'),
+          paddingTop: spacing('lg'),
+        },
+        profileCard: {
+          backgroundColor: '#FFF',
+          borderRadius: 12,
+          padding: spacing('lg'),
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 3,
+          elevation: 2,
+        },
+        profileHeader: {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          marginBottom: spacing('md'),
+        },
+        profileImageContainer: {
+          marginRight: spacing('md'),
+          position: 'relative',
+        },
+        profileImage: {
+          width: 80,
+          height: 80,
+          borderRadius: 40,
+          resizeMode: 'cover',
+        },
+        photoEditBadge: {
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor: theme.colors.orange500,
+          justifyContent: 'center',
+          alignItems: 'center',
+          borderWidth: 2,
+          borderColor: '#fff',
+        },
+        profileInfo: {
+          flex: 1,
+          justifyContent: 'center',
+        },
+        profileName: {
+          fontSize: responsiveUtils.getFixedFontSize(24),
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+          marginBottom: spacing('xs'),
+        },
+        profileEmail: {
+          fontSize: responsiveUtils.getFixedFontSize(14),
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textSecondary,
+        },
+        editButton: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: theme.colors.neutral200,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        divider: {
+          height: 1,
+          backgroundColor: theme.colors.neutral200,
+          marginBottom: spacing('md'),
+        },
+        detailsContainer: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: spacing('md'),
+        },
+        detailItem: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: spacing('sm'),
+        },
+        detailLabel: {
+          fontSize: responsiveUtils.getFixedFontSize(14),
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textSecondary,
+          marginRight: spacing('xs'),
+        },
+        detailValue: {
+          fontSize: responsiveUtils.getFixedFontSize(14),
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+        },
+        digitalTwinCard: {
+          backgroundColor: '#E6F2FF',
+          borderRadius: 12,
+          paddingVertical: 12,
+          paddingHorizontal: 16,
+          marginTop: spacing('lg'),
+          borderWidth: 1,
+          borderColor: '#B3D9FF',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 3,
+          elevation: 2,
+        },
 
-    babyTwinCard: {
-        backgroundColor: '#FFF0E5',
-        borderRadius: 12,
-        paddingVertical:12,
-        paddingHorizontal:16,
-        marginTop: spacing('lg'),
-        borderWidth: 1,
-        borderColor: '#FF9144',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 3,
-        elevation: 2,
-      },
-    digitalTwinHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: spacing('xs'),
-    },
-    digitalTwinImageContainer: {
-      position: 'relative',
-      marginRight: spacing('md'),
-    },
-    digitalTwinImage: {
-      width: 36,
-      height: 36,
-      resizeMode: 'cover',
+        babyTwinCard: {
+          backgroundColor: '#FFF0E5',
+          borderRadius: 12,
+          paddingVertical: 12,
+          paddingHorizontal: 16,
+          marginTop: spacing('lg'),
+          borderWidth: 1,
+          borderColor: '#FF9144',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 3,
+          elevation: 2,
+        },
+        digitalTwinHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: spacing('xs'),
+        },
+        digitalTwinImageContainer: {
+          marginRight: spacing('md'),
+        },
+        digitalTwinImage: {
+          width: 36,
+          height: 36,
+          resizeMode: 'cover',
+        },
+        percentageBadge: {
+          backgroundColor: theme.colors.orange500,
+          borderRadius: 12,
+          marginLeft: spacing('sm'),
+          maxWidth: 96,
+          paddingHorizontal: spacing('sm'),
+          paddingVertical: 4,
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        },
+        percentageText: {
+          fontSize: responsiveUtils.getBadgeFontSize(),
+          fontFamily: theme.typography.fontFamily.bold,
+          color: '#FFFFFF',
+          lineHeight: 12,
+        },
+        digitalTwinTitle: {
+          fontSize: responsiveUtils.getFixedFontSize(16),
+          fontFamily: theme.typography.fontFamily.bold,
+          color: '#4A9EFF',
+          marginBottom: spacing('xs'),
+          flex: 1,
+        },
 
-    },
-    percentageBadge: {
-      position: 'absolute',
-      top: -6,
-      right: -6,
-      backgroundColor: theme.colors.orange500,
-      borderRadius: 24,
-      paddingHorizontal: 4,
-      paddingVertical: 2,
-      minWidth: 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    percentageText: {
-      fontSize: responsiveUtils.getBadgeFontSize(),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: '#FFFFFF',
-    },
-    digitalTwinTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(16),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: '#4A9EFF',
-      marginBottom: spacing('xs'),
-      flex: 1,
-    },
+        babyTwinTitle: {
+          fontSize: 16,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.orange500,
+          marginBottom: spacing('xs'),
+          flex: 1,
+        },
+        digitalTwinDescription: {
+          fontSize: 14,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textPrimary,
+          textAlign: 'left',
+        },
 
-    babyTwinTitle: {
-        fontSize: 16,
-        fontFamily: theme.typography.fontFamily.bold,
-        color:theme.colors.orange500,
-        marginBottom: spacing('xs'),
-        flex: 1,
-      },
-    digitalTwinDescription: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textPrimary,
-      textAlign: 'left',
-    },
+        imageCircle: {
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: 60,
+          height: 60,
+          borderRadius: '50%',
+          borderWidth: 2,
+          borderColor: '#B3D9FF',
+        },
 
-    imageCircle:{
-        justifyContent:'center',
-        alignItems:'center',
-        width:60,
-        height:60,
-        borderRadius:'50%',
-        borderWidth: 2,
-        borderColor: '#B3D9FF',
-    },
+        babyImageCircle: {
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: 60,
+          height: 60,
+          borderRadius: '50%',
+          borderWidth: 2,
+          borderColor: '#FF9144',
+        },
+        settingsCard: {
+          backgroundColor: '#FFF',
+          borderRadius: 12,
+          marginTop: spacing('lg'),
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 3,
+          elevation: 2,
+          overflow: 'hidden',
+          marginBottom: 100,
+        },
+        menuItem: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: spacing('md'),
+          paddingHorizontal: spacing('md'),
+        },
+        menuIcon: {
+          width: 24,
+          alignItems: 'center',
+          marginRight: spacing('md'),
+        },
+        menuText: {
+          fontSize: 16,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textPrimary,
+        },
+        menuSubText: {
+          fontSize: 12,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.orange500,
+          marginTop: 2,
+        },
+        menuChevron: {
+          marginLeft: spacing('sm'),
+        },
+        menuDivider: {
+          height: 1,
+          backgroundColor: theme.colors.neutral200,
+          marginLeft: spacing('md'),
+        },
+        profileEditMenuContent: {
+          paddingBottom: spacing('xl'),
+        },
+        healthServiceSheetHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: spacing('md'),
+          paddingBottom: spacing('sm'),
+        },
+        healthServiceSheetTitle: {
+          fontSize: 20,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+        },
+        healthServiceCloseButton: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: theme.colors.neutral200,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        healthServiceCardWrapper: {
+          alignItems: 'center',
+          marginTop: 100,
+          marginBottom: 100,
+        },
+        healthServiceCardContainer: {
+          position: 'relative',
+          width: HEALTH_CARD_WIDTH,
+          height: HEALTH_CARD_HEIGHT,
+        },
+        healthServiceIconContainer: {
+          position: 'absolute',
+          top: -HEALTH_ICON_SIZE / 1.5,
+          left: (HEALTH_CARD_WIDTH - HEALTH_ICON_SIZE) / 2,
+          width: HEALTH_ICON_SIZE,
+          height: HEALTH_ICON_SIZE,
+          borderRadius: HEALTH_ICON_SIZE / 2,
+          backgroundColor: '#FF9A88',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 20,
+          elevation: 8,
+        },
+        healthServiceImage: {
+          width: HEALTH_ICON_SIZE * 0.6,
+          height: HEALTH_ICON_SIZE * 0.6,
+          resizeMode: 'contain',
+        },
+        healthServiceCardOverlay: {
+          position: 'absolute',
+          top: HEALTH_NOTCH_DEPTH + 20,
+          left: 0,
+          right: 0,
+          bottom: spacing('lg'),
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: spacing('lg'),
+          paddingBottom: spacing('md'),
+        },
+        healthServiceTextContainer: {
+          alignItems: 'center',
+          marginBottom: spacing('md'),
+        },
+        healthServiceTitle: {
+          fontSize: HEALTH_CARD_WIDTH * 0.06,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: '#FFFFFF',
+          textAlign: 'center',
+          marginBottom: spacing('xs'),
+          lineHeight: HEALTH_CARD_WIDTH * 0.08,
+        },
+        healthServiceSubtitle: {
+          fontSize: HEALTH_CARD_WIDTH * 0.04,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: '#FFFFFF',
+          textAlign: 'center',
+          lineHeight: HEALTH_CARD_WIDTH * 0.055,
+          opacity: 0.95,
+        },
+        healthServiceButton: {
+          backgroundColor: '#FFFFFF',
+          borderRadius: 30,
+          paddingVertical: 14,
+          paddingHorizontal: 36,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+        },
+        healthServiceButtonText: {
+          color: theme.colors.orange500,
+          fontSize: 14,
+          fontFamily: theme.typography.fontFamily.bold,
+          textAlign: 'center',
+        },
 
-    babyImageCircle:{
-        justifyContent:'center',
-        alignItems:'center',
-        width:60,
-        height:60,
-        borderRadius:'50%',
-        borderWidth: 2,
-        borderColor: '#FF9144',
-    },
-    settingsCard: {
-      backgroundColor: '#FFF',
-      borderRadius: 12,
-      marginTop: spacing('lg'),
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 3,
-      elevation: 2,
-      overflow: 'hidden',
-      marginBottom:100,
-    },
-    menuItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: spacing('md'),
-      paddingHorizontal: spacing('md'),
-    },
-    menuIcon: {
-      width: 24,
-      alignItems: 'center',
-      marginRight: spacing('md'),
-    },
-    menuText: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textPrimary,
-    },
-    menuSubText: {
-      fontSize: 12,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.orange500,
-      marginTop: 2,
-    },
-    menuChevron: {
-      marginLeft: spacing('sm'),
-    },
-    menuDivider: {
-      height: 1,
-      backgroundColor: theme.colors.neutral200,
-      marginLeft: spacing('md'),
-    },
-    editSheetScrollContent: {
-      paddingBottom: spacing('xl'),
-    },
-    inputSpacing: {
-      height: spacing('md'),
-    },
-    bottomSpacing: {
-      height: spacing('xl'),
-    },
-    editSectionTitle: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textSecondary,
-      marginBottom: spacing('sm'),
-      marginTop: spacing('md'),
-    },
-    editFieldRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: spacing('md'),
-      paddingHorizontal: spacing('md'),
-      backgroundColor: '#fff',
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: theme.colors.neutral200,
-      marginBottom: spacing('sm'),
-    },
-    editFieldLabel: {
-      flex: 1,
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textPrimary,
-    },
-    editFieldValue: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-      marginRight: spacing('sm'),
-    },
-    editPickerInputWrapper: {
-      position: 'relative',
-      width: '100%',
-      marginBottom: spacing('sm'),
-    },
-    editPickerShadow: {
-      position: 'absolute',
-      height: vs(54),
-      borderRadius: radius('md'),
-      backgroundColor: theme.colors.neutral300,
-      top: 4,
-      left: 0,
-      right: 0,
-    },
-    editPickerInput: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing('md'),
-      height: vs(54),
-      backgroundColor: theme.colors.background,
-      borderRadius: radius('md'),
-      borderWidth: 1,
-      borderColor: theme.colors.neutral300,
-    },
-    editPickerText: {
-      flex: 1,
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.regular,
-      marginLeft: spacing('sm'),
-    },
-    editInputTitle: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginBottom: spacing('sm'),
-    },
-    healthServiceSheetHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing('md'),
-      paddingBottom: spacing('sm'),
-    },
-    healthServiceSheetTitle: {
-      fontSize: 20,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    healthServiceCloseButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.colors.neutral200,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    healthServiceCardWrapper: {
-      alignItems: 'center',
-      marginTop:100,
-      marginBottom: 100,
-    },
-    healthServiceCardContainer: {
-      position: 'relative',
-      width: HEALTH_CARD_WIDTH,
-      height: HEALTH_CARD_HEIGHT,
-    },
-    healthServiceIconContainer: {
-      position: 'absolute',
-      top: -HEALTH_ICON_SIZE / 1.5,
-      left: (HEALTH_CARD_WIDTH - HEALTH_ICON_SIZE) / 2,
-      width: HEALTH_ICON_SIZE,
-      height: HEALTH_ICON_SIZE,
-      borderRadius: HEALTH_ICON_SIZE / 2,
-      backgroundColor: '#FF9A88',
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 20,
-      elevation: 8,
-    },
-    healthServiceImage: {
-      width: HEALTH_ICON_SIZE * 0.6,
-      height: HEALTH_ICON_SIZE * 0.6,
-      resizeMode: 'contain',
-    },
-    healthServiceCardOverlay: {
-      position: 'absolute',
-      top: HEALTH_NOTCH_DEPTH + 20,
-      left: 0,
-      right: 0,
-      bottom: spacing('lg'),
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: spacing('lg'),
-      paddingBottom: spacing('md'),
-    },
-    healthServiceTextContainer: {
-      alignItems: 'center',
-      marginBottom: spacing('md'),
-    },
-    healthServiceTitle: {
-      fontSize: HEALTH_CARD_WIDTH * 0.06,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: '#FFFFFF',
-      textAlign: 'center',
-      marginBottom: spacing('xs'),
-      lineHeight: HEALTH_CARD_WIDTH * 0.08,
-    },
-    healthServiceSubtitle: {
-      fontSize: HEALTH_CARD_WIDTH * 0.04,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: '#FFFFFF',
-      textAlign: 'center',
-      lineHeight: HEALTH_CARD_WIDTH * 0.055,
-      opacity: 0.95,
-    },
-    healthServiceButton: {
-      backgroundColor: '#FFFFFF',
-      borderRadius: 30,
-      paddingVertical: 14,
-      paddingHorizontal: 36,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      elevation: 3,
-    },
-    healthServiceButtonText: {
-      color: theme.colors.orange500,
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.bold,
-      textAlign: 'center',
-    },
+        // Healthcare request sheet
+        healthRequestScrollContent: {
+          paddingBottom: FIXED_BUTTON_AREA_HEIGHT + spacing('xl'),
+        },
+        healthRequestHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing('md'),
+          paddingBottom: spacing('md'),
+        },
+        healthRequestHeaderSpacer: {
+          width: 32,
+          height: 32,
+        },
+        healthRequestHeaderCenter: {
+          flex: 1,
+          alignItems: 'center',
+        },
+        healthRequestCloseButton: {
+          width: 44,
+          height: 44,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        healthRequestTitle: {
+          fontSize: 18,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+        },
+        healthRequestSubtitle: {
+          marginTop: spacing('xs'),
+          fontSize: 14,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textSecondary,
+        },
+        healthRequestDivider: {
+          height: 1,
+          backgroundColor: theme.colors.neutral200,
+          marginHorizontal: spacing('md'),
+          marginBottom: spacing('lg'),
+        },
+        healthRequestSectionTitle: {
+          fontSize: 18,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+          paddingHorizontal: spacing('md'),
+          marginBottom: spacing('md'),
+        },
+        healthRequestServicesBox: {
+          marginHorizontal: spacing('md'),
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: theme.colors.neutral200,
+          padding: spacing('md'),
+          marginBottom: spacing('lg'),
+          backgroundColor: '#fff',
+        },
+        healthServiceChip: {
+          alignSelf: 'flex-start',
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 10,
+          paddingHorizontal: 12,
+          borderRadius: 18,
+          backgroundColor: '#FFE8D1',
+          marginBottom: spacing('md'),
+          maxWidth: '100%',
+        },
+        healthServiceChipSelected: {
+          backgroundColor: '#fff',
+          borderWidth: 1,
+          borderColor: theme.colors.orange500,
+        },
+        healthServiceChipIconCircle: {
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          backgroundColor: '#fff',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing('sm'),
+        },
+        healthServiceChipIconText: {
+          fontSize: 14,
+        },
+        healthServiceChipText: {
+          fontSize: 16,
+          fontFamily: theme.typography.fontFamily.medium,
+          color: theme.colors.textPrimary,
+          flexShrink: 1,
+        },
+        healthServiceChipCheck: {
+          marginLeft: spacing('sm'),
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: theme.colors.orange500,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        healthRequestConsentContainer: {
+          paddingHorizontal: spacing('md'),
+          marginBottom: spacing('sm'),
+        },
+        healthRequestConsentCard: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: spacing('md'),
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: '#B8D6FF',
+          backgroundColor: '#EAF3FF',
+        },
+        healthRequestConsentIcon: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: 'rgba(66, 133, 244, 0.15)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing('md'),
+        },
+        healthRequestConsentText: {
+          flex: 1,
+        },
+        healthRequestConsentLabel: {
+          fontSize: 16,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: '#2E6BFF',
+          marginBottom: spacing('xs'),
+        },
+        healthRequestConsentSubtitle: {
+          fontSize: 14,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textSecondary,
+        },
+        healthRequestRadioOuter: {
+          width: 22,
+          height: 22,
+          borderRadius: 11,
+          borderWidth: 2,
+          borderColor: '#2E6BFF',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        healthRequestRadioInner: {
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          backgroundColor: '#2E6BFF',
+        },
+        healthRequestAgreementLink: {
+          paddingHorizontal: spacing('md'),
+          marginBottom: spacing('lg'),
+        },
+        healthRequestAgreementLinkText: {
+          color: '#4285F4',
+          textDecorationLine: 'underline',
+          fontFamily: theme.typography.fontFamily.regular,
+          fontSize: 14,
+        },
+        healthRequestEmailContainer: {
+          paddingHorizontal: spacing('md'),
+        },
+        healthRequestEmailLabel: {
+          fontSize: 16,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+          marginBottom: spacing('sm'),
+        },
+        healthRequestEmailBox: {
+          width: '100%',
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: theme.colors.neutral200,
+          backgroundColor: '#fff',
+          paddingVertical: 14,
+          paddingHorizontal: 16,
+        },
+        healthRequestEmailText: {
+          fontSize: 16,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textSecondary,
+        },
+        healthRequestBottomBar: {
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.neutral200,
+          paddingTop: spacing('md'),
+        },
+        healthRequestButtonRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        },
+        healthRequestCancelButton: {
+          paddingVertical: spacing('md'),
+          paddingHorizontal: spacing('lg'),
+        },
+        healthRequestCancelText: {
+          fontSize: 18,
+          fontFamily: theme.typography.fontFamily.extraBold,
+          color: theme.colors.orange500,
+        },
+        healthRequestSubmitWrapper: {
+          width: 200,
+          marginLeft: spacing('md'),
+        },
 
-    // Healthcare request sheet
-    healthRequestScrollContent: {
-      paddingBottom: FIXED_BUTTON_AREA_HEIGHT + spacing('xl'),
-    },
-    healthRequestHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing('md'),
-      paddingBottom: spacing('md'),
-    },
-    healthRequestHeaderSpacer: {
-      width: 32,
-      height: 32,
-    },
-    healthRequestHeaderCenter: {
-      flex: 1,
-      alignItems: 'center',
-    },
-    healthRequestCloseButton: {
-      width: 44,
-      height: 44,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    healthRequestTitle: {
-      fontSize: 18,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    healthRequestSubtitle: {
-      marginTop: spacing('xs'),
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-    },
-    healthRequestDivider: {
-      height: 1,
-      backgroundColor: theme.colors.neutral200,
-      marginHorizontal: spacing('md'),
-      marginBottom: spacing('lg'),
-    },
-    healthRequestSectionTitle: {
-      fontSize: 18,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      paddingHorizontal: spacing('md'),
-      marginBottom: spacing('md'),
-    },
-    healthRequestServicesBox: {
-      marginHorizontal: spacing('md'),
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: theme.colors.neutral200,
-      padding: spacing('md'),
-      marginBottom: spacing('lg'),
-      backgroundColor: '#fff',
-    },
-    healthServiceChip: {
-      alignSelf: 'flex-start',
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      borderRadius: 18,
-      backgroundColor: '#FFE8D1',
-      marginBottom: spacing('md'),
-      maxWidth: '100%',
-    },
-    healthServiceChipSelected: {
-      backgroundColor: '#fff',
-      borderWidth: 1,
-      borderColor: theme.colors.orange500,
-    },
-    healthServiceChipIconCircle: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      backgroundColor: '#fff',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: spacing('sm'),
-    },
-    healthServiceChipIconText: {
-      fontSize: 14,
-    },
-    healthServiceChipText: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.medium,
-      color: theme.colors.textPrimary,
-      flexShrink: 1,
-    },
-    healthServiceChipCheck: {
-      marginLeft: spacing('sm'),
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      backgroundColor: theme.colors.orange500,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    healthRequestConsentContainer: {
-      paddingHorizontal: spacing('md'),
-      marginBottom: spacing('sm'),
-    },
-    healthRequestConsentCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: spacing('md'),
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: '#B8D6FF',
-      backgroundColor: '#EAF3FF',
-    },
-    healthRequestConsentIcon: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: 'rgba(66, 133, 244, 0.15)',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: spacing('md'),
-    },
-    healthRequestConsentText: {
-      flex: 1,
-    },
-    healthRequestConsentLabel: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: '#2E6BFF',
-      marginBottom: spacing('xs'),
-    },
-    healthRequestConsentSubtitle: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-    },
-    healthRequestRadioOuter: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      borderWidth: 2,
-      borderColor: '#2E6BFF',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    healthRequestRadioInner: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      backgroundColor: '#2E6BFF',
-    },
-    healthRequestAgreementLink: {
-      paddingHorizontal: spacing('md'),
-      marginBottom: spacing('lg'),
-    },
-    healthRequestAgreementLinkText: {
-      color: '#4285F4',
-      textDecorationLine: 'underline',
-      fontFamily: theme.typography.fontFamily.regular,
-      fontSize: 14,
-    },
-    healthRequestEmailContainer: {
-      paddingHorizontal: spacing('md'),
-    },
-    healthRequestEmailLabel: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginBottom: spacing('sm'),
-    },
-    healthRequestEmailBox: {
-      width: '100%',
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: theme.colors.neutral200,
-      backgroundColor: '#fff',
-      paddingVertical: 14,
-      paddingHorizontal: 16,
-    },
-    healthRequestEmailText: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-    },
-    healthRequestBottomBar: {
-      backgroundColor: '#fff',
-      borderTopWidth: 1,
-      borderTopColor: theme.colors.neutral200,
-      paddingTop: spacing('md'),
-    },
-    healthRequestButtonRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    healthRequestCancelButton: {
-      paddingVertical: spacing('md'),
-      paddingHorizontal: spacing('lg'),
-    },
-    healthRequestCancelText: {
-      fontSize: 18,
-      fontFamily: theme.typography.fontFamily.extraBold,
-      color: theme.colors.orange500,
-    },
-    healthRequestSubmitWrapper: {
-      width: 200,
-      marginLeft: spacing('md'),
-    },
+        // Success dialog styles
+        successOverlay: {
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: spacing('xl'),
+        },
+        successCard: {
+          backgroundColor: '#fff',
+          borderRadius: 20,
+          paddingTop: 32,
+          paddingBottom: 24,
+          paddingHorizontal: 24,
+          alignItems: 'center',
+          width: '100%',
+          maxWidth: 320,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.15,
+          shadowRadius: 24,
+          elevation: 10,
+        },
+        successCloseButton: {
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: theme.colors.neutral200,
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 10,
+        },
+        successIconCircle: {
+          width: 96,
+          height: 96,
+          borderRadius: 48,
+          backgroundColor: '#4CAF50',
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginBottom: 20,
+        },
+        successImage: {
+          width: 56,
+          height: 56,
+          resizeMode: 'contain',
+        },
+        successTitle: {
+          fontSize: 22,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: '#2E7D32',
+          marginBottom: 8,
+          textAlign: 'center',
+        },
+        successMessage: {
+          fontSize: 15,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textSecondary,
+          textAlign: 'center',
+          lineHeight: 22,
+        },
 
-    // Success dialog styles
-    successOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: spacing('xl'),
-    },
-    successCard: {
-      backgroundColor: '#fff',
-      borderRadius: 20,
-      paddingTop: 32,
-      paddingBottom: 24,
-      paddingHorizontal: 24,
-      alignItems: 'center',
-      width: '100%',
-      maxWidth: 320,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.15,
-      shadowRadius: 24,
-      elevation: 10,
-    },
-    successCloseButton: {
-      position: 'absolute',
-      top: 12,
-      right: 12,
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.colors.neutral200,
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 10,
-    },
-    successIconCircle: {
-      width: 96,
-      height: 96,
-      borderRadius: 48,
-      backgroundColor: '#4CAF50',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginBottom: 20,
-    },
-    successImage: {
-      width: 56,
-      height: 56,
-      resizeMode: 'contain',
-    },
-    successTitle: {
-      fontSize: 22,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: '#2E7D32',
-      marginBottom: 8,
-      textAlign: 'center',
-    },
-    successMessage: {
-      fontSize: 15,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-      textAlign: 'center',
-      lineHeight: 22,
-    },
-
-    // Agreement sheet styles
-    agreementScrollContent: {
-      paddingBottom: FIXED_BUTTON_AREA_HEIGHT + spacing('xl'),
-    },
-    agreementHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing('md'),
-      paddingBottom: spacing('md'),
-    },
-    agreementTitle: {
-      fontSize: 18,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    agreementCloseButton: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.colors.neutral200,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    agreementServicesTitle: {
-      fontSize: 16,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      paddingHorizontal: spacing('md'),
-      paddingBottom: spacing('sm'),
-      marginBottom: spacing('md'),
-    },
-    agreementServicesBox: {
-      marginHorizontal: spacing('md'),
-      maxHeight: ms(280),
-      backgroundColor: '#fff',
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: theme.colors.neutral200,
-      marginBottom: spacing('lg'),
-    },
-    agreementServicesScrollContent: {
-      padding: spacing('md'),
-      paddingTop: spacing('sm'),
-    },
-    agreementServiceItem: {
-      marginBottom: spacing('md'),
-    },
-    agreementServiceNumber: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginBottom: spacing('xs'),
-    },
-    agreementServiceDescription: {
-      fontSize: 13,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: 20,
-    },
-    agreementButtonRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    agreementRejectButton: {
-      paddingVertical: spacing('md'),
-      paddingHorizontal: spacing('lg'),
-    },
-    agreementRejectText: {
-      fontSize: 18,
-      fontFamily: theme.typography.fontFamily.extraBold,
-      color: theme.colors.orange500,
-    },
-    agreementAcceptWrapper: {
-      width: 200,
-      marginLeft: spacing('md'),
-    },
-  }), [theme]);
+        // Agreement sheet styles
+        agreementScrollContent: {
+          paddingBottom: FIXED_BUTTON_AREA_HEIGHT + spacing('xl'),
+        },
+        agreementHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: spacing('md'),
+          paddingBottom: spacing('md'),
+        },
+        agreementTitle: {
+          fontSize: 18,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+        },
+        agreementCloseButton: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: theme.colors.neutral200,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        agreementServicesTitle: {
+          fontSize: 16,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+          paddingHorizontal: spacing('md'),
+          paddingBottom: spacing('sm'),
+          marginBottom: spacing('md'),
+        },
+        agreementServicesBox: {
+          marginHorizontal: spacing('md'),
+          maxHeight: ms(280),
+          backgroundColor: '#fff',
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: theme.colors.neutral200,
+          marginBottom: spacing('lg'),
+        },
+        agreementServicesScrollContent: {
+          padding: spacing('md'),
+          paddingTop: spacing('sm'),
+        },
+        agreementServiceItem: {
+          marginBottom: spacing('md'),
+        },
+        agreementServiceNumber: {
+          fontSize: 14,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+          marginBottom: spacing('xs'),
+        },
+        agreementServiceDescription: {
+          fontSize: 13,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.textSecondary,
+          lineHeight: 20,
+        },
+        agreementButtonRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        },
+        agreementRejectButton: {
+          paddingVertical: spacing('md'),
+          paddingHorizontal: spacing('lg'),
+        },
+        agreementRejectText: {
+          fontSize: 18,
+          fontFamily: theme.typography.fontFamily.extraBold,
+          color: theme.colors.orange500,
+        },
+        agreementAcceptWrapper: {
+          width: 200,
+          marginLeft: spacing('md'),
+        },
+      }),
+    [theme],
+  );
 
   return (
     <React.Fragment>
-    <SafeAreaView style={styles.container}>
-      <BackButton onPress={onBack} />
-      
-      <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>{t('profile.title')}</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <BackButton onPress={onBack} />
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.profileCard}>
-          <View style={styles.profileHeader}>
-            <TouchableOpacity
-              style={styles.profileImageContainer}
-              activeOpacity={0.8}
-              onPress={() => setIsPhotoSheetVisible(true)}
-            >
-              <Image
-                source={profilePhotoSource}
-                style={styles.profileImage}
-              />
-              <View style={styles.photoEditBadge}>
-                <FontAwesomeIcon icon={faCamera as any} size={10} color="#fff" />
+        <View style={styles.header}>
+          <Text style={styles.headerTitle} allowFontScaling={false}>
+            {t('profile.title')}
+          </Text>
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.profileCard}>
+            <View style={styles.profileHeader}>
+              <TouchableOpacity
+                style={styles.profileImageContainer}
+                activeOpacity={0.8}
+                onPress={() => setIsPhotoSheetVisible(true)}
+              >
+                <Image
+                  source={profilePhotoSource}
+                  style={styles.profileImage}
+                />
+                <View style={styles.photoEditBadge}>
+                  <FontAwesomeIcon
+                    icon={faCamera as any}
+                    size={10}
+                    color="#fff"
+                  />
+                </View>
+              </TouchableOpacity>
+              <View style={styles.profileInfo}>
+                <Text style={styles.profileName} allowFontScaling={false}>
+                  {profile.name || t('profile.member_name')}
+                </Text>
+                <Text style={styles.profileEmail} allowFontScaling={false}>
+                  {profile.email || t('profile.email_not_added')}
+                </Text>
               </View>
-            </TouchableOpacity>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName} allowFontScaling={false}>{profile.name || 'Mary'}</Text>
-              <Text style={styles.profileEmail} allowFontScaling={false}>{profile.email || 'mary@gmail.com'}</Text>
+              <TouchableOpacity
+                style={styles.editButton}
+                activeOpacity={0.7}
+                onPress={() => setIsProfileEditMenuVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel={t('profile.account_details')}
+              >
+                <FontAwesomeIcon
+                  icon={faPencil as any}
+                  size={14}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.editButton}
-              activeOpacity={0.7}
-              onPress={openEditSheet}
+
+            <View style={styles.divider} />
+
+            <View style={styles.detailsContainer}>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel} allowFontScaling={false}>
+                  {t('profile.country')}:
+                </Text>
+                <Text style={styles.detailValue} allowFontScaling={false}>
+                  {countries.find(country => country.value === profile.country)
+                    ?.label ||
+                    profile.country ||
+                    '-'}
+                </Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel} allowFontScaling={false}>
+                  {t('profile.area')}:
+                </Text>
+                <Text style={styles.detailValue} allowFontScaling={false}>
+                  {profileAreaLabel}
+                </Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel} allowFontScaling={false}>
+                  {t('profile.language')}:
+                </Text>
+                <Text style={styles.detailValue} allowFontScaling={false}>
+                  {languages.find(
+                    language => language.value === profile.language,
+                  )?.label ||
+                    profile.language ||
+                    '-'}
+                </Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel} allowFontScaling={false}>
+                  {t('profile.height')}:
+                </Text>
+                <Text style={styles.detailValue} allowFontScaling={false}>
+                  {profile.height ? `${profile.height} cm` : '-'}
+                </Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel} allowFontScaling={false}>
+                  {t('profile.weight')}:
+                </Text>
+                <Text style={styles.detailValue} allowFontScaling={false}>
+                  {profile.weight ? `${profile.weight} kg` : '-'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.digitalTwinCard}
+            activeOpacity={0.7}
+            onPress={onNavigateToMotherTwin}
+          >
+            <View style={styles.digitalTwinHeader}>
+              <View style={styles.digitalTwinImageContainer}>
+                <View style={styles.imageCircle}>
+                  <Image
+                    source={require('../assets/images/motherDigital.png')}
+                    style={styles.digitalTwinImage}
+                  />
+                </View>
+              </View>
+              <Text style={styles.digitalTwinTitle} allowFontScaling={false}>
+                {t('profile.mothers_digital_twin')}
+              </Text>
+              <View style={styles.percentageBadge}>
+                <Text
+                  style={styles.percentageText}
+                  allowFontScaling={false}
+                  numberOfLines={1}
+                >
+                  {weeklyProgress.dataMode === 'careContext'
+                    ? t('profile.care_context_badge')
+                    : t('profile.active_days_badge', {
+                        days: weeklyProgress.activeDays,
+                      })}
+                </Text>
+              </View>
+            </View>
+            <Text
+              style={styles.digitalTwinDescription}
+              allowFontScaling={false}
             >
-              <FontAwesomeIcon 
-                icon={faPencil as any} 
-                size={14} 
+              {t('profile.digital_twin_description')}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.babyTwinCard}
+            activeOpacity={0.7}
+            onPress={() => setShowBabyTwinAds(true)}
+          >
+            <View style={styles.digitalTwinHeader}>
+              <View style={styles.digitalTwinImageContainer}>
+                <View style={styles.babyImageCircle}>
+                  <Image
+                    source={require('../assets/images/babyDigital.png')}
+                    style={styles.digitalTwinImage}
+                  />
+                </View>
+              </View>
+              <Text style={styles.babyTwinTitle} allowFontScaling={false}>
+                {t('profile.babys_digital_twin')}
+              </Text>
+              <View style={styles.percentageBadge}>
+                <Text
+                  style={styles.percentageText}
+                  allowFontScaling={false}
+                  numberOfLines={1}
+                >
+                  {t('profile.week_badge', {
+                    week: currentPregnancyWeek,
+                  })}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.settingsCard}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={onNavigateToProfileInformation}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faUser as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <Text style={styles.menuText} allowFontScaling={false}>
+                {t('profile.personal_information')}
+              </Text>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={onNavigateToPlanBirthday}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faCalendar as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.menuText} allowFontScaling={false}>
+                  {t('profile.menu_baby_birthday')}
+                </Text>
+                {calculatedDueDate ? (
+                  <Text style={styles.menuSubText} allowFontScaling={false}>
+                    {calculatedDueDate}
+                  </Text>
+                ) : null}
+              </View>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={onNavigateToAppSettings}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faGear as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <Text style={styles.menuText} allowFontScaling={false}>
+                {t('profile.menu_app_settings')}
+              </Text>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={onNavigateToReminders}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faBell as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <Text style={styles.menuText} allowFontScaling={false}>
+                {t('reminders.title')}
+              </Text>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={onNavigateToPrivacySettings}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faUserLock as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <Text style={styles.menuText} allowFontScaling={false}>
+                {t('profile.menu_privacy')}
+              </Text>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={onNavigateToSymptomsHistory}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faHeartPulse as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <Text style={styles.menuText} allowFontScaling={false}>
+                {t('profile.menu_symptoms')}
+              </Text>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={() => setIsHealthServiceSheetVisible(true)}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faHospital as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <Text style={styles.menuText} allowFontScaling={false}>
+                {t('profile.menu_healthcare')}
+              </Text>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={onNavigateToRefer}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faGift as any}
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </View>
+              <Text style={styles.menuText} allowFontScaling={false}>
+                {t('profile.menu_refer')}
+              </Text>
+              <FontAwesomeIcon
+                icon={faChevronRight as any}
+                size={14}
+                color={theme.colors.textSecondary}
+                style={styles.menuChevron}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={() => {
+                logout();
+                onLogout?.();
+              }}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faRightFromBracket as any}
+                  size={20}
+                  color={'#FF4444'}
+                />
+              </View>
+              <Text
+                style={[styles.menuText, { color: '#FF4444' }]}
+                allowFontScaling={false}
+              >
+                {t('profile.menu_logout')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        <BottomSheet
+          visible={isProfileEditMenuVisible}
+          onClose={() => setIsProfileEditMenuVisible(false)}
+          title={t('profile.edit_profile')}
+        >
+          <View style={styles.profileEditMenuContent}>
+            {(
+              [
+                ['identity', t('profile.account_details')],
+                ['location', t('profile.location_details')],
+                ['heightWeight', t('profile.height_weight')],
+                ['language', t('profile.language')],
+              ] as Array<[ProfileEditSection, string]>
+            ).map(([section, label]) => (
+              <BottomSheetOption
+                key={section}
+                label={label}
+                selected={false}
+                onPress={() => {
+                  setIsProfileEditMenuVisible(false);
+                  setActiveProfileEditSection(section);
+                }}
+              />
+            ))}
+          </View>
+        </BottomSheet>
+
+        <ProfileEditSheet
+          visible={activeProfileEditSection !== null}
+          section={activeProfileEditSection}
+          onClose={() => setActiveProfileEditSection(null)}
+        />
+
+        {/* Photo source picker */}
+        <BottomSheet
+          visible={isPhotoSheetVisible}
+          onClose={() => setIsPhotoSheetVisible(false)}
+          title={t('profile.select_photo')}
+        >
+          <View style={{ paddingBottom: spacing('xl') * 2 }}>
+            <BottomSheetOption
+              label={t('profile.take_photo')}
+              selected={false}
+              onPress={handlePickPhotoCamera}
+            />
+            <BottomSheetOption
+              label={t('profile.choose_library')}
+              selected={false}
+              onPress={handlePickPhotoLibrary}
+            />
+          </View>
+        </BottomSheet>
+
+        <BottomSheet
+          visible={isHealthServiceSheetVisible}
+          onClose={() => setIsHealthServiceSheetVisible(false)}
+          showHandle={true}
+        >
+          <View style={styles.healthServiceSheetHeader}>
+            <Text
+              style={styles.healthServiceSheetTitle}
+              allowFontScaling={false}
+            >
+              {t('profile.specialist_services')}
+            </Text>
+            <TouchableOpacity
+              style={styles.healthServiceCloseButton}
+              onPress={() => setIsHealthServiceSheetVisible(false)}
+              activeOpacity={0.7}
+            >
+              <FontAwesomeIcon
+                icon={faTimes as any}
+                size={14}
                 color={theme.colors.textSecondary}
               />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.divider} />
-
-          <View style={styles.detailsContainer}>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.country')}:</Text>
-              <Text style={styles.detailValue} allowFontScaling={false}>{countries.find(c => c.value === profile.country)?.label || profile.country || '-'}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.area')}:</Text>
-              <Text style={styles.detailValue} allowFontScaling={false}>{profile.area || '-'}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.language')}:</Text>
-              <Text style={styles.detailValue} allowFontScaling={false}>{languages.find(l => l.value === profile.language)?.label || profile.language || '-'}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.height')}:</Text>
-              <Text style={styles.detailValue} allowFontScaling={false}>{profile.height ? `${profile.height} cm` : '-'}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel} allowFontScaling={false}>{t('profile.weight')}:</Text>
-              <Text style={styles.detailValue} allowFontScaling={false}>{profile.weight ? `${profile.weight} kg` : '-'}</Text>
-            </View>
-          </View>
-        </View>
-
-        <TouchableOpacity 
-          style={styles.digitalTwinCard}
-          activeOpacity={0.7}
-          onPress={onNavigateToMotherTwin}
-        >
-          <View style={styles.digitalTwinHeader}>
-            <View style={styles.digitalTwinImageContainer}>
-                <View style={styles.imageCircle}>
-              <Image
-                source={require('../assets/images/motherDigital.png')}
-                style={styles.digitalTwinImage}
-              />
-
-</View>
-              <View style={styles.percentageBadge}>
-                <Text style={styles.percentageText} allowFontScaling={false}>36%</Text>
-              </View>
-            </View>
-            <Text style={styles.digitalTwinTitle} allowFontScaling={false}>{t('profile.mothers_digital_twin')}</Text>
-          </View>
-          <Text style={styles.digitalTwinDescription} allowFontScaling={false}>
-            {t('profile.digital_twin_description')}
-          </Text>
-        </TouchableOpacity>
-
-
-        <TouchableOpacity
-          style={styles.babyTwinCard}
-          activeOpacity={0.7}
-          onPress={() => setShowBabyTwinAds(true)}
-        >
-          <View style={styles.digitalTwinHeader}>
-            <View style={styles.digitalTwinImageContainer}>
-                <View style={styles.babyImageCircle}>
-              <Image
-                source={require('../assets/images/babyDigital.png')}
-                style={styles.digitalTwinImage}
-              />
-
-</View>
-              <View style={styles.percentageBadge}>
-                <Text style={styles.percentageText} allowFontScaling={false}>36%</Text>
-              </View>
-            </View>
-            <Text style={styles.babyTwinTitle} allowFontScaling={false}>{t('profile.babys_digital_twin')}</Text>
-          </View>
-         
-        </TouchableOpacity>
-
-        <View style={styles.settingsCard}>
-          <TouchableOpacity
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={onNavigateToPlanBirthday}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon
-                icon={faCalendar as any}
-                size={20}
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_baby_birthday')}</Text>
-              {calculatedDueDate ? (
-                <Text style={styles.menuSubText} allowFontScaling={false}>{calculatedDueDate}</Text>
-              ) : null}
-            </View>
-            <FontAwesomeIcon
-              icon={faChevronRight as any}
-              size={14}
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={onNavigateToAppSettings}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon
-                icon={faGear as any}
-                size={20}
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_app_settings')}</Text>
-            <FontAwesomeIcon
-              icon={faChevronRight as any}
-              size={14}
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={() => {
-              setEditLanguage(profile.language || '');
-              setIsLanguagePickerFromMenu(true);
-              setIsLanguageSheetVisible(true);
-            }}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon
-                icon={faGlobe as any}
-                size={20}
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <Text style={[styles.menuText, { flex: 1 }]} allowFontScaling={false}>{t('profile.language')}</Text>
-            <Text style={{ fontSize: 14, fontFamily: theme.typography.fontFamily.regular, color: theme.colors.textSecondary, marginRight: 4 }} allowFontScaling={false}>
-              {languages.find(l => l.value === profile.language)?.label || profile.language || ''}
-            </Text>
-            <FontAwesomeIcon
-              icon={faChevronRight as any}
-              size={14}
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity 
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={onNavigateToReminders}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faBell as any} 
-                size={20} 
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <Text style={styles.menuText} allowFontScaling={false}>{t('reminders.title')}</Text>
-            <FontAwesomeIcon 
-              icon={faChevronRight as any} 
-              size={14} 
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity 
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={onNavigateToPrivacySettings}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faUserLock as any} 
-                size={20} 
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_privacy')}</Text>
-            <FontAwesomeIcon 
-              icon={faChevronRight as any} 
-              size={14} 
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={onNavigateToSymptomsHistory}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon
-                icon={faHeartPulse as any}
-                size={20}
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_symptoms')}</Text>
-            <FontAwesomeIcon
-              icon={faChevronRight as any}
-              size={14}
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={() => setIsHealthServiceSheetVisible(true)}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon
-                icon={faHospital as any}
-                size={20}
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_healthcare')}</Text>
-            <FontAwesomeIcon 
-              icon={faChevronRight as any} 
-              size={14} 
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity 
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={onNavigateToRefer}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faGift as any} 
-                size={20} 
-                color={theme.colors.textPrimary}
-              />
-            </View>
-            <Text style={styles.menuText} allowFontScaling={false}>{t('profile.menu_refer')}</Text>
-            <FontAwesomeIcon 
-              icon={faChevronRight as any} 
-              size={14} 
-              color={theme.colors.textSecondary}
-              style={styles.menuChevron}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity 
-            style={styles.menuItem}
-            activeOpacity={0.7}
-            onPress={() => {
-              logout();
-              onLogout?.();
-            }}
-          >
-            <View style={styles.menuIcon}>
-              <FontAwesomeIcon 
-                icon={faRightFromBracket as any} 
-                size={20} 
-                color={'#FF4444'}
-              />
-            </View>
-            <Text style={[styles.menuText, { color: '#FF4444' }]} allowFontScaling={false}>{t('profile.menu_logout')}</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      <BottomSheet
-        visible={isEditSheetVisible}
-        onClose={() => setIsEditSheetVisible(false)}
-        showHandle={true}
-      >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.editSheetScrollContent}
-        >
-          {/* Name */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.edit_name')}</Text>
-          <Input
-            title=""
-            placeholder={t('profile.enter_name')}
-            type="text"
-            value={editName}
-            onChangeText={setEditName}
-          />
-
-          <View style={styles.inputSpacing} />
-
-          {/* Language */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.language')}</Text>
-          <Dropdown
-            label={t('profile.select_language')}
-            value={languages.find(l => l.value === editLanguage)?.label || null}
-            onPress={() => setIsLanguageSheetVisible(true)}
-          />
-
-          <View style={styles.inputSpacing} />
-
-          {/* Country */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.country')}</Text>
-          <Dropdown
-            label={t('profile.select_country')}
-            value={countries.find(c => c.value === editCountry)?.label || null}
-            onPress={() => setIsCountrySheetVisible(true)}
-          />
-
-          {/* Area */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('profile.area')}</Text>
-          <Dropdown
-            label={t('intro.step05_select_area')}
-            value={AREA_TYPES.find(a => a.id === editArea)?.label || null}
-            onPress={() => setIsAreaSheetVisible(true)}
-          />
-
-          {/* Height & Weight */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('intro.step03_height_weight')}</Text>
-          <TouchableOpacity style={styles.editPickerInputWrapper} onPress={() => setIsHWPickerVisible(true)} activeOpacity={0.7}>
-            <View style={styles.editPickerShadow} />
-            <View style={styles.editPickerInput}>
-              <FontAwesomeIcon icon={faUser as any} size={ms(18)} color={theme.colors.neutral600} />
-              <Text
-                style={[styles.editPickerText, { color: formatHeightWeight() ? theme.colors.textPrimary : theme.colors.neutral400 }]}
-                allowFontScaling={false}
+          <View style={styles.healthServiceCardWrapper}>
+            <View style={styles.healthServiceCardContainer}>
+              {/* SVG Background with curved top */}
+              <Svg
+                width={HEALTH_CARD_WIDTH}
+                height={HEALTH_CARD_HEIGHT}
+                style={{ position: 'absolute' }}
               >
-                {formatHeightWeight() || 'Select height and weight'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Birthday */}
-          <Text style={styles.editInputTitle} allowFontScaling={false}>{t('intro.step03_birthday')}</Text>
-          <TouchableOpacity style={styles.editPickerInputWrapper} onPress={() => setIsBirthdayPickerVisible(true)} activeOpacity={0.7}>
-            <View style={styles.editPickerShadow} />
-            <View style={styles.editPickerInput}>
-              <FontAwesomeIcon icon={faCalendar as any} size={ms(18)} color={theme.colors.neutral600} />
-              <Text
-                style={[styles.editPickerText, { color: (editBirthday || profile.birthday) ? theme.colors.textPrimary : theme.colors.neutral400 }]}
-                allowFontScaling={false}
-              >
-                {editBirthday ? formatDate(editBirthday) : profile.birthday ? formatDate(new Date(profile.birthday)) : 'mm/dd/yyyy'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <View style={{ marginTop: spacing('md') }}>
-            <Button title={t('common.save')} onPress={handleSaveProfile} />
-          </View>
-          <View style={{ height: insets.bottom + spacing('lg') }} />
-        </ScrollView>
-      </BottomSheet>
-
-      {/* Language picker */}
-      <BottomSheet visible={isLanguageSheetVisible} onClose={() => { setIsLanguageSheetVisible(false); setIsLanguagePickerFromMenu(false); }}>
-        <View style={{ paddingBottom: spacing('xl') * 2 }}>
-          {languages.map((l) => (
-            <BottomSheetOption
-              key={l.value}
-              label={l.label}
-              selected={(isLanguagePickerFromMenu ? profile.language : editLanguage) === l.value}
-              onPress={() => {
-                setEditLanguage(l.value);
-                setIsLanguageSheetVisible(false);
-                if (isLanguagePickerFromMenu) {
-                  setIsLanguagePickerFromMenu(false);
-                  setIsChangingLanguage(true);
-                  setLanguage(l.value);
-                  LanguageService.setLanguage(l.value)
-                    .catch(() => {})
-                    .finally(() => setTimeout(() => setIsChangingLanguage(false), 300));
-                  ProfileService.patchProfile({ language: l.value }).catch(() => {});
-                }
-              }}
-            />
-          ))}
-        </View>
-      </BottomSheet>
-
-      {/* Country picker */}
-      <BottomSheet visible={isCountrySheetVisible} onClose={() => setIsCountrySheetVisible(false)}>
-        <View style={{ paddingBottom: spacing('xl') * 2 }}>
-          {countries.map((c) => (
-            <BottomSheetOption
-              key={c.value}
-              label={c.label}
-              selected={editCountry === c.value}
-              onPress={() => { setEditCountry(c.value); setIsCountrySheetVisible(false); }}
-            />
-          ))}
-        </View>
-      </BottomSheet>
-
-      {/* Area type picker */}
-      <BottomSheet visible={isAreaSheetVisible} onClose={() => setIsAreaSheetVisible(false)}>
-        <View style={{ paddingBottom: spacing('xl') * 2 }}>
-          {AREA_TYPES.map((a) => (
-            <BottomSheetOption
-              key={a.id}
-              label={a.label}
-              selected={editArea === a.id}
-              onPress={() => { setEditArea(a.id); setIsAreaSheetVisible(false); }}
-            />
-          ))}
-        </View>
-      </BottomSheet>
-
-      {/* Height & Weight picker */}
-      <HeightWeightPicker
-        visible={isHWPickerVisible}
-        onClose={() => setIsHWPickerVisible(false)}
-        onConfirm={(h, w) => { setEditHeight(h); setEditWeight(w); setIsHWPickerVisible(false); }}
-        initialHeight={editHeight || profile.height || 165}
-        initialWeight={editWeight || profile.weight || 65}
-      />
-
-      {/* Birthday picker */}
-      <DatePicker
-        visible={isBirthdayPickerVisible}
-        onClose={() => setIsBirthdayPickerVisible(false)}
-        onConfirm={(date) => { setEditBirthday(date); setIsBirthdayPickerVisible(false); }}
-        initialDate={editBirthday || (profile.birthday ? new Date(profile.birthday) : undefined)}
-      />
-
-      {/* Photo source picker */}
-      <BottomSheet visible={isPhotoSheetVisible} onClose={() => setIsPhotoSheetVisible(false)} title={t('profile.select_photo')}>
-        <View style={{ paddingBottom: spacing('xl') * 2 }}>
-          <BottomSheetOption label={t('profile.take_photo')} selected={false} onPress={handlePickPhotoCamera} />
-          <BottomSheetOption label={t('profile.choose_library')} selected={false} onPress={handlePickPhotoLibrary} />
-        </View>
-      </BottomSheet>
-
-      <BottomSheet
-        visible={isHealthServiceSheetVisible}
-        onClose={() => setIsHealthServiceSheetVisible(false)}
-        showHandle={true}
-      >
-        <View style={styles.healthServiceSheetHeader}>
-          <Text style={styles.healthServiceSheetTitle} allowFontScaling={false}>{t('profile.specialist_services')}</Text>
-          <TouchableOpacity
-            style={styles.healthServiceCloseButton}
-            onPress={() => setIsHealthServiceSheetVisible(false)}
-            activeOpacity={0.7}
-          >
-            <FontAwesomeIcon 
-              icon={faTimes as any} 
-              size={14} 
-              color={theme.colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.healthServiceCardWrapper}>
-          <View style={styles.healthServiceCardContainer}>
-            {/* SVG Background with curved top */}
-            <Svg 
-              width={HEALTH_CARD_WIDTH} 
-              height={HEALTH_CARD_HEIGHT} 
-              style={{ position: 'absolute' }}
-            >
-              <Defs>
-                <LinearGradient id="healthCardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <Stop offset="0%" stopColor="#FFB86A" />
-                  <Stop offset="50%" stopColor="#FF9045" />
-                  <Stop offset="100%" stopColor="#FF6D5C" />
-                </LinearGradient>
-              </Defs>
-              <Path
-                d={`
+                <Defs>
+                  <LinearGradient
+                    id="healthCardGradient"
+                    x1="0%"
+                    y1="0%"
+                    x2="100%"
+                    y2="100%"
+                  >
+                    <Stop offset="0%" stopColor="#FFB86A" />
+                    <Stop offset="50%" stopColor="#FF9045" />
+                    <Stop offset="100%" stopColor="#FF6D5C" />
+                  </LinearGradient>
+                </Defs>
+                <Path
+                  d={`
                   M 20 0
                   L ${HEALTH_CARD_WIDTH * 0.3} 0
-                  C ${HEALTH_CARD_WIDTH * 0.35} 0, ${HEALTH_CARD_WIDTH * 0.38} ${HEALTH_NOTCH_DEPTH * 0.1}, ${HEALTH_CARD_WIDTH * 0.42} ${HEALTH_NOTCH_DEPTH * 0.5}
-                  C ${HEALTH_CARD_WIDTH * 0.45} ${HEALTH_NOTCH_DEPTH * 0.9}, ${HEALTH_CARD_WIDTH * 0.55} ${HEALTH_NOTCH_DEPTH * 0.9}, ${HEALTH_CARD_WIDTH * 0.58} ${HEALTH_NOTCH_DEPTH * 0.5}
-                  C ${HEALTH_CARD_WIDTH * 0.62} ${HEALTH_NOTCH_DEPTH * 0.1}, ${HEALTH_CARD_WIDTH * 0.65} 0, ${HEALTH_CARD_WIDTH * 0.7} 0
+                  C ${HEALTH_CARD_WIDTH * 0.35} 0, ${
+                    HEALTH_CARD_WIDTH * 0.38
+                  } ${HEALTH_NOTCH_DEPTH * 0.1}, ${HEALTH_CARD_WIDTH * 0.42} ${
+                    HEALTH_NOTCH_DEPTH * 0.5
+                  }
+                  C ${HEALTH_CARD_WIDTH * 0.45} ${HEALTH_NOTCH_DEPTH * 0.9}, ${
+                    HEALTH_CARD_WIDTH * 0.55
+                  } ${HEALTH_NOTCH_DEPTH * 0.9}, ${HEALTH_CARD_WIDTH * 0.58} ${
+                    HEALTH_NOTCH_DEPTH * 0.5
+                  }
+                  C ${HEALTH_CARD_WIDTH * 0.62} ${HEALTH_NOTCH_DEPTH * 0.1}, ${
+                    HEALTH_CARD_WIDTH * 0.65
+                  } 0, ${HEALTH_CARD_WIDTH * 0.7} 0
                   L ${HEALTH_CARD_WIDTH - 20} 0
                   Q ${HEALTH_CARD_WIDTH} 0, ${HEALTH_CARD_WIDTH} 20
                   L ${HEALTH_CARD_WIDTH} ${HEALTH_CARD_HEIGHT - 20}
-                  Q ${HEALTH_CARD_WIDTH} ${HEALTH_CARD_HEIGHT}, ${HEALTH_CARD_WIDTH - 20} ${HEALTH_CARD_HEIGHT}
+                  Q ${HEALTH_CARD_WIDTH} ${HEALTH_CARD_HEIGHT}, ${
+                    HEALTH_CARD_WIDTH - 20
+                  } ${HEALTH_CARD_HEIGHT}
                   L 20 ${HEALTH_CARD_HEIGHT}
                   Q 0 ${HEALTH_CARD_HEIGHT}, 0 ${HEALTH_CARD_HEIGHT - 20}
                   L 0 20
                   Q 0 0, 20 0
                   Z
                 `}
-                fill="url(#healthCardGradient)"
-              />
-            </Svg>
+                  fill="url(#healthCardGradient)"
+                />
+              </Svg>
 
-            {/* Image inside circle */}
-            <View style={styles.healthServiceIconContainer}>
-              <Image
-                source={require('../assets/images/healthService.png')}
-                style={styles.healthServiceImage}
-              />
-            </View>
-
-            {/* Card Content Overlay */}
-            <View style={styles.healthServiceCardOverlay}>
-              <View style={styles.healthServiceTextContainer}>
-                <Text style={styles.healthServiceTitle} allowFontScaling={false}>{t('profile.menu_healthcare')}</Text>
-                <Text style={styles.healthServiceSubtitle} allowFontScaling={false}>
-                  {t('profile.healthcare_subtitle')}
-                </Text>
+              {/* Image inside circle */}
+              <View style={styles.healthServiceIconContainer}>
+                <Image
+                  source={require('../assets/images/healthService.png')}
+                  style={styles.healthServiceImage}
+                />
               </View>
 
-              <TouchableOpacity
-                style={styles.healthServiceButton}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setIsHealthServiceSheetVisible(false);
-                  setIsHealthRequestSheetVisible(true);
-                }}
-              >
-                <Text style={styles.healthServiceButtonText} allowFontScaling={false}>{t('profile.request')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </BottomSheet>
+              {/* Card Content Overlay */}
+              <View style={styles.healthServiceCardOverlay}>
+                <View style={styles.healthServiceTextContainer}>
+                  <Text
+                    style={styles.healthServiceTitle}
+                    allowFontScaling={false}
+                  >
+                    {t('profile.menu_healthcare')}
+                  </Text>
+                  <Text
+                    style={styles.healthServiceSubtitle}
+                    allowFontScaling={false}
+                  >
+                    {t('profile.healthcare_subtitle')}
+                  </Text>
+                </View>
 
-      <BottomSheet
-        visible={isHealthRequestSheetVisible}
-        onClose={() => setIsHealthRequestSheetVisible(false)}
-        showHandle={false}
-      >
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.healthRequestScrollContent}
-        >
-          <View style={styles.healthRequestHeader}>
-            <View style={styles.healthRequestHeaderSpacer} />
-            <View style={styles.healthRequestHeaderCenter}>
-              <Text style={styles.healthRequestTitle} allowFontScaling={false}>{t('profile.healthcare_request')}</Text>
-              <Text style={styles.healthRequestSubtitle} allowFontScaling={false}>{t('profile.healthcare_request_subtitle')}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.healthRequestCloseButton}
-              onPress={() => setIsHealthRequestSheetVisible(false)}
-              activeOpacity={0.7}
-            >
-              <FontAwesomeIcon
-                icon={faTimes as any}
-                size={24}
-                color={theme.colors.textPrimary}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.healthRequestDivider} />
-
-          <Text style={styles.healthRequestSectionTitle} allowFontScaling={false}>{t('profile.services')}</Text>
-          <View style={styles.healthRequestServicesBox}>
-            {[
-              { id: 'emergency', label: 'Emergency', icon: '🚑' },
-              { id: 'appointment', label: 'Doctor or midwife appointment', icon: '🩺' },
-              { id: 'medication', label: 'Medication Prescription', icon: '💊' },
-            ].map((item) => {
-              const selected = selectedHealthServices.includes(item.id);
-              return (
                 <TouchableOpacity
-                  key={item.id}
-                  activeOpacity={0.8}
+                  style={styles.healthServiceButton}
+                  activeOpacity={0.7}
                   onPress={() => {
-                    setSelectedHealthServices((prev) => {
-                      if (prev.includes(item.id)) return prev.filter((x) => x !== item.id);
-                      return [...prev, item.id];
-                    });
+                    setIsHealthServiceSheetVisible(false);
+                    setIsHealthRequestSheetVisible(true);
                   }}
-                  style={[
-                    styles.healthServiceChip,
-                    selected && styles.healthServiceChipSelected,
-                  ]}
                 >
-                  <View style={styles.healthServiceChipIconCircle}>
-                    <Text style={styles.healthServiceChipIconText} allowFontScaling={false}>{item.icon}</Text>
-                  </View>
-                  <Text style={styles.healthServiceChipText} allowFontScaling={false}>{item.label}</Text>
-                  {selected && (
-                    <View style={styles.healthServiceChipCheck}>
-                      <FontAwesomeIcon icon={faCheck as any} size={ms(10)} color="#fff" />
-                    </View>
-                  )}
+                  <Text
+                    style={styles.healthServiceButtonText}
+                    allowFontScaling={false}
+                  >
+                    {t('profile.request')}
+                  </Text>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <View style={styles.healthRequestConsentContainer}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => {
-                if (!isAgreementAccepted) {
-                  // If agreement not accepted, show agreement first
-                  setIsAgreementSheetVisible(true);
-                } else {
-                  // If already accepted, toggle consent
-                  setIsDataConsentChecked((v) => !v);
-                }
-              }}
-              style={styles.healthRequestConsentCard}
-            >
-              <View style={styles.healthRequestConsentIcon}>
-                <FontAwesomeIcon icon={faShield as any} size={ms(18)} color="#2E6BFF" />
               </View>
-              <View style={styles.healthRequestConsentText}>
-                <Text style={styles.healthRequestConsentLabel} allowFontScaling={false}>{t('intro.step14_consent_label')}</Text>
-                <Text style={styles.healthRequestConsentSubtitle} allowFontScaling={false}>
-                  {t('intro.step14_consent_subtitle')}
+            </View>
+          </View>
+        </BottomSheet>
+
+        <BottomSheet
+          visible={isHealthRequestSheetVisible}
+          onClose={() => setIsHealthRequestSheetVisible(false)}
+          showHandle={false}
+        >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.healthRequestScrollContent}
+          >
+            <View style={styles.healthRequestHeader}>
+              <View style={styles.healthRequestHeaderSpacer} />
+              <View style={styles.healthRequestHeaderCenter}>
+                <Text
+                  style={styles.healthRequestTitle}
+                  allowFontScaling={false}
+                >
+                  {t('profile.healthcare_request')}
+                </Text>
+                <Text
+                  style={styles.healthRequestSubtitle}
+                  allowFontScaling={false}
+                >
+                  {t('profile.healthcare_request_subtitle')}
                 </Text>
               </View>
-              <View style={styles.healthRequestRadioOuter}>
-                {isDataConsentChecked && isAgreementAccepted && <View style={styles.healthRequestRadioInner} />}
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={styles.healthRequestAgreementLink}
-            activeOpacity={0.7}
-            onPress={() => setIsAgreementSheetVisible(true)}
-          >
-            <Text style={styles.healthRequestAgreementLinkText} allowFontScaling={false}>{t('profile.agreement_content')}</Text>
-          </TouchableOpacity>
-
-          <View style={styles.healthRequestEmailContainer}>
-            <Text style={styles.healthRequestEmailLabel} allowFontScaling={false}>{t('auth.email')}</Text>
-            <View style={styles.healthRequestEmailBox}>
-              <Text style={styles.healthRequestEmailText} allowFontScaling={false}>
-                {profile.email || 'mary.anderson@gmail.com'}
-              </Text>
-            </View>
-          </View>
-        </ScrollView>
-
-        <FixedButtonContainer paddingBottom={insets.bottom}>
-          <View style={styles.healthRequestBottomBar}>
-            <View style={styles.healthRequestButtonRow}>
               <TouchableOpacity
+                style={styles.healthRequestCloseButton}
                 onPress={() => setIsHealthRequestSheetVisible(false)}
-                style={styles.healthRequestCancelButton}
                 activeOpacity={0.7}
               >
-                <Text style={styles.healthRequestCancelText} allowFontScaling={false}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-              <View style={styles.healthRequestSubmitWrapper}>
-                <Button
-                  title={t('profile.request')}
-                  onPress={() => {
-                    setIsHealthRequestSheetVisible(false);
-                    setTimeout(() => setIsSuccessDialogVisible(true), 400);
-                  }}
-                  disabled={!isDataConsentChecked || !isAgreementAccepted || selectedHealthServices.length === 0}
+                <FontAwesomeIcon
+                  icon={faTimes as any}
+                  size={24}
+                  color={theme.colors.textPrimary}
                 />
-              </View>
-            </View>
-          </View>
-        </FixedButtonContainer>
-      </BottomSheet>
-
-      {/* Agreement Bottom Sheet */}
-      <BottomSheet
-        visible={isAgreementSheetVisible}
-        onClose={() => setIsAgreementSheetVisible(false)}
-        showHandle={true}
-      >
-        <ScrollView
-          showsVerticalScrollIndicator={true}
-          persistentScrollbar={true}
-          contentContainerStyle={styles.agreementScrollContent}
-        >
-          <View style={styles.agreementHeader}>
-            <Text style={styles.agreementTitle} allowFontScaling={false}>{t('profile.agreement')}</Text>
-            <TouchableOpacity
-              style={styles.agreementCloseButton}
-              onPress={() => setIsAgreementSheetVisible(false)}
-              activeOpacity={0.7}
-            >
-              <FontAwesomeIcon
-                icon={faTimes as any}
-                size={14}
-                color={theme.colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.agreementServicesTitle} allowFontScaling={false}>
-            {t('intro.step14_services_title')}
-          </Text>
-
-          <View style={styles.agreementServicesBox}>
-            <ScrollView
-              style={{ flexGrow: 0 }}
-              contentContainerStyle={styles.agreementServicesScrollContent}
-              showsVerticalScrollIndicator={true}
-              persistentScrollbar={true}
-            >
-              <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service1_title')}</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service1_desc')}</Text>
-              </View>
-              <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service2_title')}</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service2_desc')}</Text>
-              </View>
-              <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service3_title')}</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service3_desc')}</Text>
-              </View>
-              <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service4_title')}</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service4_desc')}</Text>
-              </View>
-              <View style={styles.agreementServiceItem}>
-                <Text style={styles.agreementServiceNumber} allowFontScaling={false}>{t('intro.step14_service5_title')}</Text>
-                <Text style={styles.agreementServiceDescription} allowFontScaling={false}>{t('intro.step14_service5_desc')}</Text>
-              </View>
-            </ScrollView>
-          </View>
-        </ScrollView>
-
-        <FixedButtonContainer paddingBottom={insets.bottom}>
-          <View style={styles.healthRequestBottomBar}>
-            <View style={styles.agreementButtonRow}>
-              <TouchableOpacity
-                onPress={() => {
-                  setIsAgreementSheetVisible(false);
-                  setIsAgreementAccepted(false);
-                  // Uncheck consent if rejected
-                  setIsDataConsentChecked(false);
-                }}
-                style={styles.agreementRejectButton}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.agreementRejectText} allowFontScaling={false}>{t('profile.reject')}</Text>
               </TouchableOpacity>
-              <View style={styles.agreementAcceptWrapper}>
-                <Button
-                  title={t('profile.accept')}
-                  onPress={() => {
-                    setIsAgreementAccepted(true);
-                    setIsAgreementSheetVisible(false);
-                    // If opened from radio button, also check the consent
-                    if (!isDataConsentChecked) {
-                      setIsDataConsentChecked(true);
-                    }
-                  }}
-                />
-              </View>
             </View>
-          </View>
-        </FixedButtonContainer>
-      </BottomSheet>
 
-      {/* Success Dialog */}
-      <Modal
-        visible={isSuccessDialogVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsSuccessDialogVisible(false)}
-        statusBarTranslucent
-      >
-        <TouchableOpacity
-          style={styles.successOverlay}
-          activeOpacity={1}
-          onPress={() => setIsSuccessDialogVisible(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={styles.successCard}>
-            <TouchableOpacity
-              style={styles.successCloseButton}
-              onPress={() => setIsSuccessDialogVisible(false)}
-              activeOpacity={0.7}
+            <View style={styles.healthRequestDivider} />
+
+            <Text
+              style={styles.healthRequestSectionTitle}
+              allowFontScaling={false}
             >
-              <FontAwesomeIcon
-                icon={faTimes as any}
-                size={14}
-                color={theme.colors.textSecondary}
-              />
-            </TouchableOpacity>
-
-            <View style={styles.successIconCircle}>
-              <Image
-                source={require('../assets/images/healthService.png')}
-                style={styles.successImage}
-              />
-            </View>
-
-            <Text style={styles.successTitle} allowFontScaling={false}>{t('profile.request_saved')}</Text>
-            <Text style={styles.successMessage} allowFontScaling={false}>
-              {t('profile.request_saved_message')}
+              {t('profile.services')}
             </Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+            <View style={styles.healthRequestServicesBox}>
+              {[
+                { id: 'emergency', label: t('profile.emergency'), icon: '🚑' },
+                {
+                  id: 'appointment',
+                  label: t('profile.doctor_midwife'),
+                  icon: '🩺',
+                },
+                {
+                  id: 'medication',
+                  label: t('profile.medication'),
+                  icon: '💊',
+                },
+              ].map(item => {
+                const selected = selectedHealthServices.includes(item.id);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setSelectedHealthServices(prev => {
+                        if (prev.includes(item.id))
+                          return prev.filter(x => x !== item.id);
+                        return [...prev, item.id];
+                      });
+                    }}
+                    style={[
+                      styles.healthServiceChip,
+                      selected && styles.healthServiceChipSelected,
+                    ]}
+                  >
+                    <View style={styles.healthServiceChipIconCircle}>
+                      <Text
+                        style={styles.healthServiceChipIconText}
+                        allowFontScaling={false}
+                      >
+                        {item.icon}
+                      </Text>
+                    </View>
+                    <Text
+                      style={styles.healthServiceChipText}
+                      allowFontScaling={false}
+                    >
+                      {item.label}
+                    </Text>
+                    {selected && (
+                      <View style={styles.healthServiceChipCheck}>
+                        <FontAwesomeIcon
+                          icon={faCheck as any}
+                          size={ms(10)}
+                          color="#fff"
+                        />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-      <Modal
-        visible={showBabyTwinAds}
-        animationType="fade"
-        onRequestClose={() => {}}
-      >
-        <AdsScreen
-          onClose={() => {
-            setShowBabyTwinAds(false);
-            onNavigateToBabyTwin?.();
-          }}
-        />
-      </Modal>
-    </SafeAreaView>
-    <TransitionLoader visible={isChangingLanguage} />
+            <View style={styles.healthRequestConsentContainer}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  if (!isAgreementAccepted) {
+                    // If agreement not accepted, show agreement first
+                    setIsAgreementSheetVisible(true);
+                  } else {
+                    // If already accepted, toggle consent
+                    setIsDataConsentChecked(v => !v);
+                  }
+                }}
+                style={styles.healthRequestConsentCard}
+              >
+                <View style={styles.healthRequestConsentIcon}>
+                  <FontAwesomeIcon
+                    icon={faShield as any}
+                    size={ms(18)}
+                    color="#2E6BFF"
+                  />
+                </View>
+                <View style={styles.healthRequestConsentText}>
+                  <Text
+                    style={styles.healthRequestConsentLabel}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_consent_label')}
+                  </Text>
+                  <Text
+                    style={styles.healthRequestConsentSubtitle}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_consent_subtitle')}
+                  </Text>
+                </View>
+                <View style={styles.healthRequestRadioOuter}>
+                  {isDataConsentChecked && isAgreementAccepted && (
+                    <View style={styles.healthRequestRadioInner} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.healthRequestAgreementLink}
+              activeOpacity={0.7}
+              onPress={() => setIsAgreementSheetVisible(true)}
+            >
+              <Text
+                style={styles.healthRequestAgreementLinkText}
+                allowFontScaling={false}
+              >
+                {t('profile.agreement_content')}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.healthRequestEmailContainer}>
+              <Text
+                style={styles.healthRequestEmailLabel}
+                allowFontScaling={false}
+              >
+                {t('auth.email')}
+              </Text>
+              <View style={styles.healthRequestEmailBox}>
+                <Text
+                  style={styles.healthRequestEmailText}
+                  allowFontScaling={false}
+                >
+                  {profile.email || t('profile.email_not_added')}
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+
+          <FixedButtonContainer paddingBottom={insets.bottom}>
+            <View style={styles.healthRequestBottomBar}>
+              <View style={styles.healthRequestButtonRow}>
+                <TouchableOpacity
+                  onPress={() => setIsHealthRequestSheetVisible(false)}
+                  style={styles.healthRequestCancelButton}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={styles.healthRequestCancelText}
+                    allowFontScaling={false}
+                  >
+                    {t('common.cancel')}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.healthRequestSubmitWrapper}>
+                  <Button
+                    title={t('profile.request')}
+                    onPress={() => {
+                      setIsHealthRequestSheetVisible(false);
+                      setTimeout(() => setIsSuccessDialogVisible(true), 400);
+                    }}
+                    disabled={
+                      !isDataConsentChecked ||
+                      !isAgreementAccepted ||
+                      selectedHealthServices.length === 0
+                    }
+                  />
+                </View>
+              </View>
+            </View>
+          </FixedButtonContainer>
+        </BottomSheet>
+
+        {/* Agreement Bottom Sheet */}
+        <BottomSheet
+          visible={isAgreementSheetVisible}
+          onClose={() => setIsAgreementSheetVisible(false)}
+          showHandle={true}
+        >
+          <ScrollView
+            showsVerticalScrollIndicator={true}
+            persistentScrollbar={true}
+            contentContainerStyle={styles.agreementScrollContent}
+          >
+            <View style={styles.agreementHeader}>
+              <Text style={styles.agreementTitle} allowFontScaling={false}>
+                {t('profile.agreement')}
+              </Text>
+              <TouchableOpacity
+                style={styles.agreementCloseButton}
+                onPress={() => setIsAgreementSheetVisible(false)}
+                activeOpacity={0.7}
+              >
+                <FontAwesomeIcon
+                  icon={faTimes as any}
+                  size={14}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <Text
+              style={styles.agreementServicesTitle}
+              allowFontScaling={false}
+            >
+              {t('intro.step14_services_title')}
+            </Text>
+
+            <View style={styles.agreementServicesBox}>
+              <ScrollView
+                style={{ flexGrow: 0 }}
+                contentContainerStyle={styles.agreementServicesScrollContent}
+                showsVerticalScrollIndicator={true}
+                persistentScrollbar={true}
+              >
+                <View style={styles.agreementServiceItem}>
+                  <Text
+                    style={styles.agreementServiceNumber}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service1_title')}
+                  </Text>
+                  <Text
+                    style={styles.agreementServiceDescription}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service1_desc')}
+                  </Text>
+                </View>
+                <View style={styles.agreementServiceItem}>
+                  <Text
+                    style={styles.agreementServiceNumber}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service2_title')}
+                  </Text>
+                  <Text
+                    style={styles.agreementServiceDescription}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service2_desc')}
+                  </Text>
+                </View>
+                <View style={styles.agreementServiceItem}>
+                  <Text
+                    style={styles.agreementServiceNumber}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service3_title')}
+                  </Text>
+                  <Text
+                    style={styles.agreementServiceDescription}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service3_desc')}
+                  </Text>
+                </View>
+                <View style={styles.agreementServiceItem}>
+                  <Text
+                    style={styles.agreementServiceNumber}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service4_title')}
+                  </Text>
+                  <Text
+                    style={styles.agreementServiceDescription}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service4_desc')}
+                  </Text>
+                </View>
+                <View style={styles.agreementServiceItem}>
+                  <Text
+                    style={styles.agreementServiceNumber}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service5_title')}
+                  </Text>
+                  <Text
+                    style={styles.agreementServiceDescription}
+                    allowFontScaling={false}
+                  >
+                    {t('intro.step14_service5_desc')}
+                  </Text>
+                </View>
+              </ScrollView>
+            </View>
+          </ScrollView>
+
+          <FixedButtonContainer paddingBottom={insets.bottom}>
+            <View style={styles.healthRequestBottomBar}>
+              <View style={styles.agreementButtonRow}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsAgreementSheetVisible(false);
+                    setIsAgreementAccepted(false);
+                    // Uncheck consent if rejected
+                    setIsDataConsentChecked(false);
+                  }}
+                  style={styles.agreementRejectButton}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={styles.agreementRejectText}
+                    allowFontScaling={false}
+                  >
+                    {t('profile.reject')}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.agreementAcceptWrapper}>
+                  <Button
+                    title={t('profile.accept')}
+                    onPress={() => {
+                      setIsAgreementAccepted(true);
+                      setIsAgreementSheetVisible(false);
+                      // If opened from radio button, also check the consent
+                      if (!isDataConsentChecked) {
+                        setIsDataConsentChecked(true);
+                      }
+                    }}
+                  />
+                </View>
+              </View>
+            </View>
+          </FixedButtonContainer>
+        </BottomSheet>
+
+        {/* Success Dialog */}
+        <Modal
+          visible={isSuccessDialogVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsSuccessDialogVisible(false)}
+          statusBarTranslucent
+        >
+          <TouchableOpacity
+            style={styles.successOverlay}
+            activeOpacity={1}
+            onPress={() => setIsSuccessDialogVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1} style={styles.successCard}>
+              <TouchableOpacity
+                style={styles.successCloseButton}
+                onPress={() => setIsSuccessDialogVisible(false)}
+                activeOpacity={0.7}
+              >
+                <FontAwesomeIcon
+                  icon={faTimes as any}
+                  size={14}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
+
+              <View style={styles.successIconCircle}>
+                <Image
+                  source={require('../assets/images/healthService.png')}
+                  style={styles.successImage}
+                />
+              </View>
+
+              <Text style={styles.successTitle} allowFontScaling={false}>
+                {t('profile.request_saved')}
+              </Text>
+              <Text style={styles.successMessage} allowFontScaling={false}>
+                {t('profile.request_saved_message')}
+              </Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
+        <Modal
+          visible={showBabyTwinAds}
+          animationType="fade"
+          onRequestClose={() => {}}
+        >
+          <AdsScreen
+            onClose={() => {
+              setShowBabyTwinAds(false);
+              onNavigateToBabyTwin?.();
+            }}
+          />
+        </Modal>
+      </SafeAreaView>
     </React.Fragment>
   );
 };
-

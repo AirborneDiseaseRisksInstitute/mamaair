@@ -1,5 +1,14 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Image, Text, Dimensions, Animated, TouchableOpacity } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, StyleSheet, Image, Text, Dimensions, TouchableOpacity } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle, G, ForeignObject, Path, Defs, ClipPath, Mask, Rect, Pattern } from "react-native-svg";
 import { SvgXml } from 'react-native-svg';
 import { useTheme } from '../../theme';
@@ -11,8 +20,10 @@ import {
   faShoppingBasket,
   faRunning,
   faFaceSadTear,
+  faLock,
   faPlay,
 } from '@fortawesome/free-solid-svg-icons';
+import { useTranslation } from 'react-i18next';
 
 const MAIN_CIRCLE_DIAMETER = responsiveUtils.getWeekCycleMainCircleDiameter();
 const MAIN_RADIUS = MAIN_CIRCLE_DIAMETER / 2;
@@ -55,6 +66,30 @@ const changeSvgColor = (svgXml: string, color: string): string => {
 const BORDER_WIDTH = 2;
 
 const TOTAL_DOTS = 11;
+const LIVE_PULSE_DURATION_MS = 2400;
+
+const waveViewBoxMatch = WAVE_BACKGROUND_SVG.match(/viewBox="([^"]*)"/);
+const WAVE_VIEW_BOX = waveViewBoxMatch
+  ? waveViewBoxMatch[1].split(' ').map(Number)
+  : [0, 0, 113, 29];
+const WAVE_WIDTH = WAVE_VIEW_BOX[2] || 113;
+const WAVE_HEIGHT = WAVE_VIEW_BOX[3] || 29;
+
+const wavePathMatches = WAVE_BACKGROUND_SVG.match(
+  /<path[^>]*d="([^"]*)"[^>]*fill="([^"]*)"[^>]*>/g,
+);
+const WAVE_PATHS = wavePathMatches
+  ? wavePathMatches
+      .map(pathXml => {
+        const dMatch = pathXml.match(/d="([^"]*)"/);
+        const fillMatch = pathXml.match(/fill="([^"]*)"/);
+        return {
+          d: dMatch ? dMatch[1] : '',
+          fill: fillMatch ? fillMatch[1] : '#FF6900',
+        };
+      })
+      .filter(path => path.d)
+  : [];
 
 interface CircleIcon {
   index: number;
@@ -62,96 +97,145 @@ interface CircleIcon {
   percentage?: number; // Icon fill percentage (0-100)
 }
 
-// Component for static icon with fill (no animation) - for inactive weeks
-const StaticIconWithFill: React.FC<{
+interface SystemProgressIconProps {
   svgXml: string;
   width: number;
   height: number;
   percentage: number;
   uniqueId: string;
-}> = ({ svgXml, width, height, percentage, uniqueId }) => {
-  // Extract viewBox from icon SVG
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, width, height];
-  const svgWidth = viewBox[2] || width;
-  const svgHeight = viewBox[3] || height;
-  const fillHeight = (svgHeight * percentage) / 100;
+}
 
-  // Extract icon paths for use in mask
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData = pathMatches ? pathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const strokeMatch = m.match(/stroke="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      stroke: strokeMatch ? strokeMatch[1] : undefined,
-      fill: fillMatch ? fillMatch[1] : 'transparent',
-      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-    };
-  }).filter(p => p.d) : [];
+// Shared static percentage fill. Keeping the SVG mask stationary avoids the
+// redraw cost that animated masks caused on lower-end Android devices.
+export const SystemProgressIcon: React.FC<SystemProgressIconProps> =
+  React.memo(({ svgXml, width, height, percentage, uniqueId }) => {
+    const { viewBox, svgWidth, svgHeight, iconPathData } =
+      React.useMemo(() => {
+        const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
+        const parsedViewBox = viewBoxMatch
+          ? viewBoxMatch[1].split(' ').map(Number)
+          : [0, 0, width, height];
+        const parsedSvgWidth = parsedViewBox[2] || width;
+        const parsedSvgHeight = parsedViewBox[3] || height;
+        const pathMatches = svgXml.match(
+          /<path[^>]*d="([^"]*)"[^>]*>/g,
+        );
+        const parsedPaths = pathMatches
+          ? pathMatches
+              .map(pathXml => {
+                const dMatch = pathXml.match(/d="([^"]*)"/);
+                const strokeMatch =
+                  pathXml.match(/stroke="([^"]*)"/);
+                const fillMatch =
+                  pathXml.match(/fill="([^"]*)"/);
+                const strokeWidthMatch = pathXml.match(
+                  /stroke-width="([^"]*)"/,
+                );
+                return {
+                  d: dMatch ? dMatch[1] : '',
+                  stroke: strokeMatch
+                    ? strokeMatch[1]
+                    : undefined,
+                  fill: fillMatch
+                    ? fillMatch[1]
+                    : 'transparent',
+                  strokeWidth: strokeWidthMatch
+                    ? strokeWidthMatch[1]
+                    : undefined,
+                };
+              })
+              .filter(path => path.d)
+          : [];
 
-  return (
-    <View style={{ width, height }}>
-      {percentage > 0 && iconPathData.length > 0 ? (
-        <Svg width={width} height={height} viewBox={viewBox.join(' ')}>
-          <Defs>
-            {/* ClipPath to limit to percentage */}
-            <ClipPath id={`staticPercentageClip-${uniqueId}`}>
-              <Rect 
-                x="0" 
-                y={svgHeight - fillHeight} 
-                width={svgWidth} 
-                height={fillHeight} 
-              />
-            </ClipPath>
-            
-            {/* Mask to limit fill to icon shape */}
-            <Mask id={`staticIconMask-${uniqueId}`}>
-              <Rect width={svgWidth} height={svgHeight} fill="black" />
-              {iconPathData.map((pathData, idx) => (
-                <Path 
-                  key={idx} 
-                  d={pathData.d} 
-                  fill="white" 
-                  stroke="white" 
-                  strokeWidth={pathData.strokeWidth} 
+        return {
+          viewBox: parsedViewBox,
+          svgWidth: parsedSvgWidth,
+          svgHeight: parsedSvgHeight,
+          iconPathData: parsedPaths,
+        };
+      }, [height, svgXml, width]);
+    const normalizedPercentage = Math.min(
+      100,
+      Math.max(0, percentage),
+    );
+    const fillHeight =
+      (svgHeight * normalizedPercentage) / 100;
+
+    return (
+      <View style={{ width, height }}>
+        {normalizedPercentage > 0 &&
+        iconPathData.length > 0 ? (
+          <Svg
+            width={width}
+            height={height}
+            viewBox={viewBox.join(' ')}
+          >
+            <Defs>
+              <ClipPath
+                id={`staticPercentageClip-${uniqueId}`}
+              >
+                <Rect
+                  x="0"
+                  y={svgHeight - fillHeight}
+                  width={svgWidth}
+                  height={fillHeight}
                 />
-              ))}
-            </Mask>
-          </Defs>
-          
-          {/* Main icon with stroke */}
-          {iconPathData.map((pathData, idx) => (
-            <Path
-              key={`icon-${idx}`}
-              d={pathData.d}
-              stroke={pathData.stroke}
-              fill={pathData.fill}
-              strokeWidth={pathData.strokeWidth}
-            />
-          ))}
-          
-          {/* Static fill limited by Mask and ClipPath */}
-          <G mask={`url(#staticIconMask-${uniqueId})`} clipPath={`url(#staticPercentageClip-${uniqueId})`}>
-            <Rect
-              x="0"
-              y={svgHeight - fillHeight}
-              width={svgWidth}
-              height={fillHeight}
-              fill="#FF6900"
-            />
-          </G>
-        </Svg>
-      ) : (
-        <SvgXml xml={svgXml} width={width} height={height} />
-      )}
-    </View>
-  );
-};
+              </ClipPath>
 
-// Component for icon with wave effect (animated) - for active week only
+              <Mask id={`staticIconMask-${uniqueId}`}>
+                <Rect
+                  width={svgWidth}
+                  height={svgHeight}
+                  fill="black"
+                />
+                {iconPathData.map((pathData, idx) => (
+                  <Path
+                    key={idx}
+                    d={pathData.d}
+                    fill="white"
+                    stroke="white"
+                    strokeWidth={pathData.strokeWidth}
+                  />
+                ))}
+              </Mask>
+            </Defs>
+
+            {iconPathData.map((pathData, idx) => (
+              <Path
+                key={`icon-${idx}`}
+                d={pathData.d}
+                stroke={pathData.stroke}
+                fill={pathData.fill}
+                strokeWidth={pathData.strokeWidth}
+              />
+            ))}
+
+            <G
+              mask={`url(#staticIconMask-${uniqueId})`}
+              clipPath={`url(#staticPercentageClip-${uniqueId})`}
+            >
+              <Rect
+                x="0"
+                y={svgHeight - fillHeight}
+                width={svgWidth}
+                height={fillHeight}
+                fill="#FF6900"
+              />
+            </G>
+          </Svg>
+        ) : (
+          <SvgXml
+            xml={svgXml}
+            width={width}
+            height={height}
+          />
+        )}
+      </View>
+    );
+  });
+
+// Static wave fill for the active week. Motion is kept outside the SVG tree
+// so masks and icon paths are not redrawn on every animation frame.
 const IconWithWave: React.FC<{
   svgXml: string;
   width: number;
@@ -159,152 +243,104 @@ const IconWithWave: React.FC<{
   percentage: number;
   uniqueId: string;
 }> = ({ svgXml, width, height, percentage, uniqueId }) => {
-  // Use useRef to preserve animation value across re-renders
-  const waveAnim = useRef(new Animated.Value(0)).current;
-  const [waveTranslateX, setWaveTranslateX] = React.useState(0);
-  
-  // Extract wave SVG information (before useEffect so it's available in listener)
-  const waveViewBoxMatch = WAVE_BACKGROUND_SVG.match(/viewBox="([^"]*)"/);
-  const waveViewBox = waveViewBoxMatch ? waveViewBoxMatch[1].split(' ').map(Number) : [0, 0, 113, 29];
-  const waveWidth = waveViewBox[2] || 113;
-  const waveHeight = waveViewBox[3] || 29;
-  
-  useEffect(() => {
-    // Smooth infinite animation
-    const animation = Animated.loop(
-      Animated.timing(waveAnim, {
-        toValue: 1,
-        duration: 5000, // Animation speed
-        useNativeDriver: false, // Must be false for animating SVG properties
-      })
-    );
-    
-    animation.start();
-    
-    // Optimization: convert animation value to transform value
-    // Animation moves from 0 to full wave width to create a complete loop
-    const listener = waveAnim.addListener(({ value }) => {
-      const translateX = value * -waveWidth; // Move from right to left
-      setWaveTranslateX(translateX);
-    });
-    
-    return () => {
-      animation.stop(); // Stop animation when component unmounts
-      waveAnim.removeListener(listener);
-    };
-  }, [waveAnim, waveWidth]);
+  const { viewBox, svgWidth, svgHeight, iconPathData } = React.useMemo(() => {
+    const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
+    const parsedViewBox = viewBoxMatch
+      ? viewBoxMatch[1].split(' ').map(Number)
+      : [0, 0, width, height];
+    const parsedSvgWidth = parsedViewBox[2] || width;
+    const parsedSvgHeight = parsedViewBox[3] || height;
+    const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
+    const parsedPaths = pathMatches
+      ? pathMatches
+          .map(pathXml => {
+            const dMatch = pathXml.match(/d="([^"]*)"/);
+            const strokeMatch = pathXml.match(/stroke="([^"]*)"/);
+            const fillMatch = pathXml.match(/fill="([^"]*)"/);
+            const strokeWidthMatch = pathXml.match(/stroke-width="([^"]*)"/);
+            return {
+              d: dMatch ? dMatch[1] : '',
+              stroke: strokeMatch ? strokeMatch[1] : undefined,
+              fill: fillMatch ? fillMatch[1] : 'transparent',
+              strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
+            };
+          })
+          .filter(path => path.d)
+      : [];
 
-  // Extract viewBox from icon SVG
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, width, height];
-  const svgWidth = viewBox[2] || width;
-  const svgHeight = viewBox[3] || height;
+    return {
+      viewBox: parsedViewBox,
+      svgWidth: parsedSvgWidth,
+      svgHeight: parsedSvgHeight,
+      iconPathData: parsedPaths,
+    };
+  }, [height, svgXml, width]);
+
   const fillHeight = (svgHeight * percentage) / 100;
-
-  // Extract icon paths for use in mask
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData = pathMatches ? pathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const strokeMatch = m.match(/stroke="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      stroke: strokeMatch ? strokeMatch[1] : undefined,
-      fill: fillMatch ? fillMatch[1] : 'transparent',
-      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-    };
-  }).filter(p => p.d) : [];
-  
-  const wavePathMatches = WAVE_BACKGROUND_SVG.match(/<path[^>]*d="([^"]*)"[^>]*fill="([^"]*)"[^>]*>/g);
-  const wavePaths = wavePathMatches ? wavePathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      fill: fillMatch ? fillMatch[1] : '#FF6900',
-    };
-  }).filter(p => p.d) : [];
 
   return (
     <View style={{ width, height }}>
-      {percentage > 0 && wavePaths.length > 0 && iconPathData.length > 0 ? (
-        <Svg width={width} height={height} viewBox={viewBox.join(' ')}>
-          <Defs>
-            {/* Pattern for animated wave background */}
-            <Pattern
-              id={`wavePattern-${uniqueId}`}
-              x="0" // x is fixed, movement happens inside Pattern
-              y={svgHeight - fillHeight}
-              width={waveWidth} // Pattern width equals one wave width
-              height={waveHeight}
-              patternUnits="userSpaceOnUse"
-            >
-              {/* This G will be animated */}
-              <G transform={`translate(${waveTranslateX}, 0)`}>
-                {/* First wave copy */}
-                <G>
-                  {wavePaths.map((wavePath, idx) => (
-                    <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-                  ))}
-                </G>
-                {/* Second wave copy with 1px overlap to fix gap issue */}
-                <G transform={`translate(${waveWidth - 1}, 0)`}>
-                  {wavePaths.map((wavePath, idx) => (
-                    <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-                  ))}
-                </G>
-              </G>
-            </Pattern>
-            
-            {/* ClipPath to limit to percentage */}
-            <ClipPath id={`percentageClip-${uniqueId}`}>
-              <Rect 
-                x="0" 
-                y={svgHeight - fillHeight} 
-                width={svgWidth} 
-                height={fillHeight} 
-              />
-            </ClipPath>
-            
-            {/* Mask to limit wave to icon shape */}
-            <Mask id={`iconMask-${uniqueId}`}>
-              {/* In Mask, white color indicates visible parts and black indicates hidden parts */}
-              <Rect width={svgWidth} height={svgHeight} fill="black" />
-              {iconPathData.map((pathData, idx) => (
-                <Path 
-                  key={idx} 
-                  d={pathData.d} 
-                  fill="white" 
-                  stroke="white" 
-                  strokeWidth={pathData.strokeWidth} 
+      {percentage > 0 && WAVE_PATHS.length > 0 && iconPathData.length > 0 ? (
+        <>
+          <Svg width={width} height={height} viewBox={viewBox.join(' ')}>
+            <Defs>
+              <Pattern
+                id={`wavePattern-${uniqueId}`}
+                x="0"
+                y={svgHeight - fillHeight}
+                width={WAVE_WIDTH}
+                height={WAVE_HEIGHT}
+                patternUnits="userSpaceOnUse"
+              >
+                {WAVE_PATHS.map((wavePath, idx) => (
+                  <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
+                ))}
+              </Pattern>
+
+              <ClipPath id={`percentageClip-${uniqueId}`}>
+                <Rect
+                  x="0"
+                  y={svgHeight - fillHeight}
+                  width={svgWidth}
+                  height={fillHeight}
                 />
-              ))}
-            </Mask>
-          </Defs>
-          
-          {/* Main icon with stroke */}
-          {iconPathData.map((pathData, idx) => (
-            <Path
-              key={`icon-${idx}`}
-              d={pathData.d}
-              stroke={pathData.stroke}
-              fill={pathData.fill}
-              strokeWidth={pathData.strokeWidth}
-            />
-          ))}
-          
-          {/* Animated wave limited by Mask and ClipPath */}
-          <G mask={`url(#iconMask-${uniqueId})`} clipPath={`url(#percentageClip-${uniqueId})`}>
-            <Rect
-              x="0"
-              y="0" // Set y to 0 because pattern y is already set
-              width={svgWidth}
-              height={svgHeight}
-              fill={`url(#wavePattern-${uniqueId})`}
-            />
-          </G>
-        </Svg>
+              </ClipPath>
+
+              <Mask id={`iconMask-${uniqueId}`}>
+                <Rect width={svgWidth} height={svgHeight} fill="black" />
+                {iconPathData.map((pathData, idx) => (
+                  <Path
+                    key={idx}
+                    d={pathData.d}
+                    fill="white"
+                    stroke="white"
+                    strokeWidth={pathData.strokeWidth}
+                  />
+                ))}
+              </Mask>
+            </Defs>
+            
+            {iconPathData.map((pathData, idx) => (
+              <Path
+                key={`icon-${idx}`}
+                d={pathData.d}
+                stroke={pathData.stroke}
+                fill={pathData.fill}
+                strokeWidth={pathData.strokeWidth}
+              />
+            ))}
+            
+            <G mask={`url(#iconMask-${uniqueId})`} clipPath={`url(#percentageClip-${uniqueId})`}>
+              <Rect
+                x="0"
+                y="0"
+                width={svgWidth}
+                height={svgHeight}
+                fill={`url(#wavePattern-${uniqueId})`}
+              />
+            </G>
+          </Svg>
+        </>
       ) : (
         <SvgXml xml={svgXml} width={width} height={height} />
       )}
@@ -338,6 +374,9 @@ interface WeekCycleViewProps {
   onStartPress?: () => void;
   onImagePress?: () => void; // Callback when center image is pressed
   isActive?: boolean; // If true, enables wave animations; otherwise shows static fills
+  weekState?: 'current' | 'review' | 'future' | 'complete';
+  chapterLabel?: string;
+  progressPercent?: number;
 }
 
 const DEFAULT_WEEK_DAYS: WeekDay[] = [
@@ -361,11 +400,43 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
   onStartPress,
   onImagePress,
   isActive = false, // Default to false for performance - only active week gets animations
+  weekState = 'future',
+  chapterLabel,
+  progressPercent,
 }) => {
 
   const theme = useTheme();
+  const { t } = useTranslation();
+  const reduceMotion = useReducedMotion();
+  const livePulseProgress = useSharedValue(0);
+  const liveHaloStyle = useAnimatedStyle(() => ({
+    opacity: 0.12 + livePulseProgress.value * 0.16,
+    transform: [{ scale: 1 + livePulseProgress.value * 0.025 }],
+  }));
   const screenWidth = Dimensions.get('window').width;
   const weekSectionMarginRight = reversed ? Math.round(screenWidth * 0.22) : 0;
+
+  useEffect(() => {
+    cancelAnimation(livePulseProgress);
+    livePulseProgress.value = 0;
+
+    if (!isActive || reduceMotion) {
+      return;
+    }
+
+    livePulseProgress.value = withRepeat(
+      withTiming(1, {
+        duration: LIVE_PULSE_DURATION_MS,
+        easing: Easing.inOut(Easing.ease),
+      }),
+      -1,
+      true,
+    );
+
+    return () => {
+      cancelAnimation(livePulseProgress);
+    };
+  }, [isActive, livePulseProgress, reduceMotion]);
 
   // Create map from circleIcons for fast access
   const iconMap = React.useMemo(() => {
@@ -435,7 +506,7 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
                   uniqueId={`icon-${i}`}
                 />
               ) : (
-                <StaticIconWithFill
+                <SystemProgressIcon
                   svgXml={svgXmlWithThickerStroke}
                   width={ICON_SIZE}
                   height={ICON_SIZE}
@@ -725,6 +796,12 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
           
           {/* Main circle + dots */}
           <View style={styles.circleSection}>
+            {isActive && !reduceMotion && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.liveHalo, liveHaloStyle]}
+              />
+            )}
             
             {/* SVG CIRCLE */}
             {renderCircleSvg()}
@@ -766,6 +843,68 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
          {/* Text Section */}
          {(title || description) && (
           <View style={[styles.textSection , { marginBottom:title === '1st Week' ? 100 : 0 }]}>
+            <View style={styles.weekMeta}>
+              {typeof progressPercent === 'number' ? (
+                <View
+                  accessibilityLabel={`Week progress ${progressPercent} percent`}
+                  style={styles.progressRing}
+                >
+                  <Svg width={28} height={28}>
+                    <Circle
+                      cx={14}
+                      cy={14}
+                      r={10}
+                      fill="none"
+                      stroke="#FFE3CF"
+                      strokeWidth={3}
+                    />
+                    <Circle
+                      cx={14}
+                      cy={14}
+                      r={10}
+                      fill="none"
+                      stroke="#FF6900"
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 10}
+                      strokeDashoffset={
+                        2 *
+                        Math.PI *
+                        10 *
+                        (1 - progressPercent / 100)
+                      }
+                      transform="rotate(-90 14 14)"
+                    />
+                  </Svg>
+                  <Text style={styles.progressRingText}>
+                    {progressPercent}
+                  </Text>
+                </View>
+              ) : null}
+              {chapterLabel ? (
+                <Text style={styles.chapterLabel}>
+                  {chapterLabel}
+                </Text>
+              ) : null}
+              <View style={styles.statePill}>
+                {weekState === 'future' ? (
+                  <FontAwesomeIcon
+                    icon={faLock}
+                    size={9}
+                    color={theme.colors.neutral500}
+                  />
+                ) : null}
+                <Text style={styles.stateText}>
+                  {weekState === 'current'
+                    ? t('home.current_week')
+                    : weekState === 'review'
+                    ? t('home.review_available')
+                    : weekState === 'complete'
+                    ? t('home.journey_complete')
+                    : t('home.future_week')}
+                </Text>
+              </View>
+            </View>
             {title && (
               <Text 
                 style={[styles.title, { color: theme.colors.textPrimary }]}
@@ -985,6 +1124,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  liveHalo: {
+    position: 'absolute',
+    width: MAIN_CIRCLE_DIAMETER * 1.04,
+    height: MAIN_CIRCLE_DIAMETER * 1.04,
+    borderRadius: MAIN_CIRCLE_DIAMETER,
+    borderWidth: 3,
+    borderColor: '#FF8B3D',
+    backgroundColor: '#FFF1E8',
+  },
   textSection: {
     paddingHorizontal: 16,
     alignItems: 'center',
@@ -992,6 +1140,46 @@ const styles = StyleSheet.create({
     marginRight:'auto',
     marginLeft:'auto',
     marginTop:64
+  },
+  weekMeta: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  progressRing: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressRingText: {
+    position: 'absolute',
+    color: '#9B4B20',
+    fontSize: responsiveUtils.getFixedFontSize(7),
+    fontFamily: 'MPLUSRounded1c-Bold',
+  },
+  chapterLabel: {
+    color: '#70428F',
+    fontSize: responsiveUtils.getFixedFontSize(10),
+    fontFamily: 'MPLUSRounded1c-Bold',
+  },
+  statePill: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    borderRadius: 12,
+    backgroundColor: '#F7F4F2',
+    gap: 5,
+  },
+  stateText: {
+    color: '#756C67',
+    fontSize: responsiveUtils.getFixedFontSize(9),
+    fontFamily: 'MPLUSRounded1c-Medium',
   },
   title: {
     fontSize: responsiveUtils.getFixedFontSize(18),
@@ -1027,6 +1215,9 @@ export const WeekCycleView = React.memo(WeekCycleViewComponent, (prevProps, next
     prevProps.onStartPress === nextProps.onStartPress &&
     prevProps.onImagePress === nextProps.onImagePress &&
     prevProps.isActive === nextProps.isActive &&
+    prevProps.weekState === nextProps.weekState &&
+    prevProps.chapterLabel === nextProps.chapterLabel &&
+    prevProps.progressPercent === nextProps.progressPercent &&
     JSON.stringify(prevProps.circleIcons) === JSON.stringify(nextProps.circleIcons) &&
     JSON.stringify(prevProps.weekDays) === JSON.stringify(nextProps.weekDays) &&
     prevProps.centerImage === nextProps.centerImage

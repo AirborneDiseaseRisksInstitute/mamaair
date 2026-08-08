@@ -14,6 +14,7 @@ import { useTheme, spacing } from '../theme';
 import { BackButton, AccessLocationBottomSheet } from '../components/ui';
 import { locationTracker } from '../services/tracking/LocationTracker';
 import { responsiveUtils } from '../utils/responsiveUtils';
+import { useTranslation } from 'react-i18next';
 
 interface PrivacySettingsScreenProps {
   onBack?: () => void;
@@ -21,6 +22,7 @@ interface PrivacySettingsScreenProps {
 
 export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   const [notificationEnabled, setNotificationEnabled] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(false);
@@ -204,7 +206,7 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ on
       <BackButton onPress={onBack} />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>Privacy Setting</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('privacy.title')}</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -213,12 +215,12 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ on
             source={require('../assets/images/Privacysetting.png')}
             style={styles.illustrationImage}
           />
-          <Text style={styles.headingText} allowFontScaling={false}>Check your privacy</Text>
+          <Text style={styles.headingText} allowFontScaling={false}>{t('privacy.check')}</Text>
         </View>
 
         <View style={styles.settingsCard}>
           <View style={styles.settingItem}>
-            <Text style={styles.settingText} allowFontScaling={false}>Sensitive notification</Text>
+            <Text style={styles.settingText} allowFontScaling={false}>{t('privacy.sensitive_notification')}</Text>
             <Switch
               {...switchProps}
               value={notificationEnabled}
@@ -229,7 +231,7 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ on
           <View style={styles.settingDivider} />
 
           <View style={styles.settingItem}>
-            <Text style={styles.settingText} allowFontScaling={false}>Precise location</Text>
+            <Text style={styles.settingText} allowFontScaling={false}>{t('privacy.precise_location')}</Text>
             <Switch
               {...switchProps}
               value={locationEnabled}
@@ -240,7 +242,7 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({ on
           <View style={styles.settingDivider} />
 
           <View style={styles.settingItem}>
-            <Text style={styles.settingText} allowFontScaling={false}>Tracking</Text>
+            <Text style={styles.settingText} allowFontScaling={false}>{t('privacy.tracking')}</Text>
             <Switch
               {...switchProps}
               value={trackingEnabled}

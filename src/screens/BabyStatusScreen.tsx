@@ -1,186 +1,27 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Animated } from 'react-native';
-import Svg, { G, Defs, ClipPath, Mask, Rect, Path, Pattern } from 'react-native-svg';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import { useTheme, spacing } from '../theme';
 import { useUserStore } from '../store/useUserStore';
-import { BackButton } from '../components/ui';
-import { SVG_ICONS, WAVE_BACKGROUND_SVG, MOTHER_RISK_SVG, BABY_RISK_SVG, BEHAVIOUR_SVG, RUNNING_SVG, DIET_SVG } from '../utils/svgIcons';
+import { BackButton, SystemProgressIcon } from '../components/ui';
+import { SVG_ICONS, MOTHER_RISK_SVG, BABY_RISK_SVG, BEHAVIOUR_SVG, RUNNING_SVG, DIET_SVG } from '../utils/svgIcons';
 import { WEEKS_DATA } from './HomeScreen';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 import { formatLocalDate } from '../utils/dateUtils';
 import { SummaryService, type SummaryResponse } from '../services/api/SummaryService';
-import { RecommendationCompletionService, type RecommendationCompletion } from '../services/api/RecommendationCompletionService';
 import { useTranslation } from 'react-i18next';
-
-function getCurrentWeekDates(): string[] {
-  const today = new Date();
-  const dow = today.getDay();
-  const diff = dow === 0 ? -6 : 1 - dow;
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() + diff + i);
-    return formatLocalDate(d);
-  });
-}
+import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
+import { loadWeeklySummaryExperience } from '../services/recommendationExperience/PresentationJourneyRepository';
+import { DEV_LOCAL_SESSION } from '../config/dev';
 
 interface BabyStatusScreenProps {
   onBack?: () => void;
 }
 
-
-// Reusable icon with animated wave fill (similar to WeekCycleView)
-const SystemIconWithWave: React.FC<{
-  svgXml: string;
-  size: number;
-  percentage: number;
-  uniqueId: string;
-}> = ({ svgXml, size, percentage, uniqueId }) => {
-  const waveAnim = useRef(new Animated.Value(0)).current;
-  const [waveTranslateX, setWaveTranslateX] = useState(0);
-
-  // Extract wave SVG info
-  const waveViewBoxMatch = WAVE_BACKGROUND_SVG.match(/viewBox="([^"]*)"/);
-  const waveViewBox = waveViewBoxMatch ? waveViewBoxMatch[1].split(' ').map(Number) : [0, 0, 113, 29];
-  const waveWidth = waveViewBox[2] || 113;
-  const waveHeight = waveViewBox[3] || 29;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.timing(waveAnim, {
-        toValue: 1,
-        duration: 5000,
-        useNativeDriver: false,
-      })
-    );
-
-    animation.start();
-
-    const listener = waveAnim.addListener(({ value }) => {
-      const translateX = value * -waveWidth;
-      setWaveTranslateX(translateX);
-    });
-
-    return () => {
-      animation.stop();
-      waveAnim.removeListener(listener);
-    };
-  }, [waveAnim, waveWidth]);
-
-  // Extract viewBox from icon SVG
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, size, size];
-  const svgWidth = viewBox[2] || size;
-  const svgHeight = viewBox[3] || size;
-  const fillHeight = (svgHeight * percentage) / 100;
-
-  // Extract icon paths for use in mask
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData =
-    pathMatches
-      ?.map((m) => {
-        const dMatch = m.match(/d="([^"]*)"/);
-        const strokeMatch = m.match(/stroke="([^"]*)"/);
-        const fillMatch = m.match(/fill="([^"]*)"/);
-        const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-        return {
-          d: dMatch ? dMatch[1] : '',
-          stroke: strokeMatch ? strokeMatch[1] : undefined,
-          fill: fillMatch ? fillMatch[1] : 'transparent',
-          strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-        };
-      })
-      .filter((p) => p.d) || [];
-
-  const wavePathMatches = WAVE_BACKGROUND_SVG.match(/<path[^>]*d="([^"]*)"[^>]*fill="([^"]*)"[^>]*>/g);
-  const wavePaths =
-    wavePathMatches
-      ?.map((m) => {
-        const dMatch = m.match(/d="([^"]*)"/);
-        const fillMatch = m.match(/fill="([^"]*)"/);
-        return {
-          d: dMatch ? dMatch[1] : '',
-          fill: fillMatch ? fillMatch[1] : '#FF6900',
-        };
-      })
-      .filter((p) => p.d) || [];
-
-  if (percentage <= 0 || iconPathData.length === 0 || wavePaths.length === 0) {
-    return <SvgXml xml={svgXml} width={size} height={size} />;
-  }
-
-  return (
-    <Svg width={size} height={size} viewBox={viewBox.join(' ')}>
-      <Defs>
-        <Pattern
-          id={`wavePattern-${uniqueId}`}
-          x="0"
-          y={svgHeight - fillHeight}
-          width={waveWidth}
-          height={waveHeight}
-          patternUnits="userSpaceOnUse"
-        >
-          <G transform={`translate(${waveTranslateX}, 0)`}>
-            <G>
-              {wavePaths.map((wavePath, idx) => (
-                <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-              ))}
-            </G>
-            <G transform={`translate(${waveWidth - 1}, 0)`}>
-              {wavePaths.map((wavePath, idx) => (
-                <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-              ))}
-            </G>
-          </G>
-        </Pattern>
-
-        <ClipPath id={`percentageClip-${uniqueId}`}>
-          <Rect x="0" y={svgHeight - fillHeight} width={svgWidth} height={fillHeight} />
-        </ClipPath>
-
-        <Mask id={`iconMask-${uniqueId}`}>
-          <Rect width={svgWidth} height={svgHeight} fill="black" />
-          {iconPathData.map((pathData, idx) => (
-            <Path
-              key={idx}
-              d={pathData.d}
-              fill="white"
-              stroke="white"
-              strokeWidth={pathData.strokeWidth}
-            />
-          ))}
-        </Mask>
-      </Defs>
-
-      {/* Main icon outline */}
-      {iconPathData.map((pathData, idx) => (
-        <Path
-          key={`icon-${idx}`}
-          d={pathData.d}
-          stroke={pathData.stroke}
-          fill={pathData.fill}
-          strokeWidth={pathData.strokeWidth}
-        />
-      ))}
-
-      {/* Animated wave fill */}
-      <G mask={`url(#iconMask-${uniqueId})`} clipPath={`url(#percentageClip-${uniqueId})`}>
-        <Rect
-          x="0"
-          y={svgHeight - fillHeight}
-          width={svgWidth}
-          height={fillHeight}
-          fill={`url(#wavePattern-${uniqueId})`}
-        />
-      </G>
-    </Svg>
-  );
-};
-
 export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) => {
   const theme = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { profile } = useUserStore();
 
   const getSystemLabel = (iconKey: string): string => {
@@ -197,31 +38,82 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
 
   const [showAllSystems, setShowAllSystems] = useState(false);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
-  const [completions, setCompletions] = useState<RecommendationCompletion[]>([]);
+  const actionCompletions = useRecommendationExperienceStore(
+    state => state.actionCompletions,
+  );
+  const checkIns = useRecommendationExperienceStore(
+    state => state.checkIns,
+  );
+  const restTimers = useRecommendationExperienceStore(
+    state => state.restTimers,
+  );
+  const dailyMoments = useRecommendationExperienceStore(
+    state => state.dailyMoments,
+  );
 
   useEffect(() => {
+    if (DEV_LOCAL_SESSION) return;
     SummaryService.getSummary()
-      .then(data => {
-        setSummary(data);
-        return data;
-      })
-      .then(data => {
-        if (data?.snapshot_id) {
-          return RecommendationCompletionService.getCompletions(data.snapshot_id);
-        }
-      })
-      .then(comp => { if (comp) setCompletions(comp); })
+      .then(setSummary)
       .catch(() => {});
   }, []);
 
-  const weekDates = getCurrentWeekDates();
-
-  const checkinDays = (summary?.daily_checkins ?? []).filter(d => weekDates.includes(d)).length;
-  const exposureDays = (summary?.exposure_history?.items ?? []).filter(item => weekDates.includes(item.date)).length;
-  const taskDays = (summary?.task_completions ?? []).filter(tc => weekDates.includes(tc.date) && tc.tasks.length > 0).length;
-
-  const babyDelta = Math.abs(Math.round(summary?.risks_delta?.baby ?? 0));
-  const perItemDelta = Math.round(babyDelta / 3);
+  const identity = useMemo(
+    () => ({
+      backendUserId: profile.backendUserId,
+      email: profile.email,
+    }),
+    [profile.backendUserId, profile.email],
+  );
+  const journeySummary = useMemo(
+    () =>
+      loadWeeklySummaryExperience({
+        identity,
+        pregnancyWeek: activeWeek,
+        endDate: formatLocalDate(new Date()),
+        milestone:
+          (summary?.week_info?.week === activeWeek
+            ? summary.week_info.text
+            : undefined) ??
+          t(
+            `home.week_desc_w${String(activeWeek).padStart(2, '0')}`,
+          ),
+        backendSummary: summary,
+        localData: {
+          actionCompletions,
+          checkIns,
+          dailyMoments,
+          restTimers,
+        },
+      }),
+    [
+      actionCompletions,
+      checkIns,
+      dailyMoments,
+      restTimers,
+      t,
+      activeWeek,
+      identity,
+      summary,
+    ],
+  );
+  const behaviourDays =
+    journeySummary.domainParticipation.behaviour;
+  const activityDays =
+    journeySummary.domainParticipation.activity;
+  const dietDays = journeySummary.domainParticipation.diet;
+  const wellbeingDays =
+    journeySummary.domainParticipation.wellbeing;
+  const isCareContext = journeySummary.dataMode === 'careContext';
+  const localizedMilestone = t(
+    `home.week_desc_w${String(activeWeek).padStart(2, '0')}`,
+  );
+  const milestoneText =
+    i18n.resolvedLanguage === 'en' &&
+    summary?.week_info?.week === activeWeek &&
+    summary.week_info.text
+      ? summary.week_info.text
+      : localizedMilestone;
 
   // Determine focus system: pick the one with the highest percentage
   const focusSystem = circleIcons.reduce<typeof circleIcons[0] | null>((currentMax, item) => {
@@ -233,12 +125,6 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
 
   const rawIconKey = (focusSystem?.iconPath || '').replace('.svg', '');
   const focusLabel = getSystemLabel(rawIconKey);
-  const focusPercentage = focusSystem?.percentage ?? 0;
-  const progressToday = 4; // Placeholder daily change for UI
-
-  const focusSvgKey = (focusSystem?.iconPath || 'heartSystem.svg') as keyof typeof SVG_ICONS;
-  const focusSvgXml = SVG_ICONS[focusSvgKey] || SVG_ICONS['heartSystem.svg'];
-
   // Sort all systems by percentage (descending) for list display
   const sortedSystems = [...circleIcons].sort(
     (a, b) => (b.percentage ?? 0) - (a.percentage ?? 0)
@@ -275,6 +161,9 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       paddingTop: spacing('lg'),
       paddingBottom: spacing('xl'),
     },
+    scrollContent: {
+      paddingBottom: 120,
+    },
     statusCard: {
       backgroundColor: '#FFE9D6',
       borderRadius: 16,
@@ -301,6 +190,19 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       color: theme.colors.textSecondary,
       lineHeight: responsiveUtils.getFixedLineHeight(13, 20),
       marginBottom: spacing('lg'),
+    },
+    emptySystemsText: {
+      fontSize: responsiveUtils.getFixedFontSize(12),
+      fontFamily: theme.typography.fontFamily.medium,
+      color: theme.colors.orange800,
+      lineHeight: responsiveUtils.getFixedLineHeight(12, 18),
+    },
+    referenceNote: {
+      fontSize: responsiveUtils.getFixedFontSize(11),
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: responsiveUtils.getFixedLineHeight(11, 16),
+      marginTop: spacing('sm'),
     },
     cardBottomRow: {
       flexDirection: 'row',
@@ -400,7 +302,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       shadowOpacity: 0.08,
       shadowRadius: 4,
       elevation: 2,
-      marginBottom:100
+      marginBottom: spacing('xl'),
     },
     actionCardHeader: {
       flexDirection: 'column',
@@ -483,13 +385,14 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
         {/* Systems Development Card */}
         <View style={styles.statusCard}>
           <Text style={styles.cardTitle} allowFontScaling={false}>{t('baby.development_systems')}</Text>
 
           <Text style={styles.cardDescription} allowFontScaling={false}>
-            {summary?.week_info?.text || weekData?.description || ''}
+            {milestoneText}
           </Text>
 
           {/* Systems list */}
@@ -499,15 +402,16 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 const iconKey = (system.iconPath || 'heartSystem.svg') as keyof typeof SVG_ICONS;
                 const svgXml = SVG_ICONS[iconKey] || SVG_ICONS['heartSystem.svg'];
                 const percentage = system.percentage ?? 0;
-                const rawIconKey = (system.iconPath || '').replace('.svg', '');
-                const systemLabel = getSystemLabel(rawIconKey);
+                const systemIconKey = (system.iconPath || '').replace('.svg', '');
+                const systemLabel = getSystemLabel(systemIconKey);
 
                 return (
                   <View key={system.index} style={styles.systemRow}>
                     <View style={styles.systemIconCircle}>
-                      <SystemIconWithWave
+                      <SystemProgressIcon
                         svgXml={svgXml}
-                        size={22}
+                        width={22}
+                        height={22}
                         percentage={percentage}
                         uniqueId={`system-${system.index}`}
                       />
@@ -534,6 +438,16 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
             </View>
           )}
 
+          {visibleSystems.length === 0 ? (
+            <Text style={styles.emptySystemsText}>
+              {t('baby.systems_begin_later')}
+            </Text>
+          ) : (
+            <Text style={styles.referenceNote}>
+              {t('baby.reference_note')}
+            </Text>
+          )}
+
           {sortedSystems.length > 3 && (
             <TouchableOpacity
               onPress={() => setShowAllSystems((prev) => !prev)}
@@ -541,7 +455,11 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
               style={styles.showMoreButton}
             >
               <Text style={styles.showMoreText} allowFontScaling={false}>
-                {showAllSystems ? 'Show less' : `Show more (${sortedSystems.length - 3} more)`}
+                {showAllSystems
+                  ? t('baby.show_less')
+                  : t('baby.show_more_count', {
+                      count: sortedSystems.length - 3,
+                    })}
               </Text>
             </TouchableOpacity>
           )}
@@ -555,11 +473,27 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
               <SvgXml xml={BABY_RISK_SVG} width={45} height={45} />
             </View>
             <View style={styles.actionCardHeaderText}>
-              <Text style={styles.actionCardTitle} allowFontScaling={false}>{t('baby.actions_title')}</Text>
-              <Text style={styles.actionCardTitle} numberOfLines={1} allowFontScaling={false}>
-                {t('baby.protection_by')}<Text style={{ color: theme.colors.orange500 }} allowFontScaling={false}>+{babyDelta}%</Text>
+              <Text style={styles.actionCardTitle} allowFontScaling={false}>
+                {t(
+                  isCareContext
+                    ? 'baby.care_context_title'
+                    : 'baby.actions_title',
+                )}
               </Text>
-              <Text style={styles.actionCardSubtitle} allowFontScaling={false}>{t('baby.mainly_supporting', { system: focusLabel.toLowerCase() })}</Text>
+              <Text style={styles.actionCardTitle} numberOfLines={1} allowFontScaling={false}>
+                {t('baby.protective_days', {
+                  days: journeySummary.activeDays,
+                })}
+              </Text>
+              <Text style={styles.actionCardSubtitle} allowFontScaling={false}>
+                {isCareContext
+                  ? t('baby.care_context_body')
+                  : focusSystem
+                  ? t('baby.current_milestone_focus', {
+                      system: focusLabel.toLowerCase(),
+                    })
+                  : t('baby.actions_build_pattern')}
+              </Text>
             </View>
           </View>
 
@@ -570,11 +504,8 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 <SvgXml xml={BEHAVIOUR_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
-                <Text style={styles.actionItemTitle} allowFontScaling={false}>{checkinDays}/7 Days</Text>
-                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_habits', { days: checkinDays })}</Text>
-              </View>
-              <View style={styles.actionItemBadge}>
-                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+{perItemDelta}%</Text>
+                <Text style={styles.actionItemTitle} allowFontScaling={false}>{t('baby.days_of_seven', { days: behaviourDays })}</Text>
+                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_behaviour')}</Text>
               </View>
             </View>
 
@@ -584,11 +515,8 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 <SvgXml xml={RUNNING_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
-                <Text style={styles.actionItemTitle} allowFontScaling={false}>{exposureDays}/7 Days</Text>
-                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_walks')}</Text>
-              </View>
-              <View style={styles.actionItemBadge}>
-                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+{perItemDelta}%</Text>
+                <Text style={styles.actionItemTitle} allowFontScaling={false}>{t('baby.days_of_seven', { days: activityDays })}</Text>
+                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_activity')}</Text>
               </View>
             </View>
 
@@ -598,11 +526,23 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
                 <SvgXml xml={DIET_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
-                <Text style={styles.actionItemTitle} allowFontScaling={false}>{taskDays}/7 Days</Text>
-                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_hydration')}</Text>
+                <Text style={styles.actionItemTitle} allowFontScaling={false}>{t('baby.days_of_seven', { days: dietDays })}</Text>
+                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_diet')}</Text>
               </View>
-              <View style={styles.actionItemBadge}>
-                <Text style={styles.actionItemBadgeText} allowFontScaling={false}>+{perItemDelta}%</Text>
+            </View>
+
+            {/* Wellbeing Action */}
+            <View style={[styles.actionItem, { backgroundColor: '#F6F0FA' }]}>
+              <View style={[styles.actionItemIconContainer, { backgroundColor: '#E7D9F0' }]}>
+                <SvgXml
+                  xml={SVG_ICONS['brainSystem.svg']}
+                  width={20}
+                  height={20}
+                />
+              </View>
+              <View style={styles.actionItemContent}>
+                <Text style={styles.actionItemTitle} allowFontScaling={false}>{t('baby.days_of_seven', { days: wellbeingDays })}</Text>
+                <Text style={styles.actionItemDescription} allowFontScaling={false}>{t('baby.action_wellbeing')}</Text>
               </View>
             </View>
           </View>

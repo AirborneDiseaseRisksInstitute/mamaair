@@ -1,5 +1,19 @@
 import api from './client';
 
+export interface SymptomChecklistItem {
+  id: number;
+  name: string;
+}
+
+export interface SymptomChecklistResponse {
+  symptoms: SymptomChecklistItem[];
+}
+
+export interface SymptomSelectionResponse {
+  symptom_ids: number[];
+  recorded_at?: string;
+}
+
 export const SymptomsService = {
   getBabyChecklist: async () => {
     const response = await api.get('/symptoms/baby/checklist/');
@@ -18,19 +32,25 @@ export const SymptomsService = {
     return response.data;
   },
 
-  getMommyChecklist: async () => {
+  getMommyChecklist: async (): Promise<SymptomChecklistResponse> => {
     const response = await api.get('/symptoms/mommy/checklist/');
     return response.data;
   },
 
-  getMommySelection: async (date?: string, recorded_at?: string) => {
+  getMommySelection: async (
+    date?: string,
+    recorded_at?: string,
+  ): Promise<SymptomSelectionResponse> => {
     const response = await api.get('/symptoms/mommy/selection/', { 
       params: { date, recorded_at } 
     });
     return response.data;
   },
 
-  saveMommySelection: async (data: any) => {
+  saveMommySelection: async (data: {
+    symptom_ids: number[];
+    recorded_at: string;
+  }): Promise<SymptomSelectionResponse> => {
     const response = await api.post('/symptoms/mommy/selection/', data);
     return response.data;
   },

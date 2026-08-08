@@ -16,6 +16,7 @@ import { faTimes } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing } from '../../theme';
 import { Button } from './Button';
 import { responsiveUtils } from '../../utils/responsiveUtils';
+import { useTranslation } from 'react-i18next';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -31,6 +32,7 @@ export const UpgradeSubscription: React.FC<UpgradeSubscriptionProps> = ({
   onUpgrade,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
 
@@ -125,16 +127,16 @@ export const UpgradeSubscription: React.FC<UpgradeSubscriptionProps> = ({
           </View>
 
           <Text style={[styles.title, { color: theme.colors.orange500 }]} allowFontScaling={false}>
-            Upgrade to premium
+            {t('subscription.title')}
           </Text>
 
           <Text style={[styles.description, { color: theme.colors.textSecondary }]} allowFontScaling={false}>
-            Unlock premium tools and resources for your pregnancy journey
+            {t('subscription.description')}
           </Text>
 
           <View style={styles.buttonContainer}>
             <Button
-              title="Upgrade"
+              title={t('subscription.upgrade')}
               onPress={() => {
                 onUpgrade?.();
                 onClose();
@@ -148,7 +150,7 @@ export const UpgradeSubscription: React.FC<UpgradeSubscriptionProps> = ({
             activeOpacity={0.7}
           >
             <Text style={[styles.noThanksText, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-              No thanks
+              {t('subscription.decline')}
             </Text>
           </TouchableOpacity>
         </Animated.View>

@@ -5,7 +5,7 @@ import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, Radi
 import { useUserStore } from '../../../store/useUserStore';
 import { useMetaChoices } from '../../../hooks/useMetaChoices';
 import { useTranslation } from 'react-i18next';
-import { fs, s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -39,7 +39,7 @@ export const IntroStep10: React.FC<IntroStep10Props> = ({ onNext, onBack, onSkip
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <BackButton onPress={onBack} />
-      <ProgressBar progress={0.714} />
+      <ProgressBar progress={0.75} />
         <View style={styles.contentWrapper}>
           <IntroTitleBox title={t('intro.step10_title')} onLayout={setTitleBoxCenterY} />
           <Text style={styles.questionText} allowFontScaling={false}>{t('intro.step10_select')}</Text>

@@ -17,6 +17,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing, radius } from '../../theme';
 import { ms, fs, vs } from '../../utils/responsive';
+import { useTranslation } from 'react-i18next';
 
 export interface InputRef {
   focus: () => void;
@@ -48,6 +49,7 @@ const InputComponent = forwardRef<InputRef, InputProps>(({
   ...textInputProps
 }, ref) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
   const [emailValidation, setEmailValidation] = useState<'valid' | 'invalid' | null>(null);
   
@@ -265,7 +267,7 @@ const InputComponent = forwardRef<InputRef, InputProps>(({
       {/* Error Message */}
       {isEmail && emailValidation === 'invalid' && value && (
         <Text style={styles.errorText} allowFontScaling={false}>
-          Invalid email address. Please enter a valid email.
+          {t('validation.invalid_email')}
         </Text>
       )}
     </View>

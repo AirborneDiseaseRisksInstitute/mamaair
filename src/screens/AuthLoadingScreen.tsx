@@ -1,14 +1,21 @@
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useAuthStore } from '../store/useAuthStore';
-import { useUserStore } from '../store/useUserStore';
+import { userStorage, useUserStore } from '../store/useUserStore';
 import { AuthService } from '../services/api/AuthService';
 import { LifestyleService } from '../services/api/LifestyleService';
 import { ProfileService } from '../services/api/ProfileService';
 import { getDeviceTimezone } from '../utils/timezoneUtils';
 import { formatLocalDate } from '../utils/dateUtils';
 import { useTheme } from '../theme';
-import { DEV_BYPASS_AUTH, DEV_EMAIL, DEV_PASSWORD } from '../config/dev';
+import {
+  DEV_LOCAL_SESSION,
+  DEV_LOCAL_SESSION_RESET_TOKEN,
+} from '../config/dev';
+import { shouldReplaceLocalProfileForAuthenticatedUser } from '../services/auth/AuthSessionIdentity';
+
+const DEV_LOCAL_RESET_APPLIED_KEY =
+  'dev-local-session-reset-token-applied';
 
 interface AuthLoadingScreenProps {
   onComplete: (target: 'Home' | 'Intro' | 'Auth') => void;
@@ -16,25 +23,34 @@ interface AuthLoadingScreenProps {
 
 export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete }) => {
   const theme = useTheme();
-  const { token, logout, setTokens } = useAuthStore();
-  const { setProfile, setAgreementAccepted } = useUserStore();
+  const { token, logout } = useAuthStore();
+  const { clearUser, setProfile, setAgreementAccepted } = useUserStore();
 
   useEffect(() => {
     const checkAuthStatus = async () => {
-      let activeToken = token;
+      if (DEV_LOCAL_SESSION) {
+        const appliedResetToken = userStorage.getNumber(
+          DEV_LOCAL_RESET_APPLIED_KEY,
+        );
 
-      // DEV MODE: auto-login to bypass the login UI (useful for Genymotion)
-      if (DEV_BYPASS_AUTH && !activeToken) {
-        try {
-          const response = await AuthService.login(DEV_EMAIL, DEV_PASSWORD);
-          setTokens(response.access, response.refresh);
-          activeToken = response.access;
-        } catch (e) {
-          console.error('[DEV] Auto-login failed:', e);
-          onComplete('Auth');
-          return;
+        if (appliedResetToken !== DEV_LOCAL_SESSION_RESET_TOKEN) {
+          clearUser();
+          userStorage.set(
+            DEV_LOCAL_RESET_APPLIED_KEY,
+            DEV_LOCAL_SESSION_RESET_TOKEN,
+          );
         }
+
+        const localProfile = useUserStore.getState().profile;
+        const isLocalOnboardingComplete =
+          localProfile.agreementAccepted &&
+          localProfile.pregnancyWeekConfirmed;
+
+        onComplete(isLocalOnboardingComplete ? 'Home' : 'Intro');
+        return;
       }
+
+      let activeToken = token;
 
       // 1. Check for token
       if (!activeToken) {
@@ -64,6 +80,11 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         // Profile fields — API values are stored directly, no enum conversion needed
         const mappedProfile = {
             ...profileData,
+            backendUserId:
+              profileData.id !== undefined && profileData.id !== null
+                ? String(profileData.id)
+                : undefined,
+            email: profileData.email,
             pregnancyWeek: profileData.week_of_pregnancy ?? profileData.pregnancyWeek,
             birthday: profileData.date_of_birth ?? profileData.birthday,
             // country, language — stored as API values (NG, KE, en, fr, etc.)
@@ -83,7 +104,21 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         };
         
         // Get current local profile state non-reactively to avoid loops
-        const currentProfile = useUserStore.getState().profile;
+        let currentProfile = useUserStore.getState().profile;
+
+        // A local profile is only safe to reuse when it is already bound to
+        // the authenticated backend user. This prevents a previous local/dev
+        // session, or another account on the same device, from leaking into
+        // the current user's onboarding and Today data.
+        if (
+          shouldReplaceLocalProfileForAuthenticatedUser(
+            currentProfile.backendUserId,
+            mappedProfile.backendUserId,
+          )
+        ) {
+          clearUser();
+          currentProfile = useUserStore.getState().profile;
+        }
 
         // 3. Smart Merge & Sync Strategy
         // We want to trust LOCAL data if it exists, because the user might have just entered it 
@@ -100,6 +135,8 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         };
 
         updateIfMissing('name', mappedProfile.name);
+        updateIfMissing('backendUserId', mappedProfile.backendUserId);
+        updateIfMissing('email', mappedProfile.email);
         updateIfMissing('birthday', mappedProfile.birthday);
         updateIfMissing('height', mappedProfile.height);
         updateIfMissing('weight', mappedProfile.weight_pre_pregnancy || mappedProfile.weight);
@@ -145,15 +182,28 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         // done offline, the local-only data would otherwise never reach the
         // server — and after a reinstall the user would be forced through
         // onboarding again because the server can't return those fields.
+        const serverPregnancyWeek =
+          profileData?.week_of_pregnancy ?? profileData?.pregnancyWeek;
         const serverMissingProfile =
-          !profileData?.week_of_pregnancy || !profileData?.timezone || !profileData?.name;
+          !serverPregnancyWeek ||
+          !profileData?.timezone ||
+          !profileData?.name ||
+          Boolean(
+            mergedProfile.pregnancyWeekConfirmed &&
+              mergedProfile.pregnancyWeek &&
+              Number(serverPregnancyWeek) !== mergedProfile.pregnancyWeek,
+          );
         const serverMissingLifestyle =
           !lifestyleData?.work_type ||
           !lifestyleData?.cooking_method ||
           !lifestyleData?.ventilation_level ||
           !lifestyleData?.time_spent ||
           !lifestyleData?.time_of_day;
-        const hasLocalData = !!(mergedProfile.name && mergedProfile.pregnancyWeek);
+        const hasLocalData = !!(
+          mergedProfile.name &&
+          mergedProfile.pregnancyWeek &&
+          mergedProfile.pregnancyWeekConfirmed
+        );
 
         if (hasLocalData && (serverMissingProfile || serverMissingLifestyle)) {
           // Best-effort and non-blocking: navigation proceeds regardless, and a
@@ -212,6 +262,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         // Check if user has completed all necessary onboarding steps (including new fields)
         const isOnboardingComplete = 
             mergedProfile.pregnancyWeek &&
+            mergedProfile.pregnancyWeekConfirmed &&
             mergedProfile.timezone &&
             mergedProfile.timeSpent &&
             mergedProfile.timeOfDay &&
@@ -248,6 +299,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         const local = useUserStore.getState().profile;
         const localOnboardingComplete =
           local?.pregnancyWeek &&
+          local?.pregnancyWeekConfirmed &&
           local?.timezone &&
           local?.timeSpent &&
           local?.timeOfDay &&

@@ -25,8 +25,6 @@ interface RemindersScreenProps {
 const REMINDER_CARDS = [
   {
     id: 'behavior',
-    title: 'Behavior',
-    description: 'Charcoal smoke peaks between 18:00-19:00. Improve airflow or take a break outdoors.',
     backgroundColor: '#FBEBEB',
     iconBgColor: '#FFDEE5',
     editCircleBg: '#F5D5D5',
@@ -34,8 +32,6 @@ const REMINDER_CARDS = [
   },
   {
     id: 'activity',
-    title: 'Activity',
-    description: '06:30-07:15 walk: 15 high-risk minutes (dust pockets along road).',
     backgroundColor: '#FDFCE8',
     iconBgColor: '#FFEABD',
     editCircleBg: '#F5F0C4',
@@ -43,8 +39,6 @@ const REMINDER_CARDS = [
   },
   {
     id: 'diet',
-    title: 'Diet',
-    description: '06:30-07:15 walk: 15 high-risk minutes (dust pockets along road).',
     backgroundColor: '#E8FCF0',
     iconBgColor: '#B9FAD7',
     editCircleBg: '#C8F0DC',
@@ -81,13 +75,17 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
   };
 
   const handleReminderConfirm = (hour: number, minute: number) => {
-    const titleForToast = reminderTaskTitle ?? 'Reminder';
+    const titleForToast = reminderTaskTitle ?? t('reminders.title');
     setReminderPickerVisible(false);
     setReminderTaskTitle(null);
     showToast({
       type: 'success',
       title: titleForToast,
-      message: `Reminder set for ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}.`,
+      message: t('today.reminder_set', {
+        time: `${hour.toString().padStart(2, '0')}:${minute
+          .toString()
+          .padStart(2, '0')}`,
+      }),
     });
   };
 
@@ -229,7 +227,15 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
                   { backgroundColor: card.editCircleBg },
                 ]}
                 activeOpacity={0.7}
-                onPress={() => openReminderPicker(card.title)}
+                onPress={() =>
+                  openReminderPicker(
+                    card.id === 'behavior'
+                      ? t('today.behaviour')
+                      : card.id === 'activity'
+                        ? t('today.activity')
+                        : t('today.diet'),
+                  )
+                }
               >
                 <FontAwesomeIcon
                   icon={faPenToSquare as any}
@@ -239,7 +245,9 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
               </TouchableOpacity>
             </View>
             <Text style={styles.cardDescription} allowFontScaling={false}>
-              {adviceByCategory[card.id] ?? adviceByCategory['general'] ?? card.description}
+              {adviceByCategory[card.id] ??
+                adviceByCategory.general ??
+                t(`reminders.${card.id}_description`)}
             </Text>
           </View>
         ))}

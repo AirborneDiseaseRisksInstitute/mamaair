@@ -25,7 +25,6 @@ import {
   isErrorWithCode,
   isSuccessResponse,
 } from '@react-native-google-signin/google-signin';
-import { DEV_MODE } from '../../config/dev';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faGlobe } from '@fortawesome/free-solid-svg-icons';
 
@@ -51,7 +50,6 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [devLoading, setDevLoading] = useState(false);
   const setTokens = useAuthStore(state => state.setTokens);
   const { setEmail: setEmailStore, setLanguage, profile } = useUserStore();
   const [showLangSheet, setShowLangSheet] = useState(true);
@@ -239,21 +237,6 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
       color: theme.colors.textPrimary,
       marginLeft: spacing('md'),
     },
-    devLoginButton: {
-      marginTop: spacing('sm'),
-      paddingVertical: 10,
-      paddingHorizontal: spacing('md'),
-      borderRadius: 8,
-      borderWidth: 1,
-      borderStyle: 'dashed',
-      borderColor: '#FF6900',
-      alignItems: 'center',
-    },
-    devLoginText: {
-      fontSize: 13,
-      fontFamily: theme.typography.fontFamily.medium,
-      color: '#FF6900',
-    },
     signUpContainer: {
       alignItems: 'center',
       marginTop: spacing('sm'),
@@ -301,29 +284,6 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
       } finally {
         setLoading(false);
       }
-    }
-  };
-
-  // DEV ONLY — remove before production
-  const handleDevLogin = async () => {
-    const DEV_EMAIL = 'emulator@dev.local';
-    const DEV_PASS = 'EmulatorDev2026!';
-    setDevLoading(true);
-    try {
-      let response = await AuthService.login(DEV_EMAIL, DEV_PASS).catch(() => null);
-      if (!response?.access) {
-        await AuthService.register(DEV_EMAIL, DEV_PASS).catch(() => {});
-        response = await AuthService.login(DEV_EMAIL, DEV_PASS);
-      }
-      if (response?.access && response?.refresh) {
-        setTokens(response.access, response.refresh);
-        setEmailStore(DEV_EMAIL);
-        onLogin?.(DEV_EMAIL, DEV_PASS);
-      }
-    } catch {
-      showToast({ type: 'error', title: 'Dev login failed', message: 'Check API connectivity.' });
-    } finally {
-      setDevLoading(false);
     }
   };
 
@@ -455,20 +415,6 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
               <GoogleIcon />
               <Text style={styles.googleButtonText} allowFontScaling={false}>{t('auth.continue_with_google')}</Text>
             </TouchableOpacity>
-
-            {/* ⚠️ DEV ONLY — controlled by DEV_ENABLED in src/config/dev.ts */}
-            {DEV_MODE && (
-              <TouchableOpacity
-                style={styles.devLoginButton}
-                onPress={handleDevLogin}
-                activeOpacity={0.7}
-                disabled={devLoading}
-              >
-                <Text style={styles.devLoginText} allowFontScaling={false}>
-                  {devLoading ? 'Logging in...' : '[DEV] Emulator Login'}
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       </ScrollView>

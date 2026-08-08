@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faTimes } from '@fortawesome/free-solid-svg-icons';
+import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -18,6 +19,7 @@ interface AdsScreenProps {
 }
 
 export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
+  const { t } = useTranslation();
   const [timeLeft, setTimeLeft] = useState(3);
   const [canClose, setCanClose] = useState(false);
 
@@ -62,7 +64,7 @@ export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
         activeOpacity={canClose ? 0.7 : 1}
       >
         <View style={styles.timerContainer}>
-          <Text style={styles.timerText} allowFontScaling={false}>{timeLeft}s</Text>
+          <Text style={styles.timerText} allowFontScaling={false}>{timeLeft}{t('common.seconds_short')}</Text>
         </View>
         <View style={styles.closeIcon}>
           <FontAwesomeIcon

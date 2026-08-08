@@ -5,7 +5,10 @@ export { BottomSheet } from './BottomSheet';
 export { DatePicker } from './DatePicker';
 export { HeightWeightPicker } from './HeightWeightPicker';
 export { ReminderTimePicker } from './ReminderTimePicker';
-export { WeekCycleView } from './WeekCycleView';
+export {
+  WeekCycleView,
+  SystemProgressIcon,
+} from './WeekCycleView';
 export { FixedButtonContainer } from './FixedButtonContainer';
 export { OrangeHalo } from './OrangeHalo';
 export { BackButton } from './BackButton';
@@ -30,4 +33,3 @@ export { AccessLocationBottomSheet } from './AccessLocationBottomSheet';
 export { NotificationTimeSettings } from './NotificationTimeSettings';
 export { TransitionLoader } from './TransitionLoader';
 export { LanguagePickerSheet } from './LanguagePickerSheet';
-

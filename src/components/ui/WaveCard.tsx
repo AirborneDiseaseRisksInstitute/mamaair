@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
   Animated,
-  Easing,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
@@ -16,95 +15,34 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing } from '../../theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-// Calculate card width: screen width - content padding (left/right) - container padding (left/right) - gaps between cards
-const CARD_WIDTH = (SCREEN_WIDTH - spacing('md') * 2 - 16 * 2 - 8 * 2) / 3;
-const CARD_HEIGHT = CARD_WIDTH * 1.4;
-
-// Generate smooth wave path using cubic bezier curves
-const generateSmoothWavePath = (
-  width: number,
-  height: number,
-  waveHeight: number,
-  phase: number,
-  layerOffset: number = 0
-): string => {
-  const waveLength = width * 0.8;
-  const startY = height - waveHeight - layerOffset;
-  
-  // Create smooth wave using cubic bezier curves
-  const amplitude = 15 + layerOffset * 0.5;
-  
-  // Calculate wave points with phase offset
-  const x1 = phase * waveLength;
-  const x2 = x1 + waveLength * 0.25;
-  const x3 = x1 + waveLength * 0.5;
-  const x4 = x1 + waveLength * 0.75;
-  const x5 = x1 + waveLength;
-  
-  // Normalize x positions to create seamless loop
-  const normalizeX = (x: number) => ((x % waveLength) + waveLength) % waveLength - waveLength;
-  
-  const points = [];
-  const numWaves = 4;
-  
-  for (let i = -1; i < numWaves; i++) {
-    const baseX = i * waveLength * 0.5 + phase * width;
-    const normalizedBaseX = baseX - Math.floor(baseX / (width * 2)) * (width * 2);
-    
-    const y1 = startY + Math.sin((normalizedBaseX / width) * Math.PI * 2) * amplitude;
-    const y2 = startY + Math.sin(((normalizedBaseX + waveLength * 0.25) / width) * Math.PI * 2) * amplitude;
-    
-    if (i === -1) {
-      points.push(`M ${normalizedBaseX - width} ${y1}`);
-    }
-    
-    // Smooth bezier curve
-    const cpX1 = normalizedBaseX + waveLength * 0.125 - width;
-    const cpY1 = y1 + (y2 - y1) * 0.5 - amplitude * 0.3;
-    const cpX2 = normalizedBaseX + waveLength * 0.25 - waveLength * 0.125 - width;
-    const cpY2 = y2 - (y2 - y1) * 0.5 + amplitude * 0.3;
-    
-    points.push(`C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${normalizedBaseX + waveLength * 0.25 - width} ${y2}`);
-  }
-  
-  // Close the path
-  points.push(`L ${width * 2} ${height}`);
-  points.push(`L ${-width} ${height}`);
-  points.push('Z');
-  
-  return points.join(' ');
-};
-
-// Simplified wave generation for seamless loop
+// Build two identical wave periods. The strip can then move by exactly one
+// card width and loop without a visible seam.
 const generateWave = (
   width: number,
   height: number,
   baseY: number,
   amplitude: number,
-  phase: number
+  phase: number,
 ): string => {
   const points: string[] = [];
-  const segments = 60;
-  const waveFrequency = 2; // Number of complete waves across the width
-  
+  const segments = 32;
+
   for (let i = 0; i <= segments; i++) {
-    const x = (i / segments) * width * 2 - width;
-    // Phase directly controls the wave position for seamless loop
-    const waveX = (x / width) * Math.PI * waveFrequency + phase;
+    const x = (i / segments) * width * 2;
+    const waveX = (x / width) * Math.PI * 2 + phase;
     const y = baseY + Math.sin(waveX) * amplitude;
-    
+
     if (i === 0) {
       points.push(`M ${x} ${y}`);
     } else {
       points.push(`L ${x} ${y}`);
     }
   }
-  
-  points.push(`L ${width} ${height}`);
-  points.push(`L ${-width} ${height}`);
+
+  points.push(`L ${width * 2} ${height}`);
+  points.push(`L 0 ${height}`);
   points.push('Z');
-  
+
   return points.join(' ');
 };
 
@@ -114,6 +52,10 @@ interface WaveCardProps {
   type: CardType;
   percentage: number;
   label: string;
+  value?: string;
+  compact?: boolean;
+  animationProgress: Animated.Value;
+  availableWidth?: number;
 }
 
 const CARD_CONFIGS = {
@@ -150,88 +92,100 @@ export const WaveCard: React.FC<WaveCardProps> = ({
   type,
   percentage,
   label,
+  value,
+  compact = false,
+  animationProgress,
+  availableWidth,
 }) => {
   const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
   const config = CARD_CONFIGS[type];
-  const animValue = useRef(new Animated.Value(0)).current;
-  const [phase, setPhase] = useState(0);
-  
-  // Single animation driving all waves - seamless loop
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.timing(animValue, {
-        toValue: 1,
-        duration: 12000, // Slower animation
-        easing: Easing.linear,
-        useNativeDriver: false,
-      })
-    );
-    
-    animation.start();
-    
-    const listener = animValue.addListener(({ value }) => {
-      // Use Math.PI * 2 for seamless sine wave loop
-      setPhase(value * Math.PI * 2);
-    });
-    
-    return () => {
-      animation.stop();
-      animValue.removeListener(listener);
-    };
-  }, []);
-  
+  // Page padding + parent-card padding + two gaps between three cards.
+  const cardWidth = availableWidth
+    ? (availableWidth - spacing('sm') * 2) / 3
+    : (screenWidth -
+        spacing('md') * 2 -
+        16 * 2 -
+        spacing('sm') * 2) /
+      3;
+
+  const cardHeight = cardWidth * (compact ? 1.08 : 1.4);
+
   // Calculate base height from percentage
-  const baseWaveHeight = (CARD_HEIGHT * percentage) / 100;
-  
-  // Generate wave paths with different offsets but same phase
+  const baseWaveHeight = (cardHeight * percentage) / 100;
+
+  const waveTranslateX = useMemo(
+    () =>
+      animationProgress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, -cardWidth],
+      }),
+    [animationProgress, cardWidth],
+  );
+
+  // These paths are recalculated only when the card geometry or data changes.
   const waveLayers = useMemo(() => {
     const layers = [];
-    const numLayers = 5;
-    
+    const numLayers = 3;
+    const paletteIndexes = [4, 2, 0];
+    const typePhase =
+      type === 'water' ? 0 : type === 'mood' ? 0.85 : 1.7;
+
     for (let i = 0; i < numLayers; i++) {
-      // Layer 0 is the back (lightest, highest), layer 4 is the front (darkest, lowest)
+      // Back layers sit slightly higher and lighter to create depth without
+      // visually overstating the actual percentage.
       const reverseIndex = numLayers - 1 - i;
-      const layerOffset = reverseIndex * 10; // Vertical offset - back layers are higher
-      const amplitudeVariation = 6 + reverseIndex * 1.5; // Back layers have more amplitude
-      const phaseOffset = reverseIndex * 0.2; // Small phase offset for depth effect
-      
-      const baseY = CARD_HEIGHT - baseWaveHeight - layerOffset;
+      const layerOffset = reverseIndex * 6;
+      const amplitudeVariation = 5 + reverseIndex * 1.6;
+      const phaseOffset = typePhase + reverseIndex * 0.34;
+
+      const baseY = cardHeight - baseWaveHeight - layerOffset;
       const path = generateWave(
-        CARD_WIDTH,
-        CARD_HEIGHT,
+        cardWidth,
+        cardHeight,
         baseY,
         amplitudeVariation,
-        phase + phaseOffset
+        phaseOffset,
       );
-      
-      // Use reversed color index: back layers get lighter colors
+
+      // Keep only a light, middle and dark semantic shade.
       layers.push({
         path,
-        color: config.colors.waves[numLayers - 1 - i],
+        color: config.colors.waves[paletteIndexes[i]],
       });
     }
-    
-    return layers; // Already in correct order: back to front
-  }, [phase, baseWaveHeight, config.colors.waves]);
+
+    return layers;
+  }, [
+    baseWaveHeight,
+    cardWidth,
+    cardHeight,
+    config.colors.waves,
+    type,
+  ]);
   
   const styles = useMemo(() => StyleSheet.create({
     container: {
-      width: CARD_WIDTH,
-      height: CARD_HEIGHT,
-      borderRadius: 8,
+      width: cardWidth,
+      height: cardHeight,
+      borderRadius: compact ? 14 : 8,
+      borderWidth: compact ? 1 : 0,
+      borderColor: compact
+        ? config.colors.iconBg
+        : 'transparent',
       backgroundColor: '#FFF',
       overflow: 'hidden',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
+      shadowOpacity: compact ? 0 : 0.08,
       shadowRadius: 8,
-      elevation: 3,
+      elevation: compact ? 0 : 3,
     },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       padding: spacing('sm'),
-      gap: 6,
+      gap: 5,
       zIndex: 10,
     },
     iconWrapper: {
@@ -243,9 +197,18 @@ export const WaveCard: React.FC<WaveCardProps> = ({
       alignItems: 'center',
     },
     label: {
-      fontSize: 12,
+      fontSize: compact ? 11 : 12,
       fontFamily: theme.typography.fontFamily.medium,
       color: theme.colors.textPrimary,
+    },
+    headerCopy: {
+      flex: 1,
+    },
+    value: {
+      marginTop: 1,
+      color: theme.colors.textSecondary,
+      fontFamily: theme.typography.fontFamily.regular,
+      fontSize: 9,
     },
     waveContainer: {
       position: 'absolute',
@@ -255,12 +218,12 @@ export const WaveCard: React.FC<WaveCardProps> = ({
       top: 0,
       overflow: 'hidden',
     },
-    svgContainer: {
+    waveStrip: {
       position: 'absolute',
       bottom: 0,
       left: 0,
-      width: CARD_WIDTH * 2,
-      height: CARD_HEIGHT,
+      width: cardWidth * 2,
+      height: cardHeight,
     },
     percentageContainer: {
       position: 'absolute',
@@ -269,11 +232,21 @@ export const WaveCard: React.FC<WaveCardProps> = ({
       zIndex: 10,
     },
     percentageText: {
-      fontSize: 18,
+      fontSize: compact ? 16 : 18,
       fontFamily: theme.typography.fontFamily.bold,
-      color: '#FFF',
+      color:
+        percentage < 12
+          ? config.colors.icon
+          : '#FFF',
     },
-  }), [theme, config]);
+  }), [
+    cardHeight,
+    cardWidth,
+    compact,
+    config,
+    percentage,
+    theme,
+  ]);
 
   return (
     <View style={styles.container}>
@@ -286,24 +259,51 @@ export const WaveCard: React.FC<WaveCardProps> = ({
             color={config.colors.icon}
           />
         </View>
-        <Text style={styles.label} allowFontScaling={false}>{label}</Text>
+        <View style={styles.headerCopy}>
+          <Text
+            numberOfLines={1}
+            style={styles.label}
+            allowFontScaling={false}
+          >
+            {label}
+          </Text>
+          {value ? (
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+              style={styles.value}
+              allowFontScaling={false}
+            >
+              {value}
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       {/* Wave animation - all layers in one SVG */}
       <View style={styles.waveContainer}>
-        <Svg 
-          width={CARD_WIDTH * 2} 
-          height={CARD_HEIGHT} 
-          style={styles.svgContainer}
+        <Animated.View
+          pointerEvents="none"
+          renderToHardwareTextureAndroid
+          shouldRasterizeIOS
+          style={[
+            styles.waveStrip,
+            {
+              transform: [{ translateX: waveTranslateX }],
+            },
+          ]}
         >
-          {waveLayers.map((layer, index) => (
-            <Path 
-              key={index}
-              d={layer.path} 
-              fill={layer.color}
-            />
-          ))}
-        </Svg>
+          <Svg width={cardWidth * 2} height={cardHeight}>
+            {waveLayers.map((layer, index) => (
+              <Path
+                key={index}
+                d={layer.path}
+                fill={layer.color}
+              />
+            ))}
+          </Svg>
+        </Animated.View>
       </View>
 
       {/* Percentage */}

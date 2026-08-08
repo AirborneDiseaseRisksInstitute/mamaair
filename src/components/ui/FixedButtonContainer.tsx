@@ -1,5 +1,11 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, Keyboard, Platform, Animated } from 'react-native';
+import {
+  StyleSheet,
+  Keyboard,
+  Platform,
+  Animated,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing } from '../../theme';
 
@@ -7,12 +13,14 @@ interface FixedButtonContainerProps {
   children: React.ReactNode;
   paddingTop?: number;
   paddingBottom?: number;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({ 
   children,
   paddingTop = spacing('md'),
   paddingBottom,
+  onLayout,
 }) => {
   const insets = useSafeAreaInsets();
   const translateY = React.useRef(new Animated.Value(0)).current;
@@ -55,6 +63,7 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
 
   return (
     <Animated.View
+      onLayout={onLayout}
       style={[
         styles.container,
         {

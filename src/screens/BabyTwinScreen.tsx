@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,19 +7,21 @@ import {
   ScrollView,
   Image,
   Dimensions,
-  TouchableOpacity,
-  Animated,
 } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faCalendar, faGift } from '@fortawesome/free-solid-svg-icons';
-import Svg, { Circle, Defs, LinearGradient, Stop, ClipPath, Mask, Rect, Path, G, Pattern } from 'react-native-svg';
-import { SvgXml } from 'react-native-svg';
+import { faCalendar } from '@fortawesome/free-solid-svg-icons';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useTheme, spacing } from '../theme';
-import { BackButton } from '../components/ui';
-import { SVG_ICONS, WAVE_BACKGROUND_SVG } from '../utils/svgIcons';
+import { BackButton, SystemProgressIcon } from '../components/ui';
+import { SVG_ICONS } from '../utils/svgIcons';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { useUserStore } from '../store/useUserStore';
-import { getCurrentPregnancyWeek, getOrdinal } from '../utils/pregnancyUtils';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { useTranslation } from 'react-i18next';
+import { WEEKS_DATA } from './HomeScreen';
+import { getFetalSystemTimeline } from '../services/recommendationExperience/DevelopmentProgressRepository';
+import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
+import { getBabyTwinWeekImage } from '../utils/babyTwinWeekImage';
 
 interface BabyTwinScreenProps {
   onBack?: () => void;
@@ -27,287 +29,41 @@ interface BabyTwinScreenProps {
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Baby system data
-interface BabySystem {
-  id: string;
-  name: string;
-  iconKey: string;
-  percentage: number;
-  increment: number;
-  isActive: boolean;
-  startInWeeks?: number;
-}
-
-const BABY_SYSTEMS: BabySystem[] = [
-  { id: 'cardiovascular', name: 'Cardiovascular', iconKey: 'heartSystem.svg', percentage: 75, increment: 3, isActive: true },
-  { id: 'nervous', name: 'Nervous', iconKey: 'brainSystem.svg', percentage: 24, increment: 4, isActive: true },
-  { id: 'sensory', name: 'Sensory', iconKey: 'senseSystem.svg', percentage: 50, increment: 0, isActive: false, startInWeeks: 2 },
-  { id: 'digestive', name: 'Digestive', iconKey: 'digestiveSystem.svg', percentage: 55, increment: 6, isActive: true },
-  { id: 'reproductive', name: 'Reproductive', iconKey: 'reproductiveSystem.svg', percentage: 66, increment: 12, isActive: true },
-  { id: 'musculoskeletal', name: 'Musculoskeletal', iconKey: 'boneSystem.svg', percentage: 18, increment: 8, isActive: true },
-  { id: 'endocrine', name: 'Endocrine', iconKey: 'endocrineSystem.svg', percentage: 32, increment: 0, isActive: false, startInWeeks: 4 },
-  { id: 'respiratory', name: 'Respiratory', iconKey: 'respiratorySystem.svg', percentage: 100, increment: 0, isActive: true },
-  { id: 'integumentary', name: 'Integumentary', iconKey: 'integumentarySystem.svg', percentage: 14, increment: 4, isActive: true },
-  { id: 'immune', name: 'Immune', iconKey: 'immuneSystem.svg', percentage: 100, increment: 0, isActive: true },
-  { id: 'urinary', name: 'Urinary', iconKey: 'urinary.svg', percentage: 85, increment: 1, isActive: true },
-];
-
 const ICON_SIZE = 40;
-const ICON_STROKE_WIDTH = 1.5;
-
-// Helper function to increase stroke-width in SVG
-const increaseStrokeWidth = (svgXml: string, strokeWidth: number): string => {
-  return svgXml.replace(
-    /stroke-width="([^"]*)"/g,
-    `stroke-width="${strokeWidth}"`
-  ).replace(
-    /stroke-width='([^']*)'/g,
-    `stroke-width='${strokeWidth}'`
-  );
-};
-
-// Helper function to change SVG colors to gray
-const changeSvgColorToGray = (svgXml: string): string => {
-  return svgXml
-    .replace(/fill="white"/g, 'fill="#E5E5E5"')
-    .replace(/fill='white'/g, "fill='#E5E5E5'")
-    .replace(/stroke="#FFAA72"/g, 'stroke="#A1A1A1"')
-    .replace(/stroke='#FFAA72'/g, "stroke='#A1A1A1'");
-};
-
-// Component for static icon with fill (no animation)
-const StaticIconWithFill: React.FC<{
-  svgXml: string;
-  width: number;
-  height: number;
-  percentage: number;
-  uniqueId: string;
-}> = ({ svgXml, width, height, percentage, uniqueId }) => {
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, width, height];
-  const svgWidth = viewBox[2] || width;
-  const svgHeight = viewBox[3] || height;
-  const fillHeight = (svgHeight * percentage) / 100;
-
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData = pathMatches ? pathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const strokeMatch = m.match(/stroke="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      stroke: strokeMatch ? strokeMatch[1] : undefined,
-      fill: fillMatch ? fillMatch[1] : 'transparent',
-      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-    };
-  }).filter(p => p.d) : [];
-
-  return (
-    <View style={{ width, height }}>
-      {percentage > 0 && iconPathData.length > 0 ? (
-        <Svg width={width} height={height} viewBox={viewBox.join(' ')}>
-          <Defs>
-            <ClipPath id={`staticPercentageClip-${uniqueId}`}>
-              <Rect 
-                x="0" 
-                y={svgHeight - fillHeight} 
-                width={svgWidth} 
-                height={fillHeight} 
-              />
-            </ClipPath>
-            <Mask id={`staticIconMask-${uniqueId}`}>
-              <Rect width={svgWidth} height={svgHeight} fill="black" />
-              {iconPathData.map((pathData, idx) => (
-                <Path 
-                  key={idx} 
-                  d={pathData.d} 
-                  fill="white" 
-                  stroke="white" 
-                  strokeWidth={pathData.strokeWidth} 
-                />
-              ))}
-            </Mask>
-          </Defs>
-          {iconPathData.map((pathData, idx) => (
-            <Path
-              key={`icon-${idx}`}
-              d={pathData.d}
-              stroke={pathData.stroke}
-              fill={pathData.fill}
-              strokeWidth={pathData.strokeWidth}
-            />
-          ))}
-          <G mask={`url(#staticIconMask-${uniqueId})`} clipPath={`url(#staticPercentageClip-${uniqueId})`}>
-            <Rect
-              x="0"
-              y={svgHeight - fillHeight}
-              width={svgWidth}
-              height={fillHeight}
-              fill="#FF6900"
-            />
-          </G>
-        </Svg>
-      ) : (
-        <SvgXml xml={svgXml} width={width} height={height} />
-      )}
-    </View>
-  );
-};
-
-// Component for icon with wave effect (animated)
-const IconWithWave: React.FC<{
-  svgXml: string;
-  width: number;
-  height: number;
-  percentage: number;
-  uniqueId: string;
-}> = ({ svgXml, width, height, percentage, uniqueId }) => {
-  const waveAnim = useRef(new Animated.Value(0)).current;
-  const [waveTranslateX, setWaveTranslateX] = React.useState(0);
-  
-  const waveViewBoxMatch = WAVE_BACKGROUND_SVG.match(/viewBox="([^"]*)"/);
-  const waveViewBox = waveViewBoxMatch ? waveViewBoxMatch[1].split(' ').map(Number) : [0, 0, 113, 29];
-  const waveWidth = waveViewBox[2] || 113;
-  const waveHeight = waveViewBox[3] || 29;
-  
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.timing(waveAnim, {
-        toValue: 1,
-        duration: 5000,
-        useNativeDriver: false,
-      })
-    );
-    
-    animation.start();
-    
-    const listener = waveAnim.addListener(({ value }) => {
-      const translateX = value * -waveWidth;
-      setWaveTranslateX(translateX);
-    });
-    
-    return () => {
-      animation.stop();
-      waveAnim.removeListener(listener);
-    };
-  }, [waveAnim, waveWidth]);
-
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, width, height];
-  const svgWidth = viewBox[2] || width;
-  const svgHeight = viewBox[3] || height;
-  const fillHeight = (svgHeight * percentage) / 100;
-
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData = pathMatches ? pathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const strokeMatch = m.match(/stroke="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      stroke: strokeMatch ? strokeMatch[1] : undefined,
-      fill: fillMatch ? fillMatch[1] : 'transparent',
-      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-    };
-  }).filter(p => p.d) : [];
-  
-  const wavePathMatches = WAVE_BACKGROUND_SVG.match(/<path[^>]*d="([^"]*)"[^>]*fill="([^"]*)"[^>]*>/g);
-  const wavePaths = wavePathMatches ? wavePathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      fill: fillMatch ? fillMatch[1] : '#FF6900',
-    };
-  }).filter(p => p.d) : [];
-
-  return (
-    <View style={{ width, height }}>
-      {percentage > 0 && wavePaths.length > 0 && iconPathData.length > 0 ? (
-        <Svg width={width} height={height} viewBox={viewBox.join(' ')}>
-          <Defs>
-            <Pattern
-              id={`wavePattern-${uniqueId}`}
-              x="0"
-              y={svgHeight - fillHeight}
-              width={waveWidth}
-              height={waveHeight}
-              patternUnits="userSpaceOnUse"
-            >
-              <G transform={`translate(${waveTranslateX}, 0)`}>
-                <G>
-                  {wavePaths.map((wavePath, idx) => (
-                    <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-                  ))}
-                </G>
-                <G transform={`translate(${waveWidth - 1}, 0)`}>
-                  {wavePaths.map((wavePath, idx) => (
-                    <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-                  ))}
-                </G>
-              </G>
-            </Pattern>
-            <ClipPath id={`percentageClip-${uniqueId}`}>
-              <Rect 
-                x="0" 
-                y={svgHeight - fillHeight} 
-                width={svgWidth} 
-                height={fillHeight} 
-              />
-            </ClipPath>
-            <Mask id={`iconMask-${uniqueId}`}>
-              <Rect width={svgWidth} height={svgHeight} fill="black" />
-              {iconPathData.map((pathData, idx) => (
-                <Path 
-                  key={idx} 
-                  d={pathData.d} 
-                  fill="white" 
-                  stroke="white" 
-                  strokeWidth={pathData.strokeWidth} 
-                />
-              ))}
-            </Mask>
-          </Defs>
-          {iconPathData.map((pathData, idx) => (
-            <Path
-              key={`icon-${idx}`}
-              d={pathData.d}
-              stroke={pathData.stroke}
-              fill={pathData.fill}
-              strokeWidth={pathData.strokeWidth}
-            />
-          ))}
-          <G mask={`url(#iconMask-${uniqueId})`} clipPath={`url(#percentageClip-${uniqueId})`}>
-            <Rect
-              x="0"
-              y="0"
-              width={svgWidth}
-              height={svgHeight}
-              fill={`url(#wavePattern-${uniqueId})`}
-            />
-          </G>
-        </Svg>
-      ) : (
-        <SvgXml xml={svgXml} width={width} height={height} />
-      )}
-    </View>
-  );
-};
-
 export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { profile } = useUserStore();
-  const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate);
-  const weekLabel = currentWeek ? `${getOrdinal(currentWeek)} Week` : '–';
-  const progress = 5; // 5% progress
+  const currentWeek =
+    getCurrentPregnancyWeek(
+      profile.pregnancyWeek,
+      profile.pregnancyWeekSetDate,
+    ) ?? 1;
+  const weekLabel = currentWeek
+    ? t('home.week_label', { week: currentWeek })
+    : '–';
+  const timelineProgress = Math.round((currentWeek / 40) * 100);
+  const babySystems = getFetalSystemTimeline(
+    WEEKS_DATA,
+    currentWeek,
+  );
+  const weeklyCheckpoints = useRecommendationExperienceStore(
+    state => state.weeklyCheckpoints,
+  );
+  const completedCheckpoints = Object.values(
+    weeklyCheckpoints,
+  ).filter(
+    checkpoint => checkpoint.pregnancyWeek <= currentWeek,
+  ).length;
   const maxContentHeight = SCREEN_HEIGHT * 0.3;
   const size = Math.min(140, maxContentHeight * 0.8); // Smaller circular progress
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const progressOffset = circumference - (progress / 100) * circumference;
+  const progressOffset =
+    circumference -
+    (timelineProgress / 100) * circumference;
+  const babyWeekImage = getBabyTwinWeekImage(currentWeek);
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -337,6 +93,9 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
       flex: 1,
       paddingHorizontal: spacing('md'),
       paddingTop: spacing('sm'),
+    },
+    scrollContent: {
+      paddingBottom: 140,
     },
     sectionTitle: {
       fontSize: responsiveUtils.getFixedFontSize(20),
@@ -408,7 +167,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
     systemProgressCard: {
       backgroundColor: '#fff',
       borderRadius: 16,
-      padding: spacing('md'),
+      padding: spacing('lg'),
       marginTop: spacing('lg'),
       marginHorizontal: -spacing('md'),
       shadowColor: '#000',
@@ -421,7 +180,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'flex-start',
-      marginBottom: spacing('md'),
+      marginBottom: spacing('lg'),
     },
     systemProgressTitleContainer: {
       flex: 1,
@@ -436,6 +195,13 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
       fontFamily: theme.typography.fontFamily.regular,
       color: theme.colors.textSecondary,
       marginTop: 2,
+    },
+    referenceNote: {
+      fontSize: responsiveUtils.getFixedFontSize(11),
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: responsiveUtils.getFixedLineHeight(11, 16),
+      marginTop: spacing('sm'),
     },
     viewDetailButton: {
       borderWidth: 1,
@@ -453,14 +219,14 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
       flexDirection: 'row',
       flexWrap: 'wrap',
       justifyContent: 'space-between',
+      gap: spacing('md'),
     },
     systemCard: {
-      width: '48%',
+      width: '47%',
       aspectRatio: 1,
       backgroundColor: '#fff',
       borderRadius: 12,
-      padding: spacing('sm'),
-      marginBottom: spacing('sm'),
+      padding: spacing('md'),
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: '#000',
@@ -566,22 +332,22 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
       color: theme.colors.orange500,
       textAlign: 'center',
     },
-  }), [theme]);
+  }), [size, theme]);
 
   return (
     <SafeAreaView style={styles.container}>
       <BackButton onPress={onBack} />
       
       <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>Baby Twin</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('baby.twin_title')}</Text>
       </View>
 
       <ScrollView 
         style={styles.content}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: spacing('md') }}
+        contentContainerStyle={styles.scrollContent}
       >
-        <Text style={styles.sectionTitle} allowFontScaling={false}>Baby's Digital twin</Text>
+        <Text style={styles.sectionTitle} allowFontScaling={false}>{t('profile.babys_digital_twin')}</Text>
         
         <View style={styles.progressContainer}>
           <View style={styles.progressWrapper}>
@@ -624,14 +390,16 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
 
             {/* Center Image */}
             <Image
-              source={require('../assets/babyDigital/bd1.png')}
+              source={babyWeekImage}
               style={styles.centerImage}
             />
           </View>
 
           {/* Percentage Badge */}
           <View style={styles.percentageBadge}>
-            <Text style={styles.percentageText} allowFontScaling={false}>{progress}%</Text>
+            <Text style={styles.percentageText} allowFontScaling={false}>
+              {t('baby.week_of_total', { week: currentWeek })}
+            </Text>
           </View>
 
           {/* Week Info */}
@@ -644,60 +412,61 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
             />
             <Text style={styles.weekText} allowFontScaling={false}>{weekLabel}</Text>
           </View>
+          <Text style={styles.systemProgressSubtitle}>
+            {t('baby.checkpoints_completed', {
+              count: completedCheckpoints,
+            })}
+          </Text>
         </View>
 
         {/* Description Text */}
         <Text style={styles.descriptionText} allowFontScaling={false}>
-          A delicate layer begins to form, the skin and its soft covering start to protect the growing life within.
+          {t(
+            `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
+          )}
         </Text>
 
         {/* Baby System Progress Card */}
         <View style={styles.systemProgressCard}>
           <View style={styles.systemProgressHeader}>
             <View style={styles.systemProgressTitleContainer}>
-              <Text style={styles.systemProgressTitle} allowFontScaling={false}>Baby System Progress</Text>
-              <Text style={styles.systemProgressSubtitle} allowFontScaling={false}>Milestone Trackers</Text>
+              <Text style={styles.systemProgressTitle} allowFontScaling={false}>{t('baby.system_progress')}</Text>
+              <Text style={styles.systemProgressSubtitle} allowFontScaling={false}>{t('baby.milestone_trackers')}</Text>
+              <Text style={styles.referenceNote} allowFontScaling={false}>
+                {t('baby.reference_progress_note')}
+              </Text>
             </View>
-            <TouchableOpacity style={styles.viewDetailButton} activeOpacity={0.7}>
-              <Text style={styles.viewDetailText} allowFontScaling={false}>View detail</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.systemGrid}>
-            {BABY_SYSTEMS.map((system, index) => {
-              const svgXml = SVG_ICONS[system.iconKey];
+            {babySystems.map(system => {
+              const svgXml = SVG_ICONS[system.iconPath];
               if (!svgXml) return null;
 
               const isComplete = system.percentage === 100;
-              const processedSvg = system.isActive 
-                ? increaseStrokeWidth(svgXml, ICON_STROKE_WIDTH)
-                : changeSvgColorToGray(increaseStrokeWidth(svgXml, ICON_STROKE_WIDTH));
-
-              // For complete systems, change icon color to orange500
-              const completeSvg = isComplete 
-                ? processedSvg
-                  .replace(/fill="white"/g, `fill="${theme.colors.orange500}"`)
-                  .replace(/fill='white'/g, `fill='${theme.colors.orange500}'`)
-                  .replace(/fill="#fff"/g, `fill="${theme.colors.orange500}"`)
-                  .replace(/fill='#fff'/g, `fill='${theme.colors.orange500}'`)
-                  .replace(/stroke="#FFAA72"/g, `stroke="${theme.colors.orange500}"`)
-                  .replace(/stroke='#FFAA72'/g, `stroke='${theme.colors.orange500}'`)
-                : processedSvg;
+              const isActive = system.startsInWeeks === undefined;
+              const rawKey = system.iconPath.replace('.svg', '');
+              const systemName = t(
+                `baby.system_${rawKey}` as any,
+                { defaultValue: rawKey },
+              );
 
               return (
                 <View 
-                  key={system.id} 
+                  key={system.iconPath}
                   style={[
                     styles.systemCard,
-                    !system.isActive && styles.systemCardInactive
+                    !isActive && styles.systemCardInactive
                   ]}
                 >
 
                      {/* Start in badge for inactive systems */}
-                     {!system.isActive && system.startInWeeks && (
+                     {!isActive && system.startsInWeeks && (
                       <View style={styles.startInBadge}>
                         <Text style={styles.startInText} allowFontScaling={false}>
-                          start in next {system.startInWeeks} weeks
+                          {t('baby.starts_in_weeks', {
+                            count: system.startsInWeeks,
+                          })}
                         </Text>
                       </View>
                     )}
@@ -708,60 +477,35 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
                   ]}>
                    
 
-                    {/* Increment badge for active systems with increment > 0 */}
-                    {system.isActive && system.increment > 0 && !isComplete && (
-                      <View style={styles.incrementBadge}>
-                        <Text style={styles.incrementText} allowFontScaling={false}>+{system.increment}%</Text>
-                      </View>
-                    )}
-
-                    {/* Icon - no animation for complete systems */}
-                    {isComplete ? (
-                      <SvgXml xml={completeSvg} width={ICON_SIZE} height={ICON_SIZE} />
-                    ) : system.isActive && system.percentage > 0 ? (
-                      <IconWithWave
-                        svgXml={processedSvg}
-                        width={ICON_SIZE}
-                        height={ICON_SIZE}
-                        percentage={system.percentage}
-                        uniqueId={`system-${system.id}`}
-                      />
-                    ) : (
-                      <SvgXml xml={processedSvg} width={ICON_SIZE} height={ICON_SIZE} />
-                    )}
+                    <SystemProgressIcon
+                      svgXml={svgXml}
+                      width={ICON_SIZE}
+                      height={ICON_SIZE}
+                      percentage={system.percentage}
+                      uniqueId={`baby-twin-${rawKey}`}
+                    />
                   </View>
 
                   <Text style={[
                     styles.systemName,
-                    !system.isActive && styles.systemNameInactive
+                    !isActive && styles.systemNameInactive
                   ]} allowFontScaling={false}>
-                    {system.name}
+                    {systemName}
                   </Text>
                   <Text style={[
                     styles.systemPercentage,
-                    !system.isActive && styles.systemPercentageInactive
+                    !isActive && styles.systemPercentageInactive
                   ]} allowFontScaling={false}>
-                    {system.percentage}%
+                    {t('baby.milestone_percent', {
+                      value: system.percentage,
+                    })}
                   </Text>
                 </View>
               );
             })}
-
-            {/* Weekly Surprise Gift Card */}
-            <TouchableOpacity style={styles.giftCard} activeOpacity={0.7}>
-              <View style={styles.giftIconContainer}>
-                <FontAwesomeIcon 
-                  icon={faGift as any} 
-                  size={22} 
-                  color="#fff"
-                />
-              </View>
-              <Text style={styles.giftText} allowFontScaling={false}>Weekly Surprise</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
-

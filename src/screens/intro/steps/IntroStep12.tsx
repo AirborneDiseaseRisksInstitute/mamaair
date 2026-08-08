@@ -43,8 +43,8 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
       } else {
         showToast({
           type: 'error',
-          title: 'Notifications disabled',
-          message: 'To receive timely alerts, please enable notifications in your device settings.',
+          title: t('settings.notifications_disabled'),
+          message: t('settings.notifications_disabled_message'),
         });
         // Open system settings directly so user can fix it
         Linking.openSettings();

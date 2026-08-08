@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { MetaService } from '../services/api/MetaService';
+import { isSupportedLanguage } from '../i18n';
+import { useTranslation } from 'react-i18next';
 
 export interface MetaChoice {
   value: string;
@@ -77,7 +79,17 @@ function loadChoices(): Promise<MetaChoices> {
   if (pending) return pending;
   pending = MetaService.getChoices()
     .then((data: any) => {
-      cache = data as MetaChoices;
+      const supportedLanguages = Array.isArray(data?.languages)
+        ? data.languages.filter((language: MetaChoice) =>
+            isSupportedLanguage(language.value),
+          )
+        : [];
+      cache = {
+        ...(data as MetaChoices),
+        languages: supportedLanguages.length
+          ? supportedLanguages
+          : FALLBACK.languages,
+      };
       return cache;
     })
     .catch(() => FALLBACK)
@@ -86,6 +98,7 @@ function loadChoices(): Promise<MetaChoices> {
 }
 
 export function useMetaChoices(): MetaChoices {
+  const { t } = useTranslation();
   const [choices, setChoices] = useState<MetaChoices>(cache ?? FALLBACK);
 
   useEffect(() => {
@@ -93,5 +106,30 @@ export function useMetaChoices(): MetaChoices {
     loadChoices().then(c => setChoices(c));
   }, []);
 
-  return choices;
+  return useMemo(() => {
+    const localized = (
+      items: MetaChoice[],
+      prefix: 'language' | 'country' | 'cooking' | 'work' | 'diet',
+    ): MetaChoice[] =>
+      items.map(item => {
+        const normalizedValue = item.value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_');
+        return {
+          ...item,
+          label: t(`meta.${prefix}_${normalizedValue}`, {
+            defaultValue: item.label,
+          }),
+        };
+      });
+
+    return {
+      ...choices,
+      languages: localized(choices.languages, 'language'),
+      countries: localized(choices.countries, 'country'),
+      cooking_methods: localized(choices.cooking_methods, 'cooking'),
+      work_types: localized(choices.work_types, 'work'),
+      diet_types: localized(choices.diet_types, 'diet'),
+    };
+  }, [choices, t]);
 }

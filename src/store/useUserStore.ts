@@ -4,7 +4,8 @@ import { formatLocalDate } from '../utils/dateUtils';
 
 export const userStorage = createMMKV();
 
-interface UserProfile {
+export interface UserProfile {
+  backendUserId: string | null;
   photo: string | null;
   name: string | null;
   email: string | null;
@@ -17,6 +18,7 @@ interface UserProfile {
   timezone: string | null; // IANA timezone e.g. Africa/Nairobi
   pregnancyWeek: number | null; // current pregnancy week (1-40)
   pregnancyWeekSetDate: string | null; // ISO date string of when pregnancyWeek was recorded
+  pregnancyWeekConfirmed: boolean; // explicitly selected by the user, not only supplied by the API
   pregnancyNumber: string | null; // first, second, third, moreThan3
   timeSpent: string | null;
   timeOfDay: string | null;
@@ -70,6 +72,7 @@ interface UserStore {
 
 export const useUserStore = create<UserStore>((set, get) => ({
   profile: {
+    backendUserId: userStorage.getString('user_backend_id') || null,
     photo: userStorage.getString('user_photo') || null,
     name: userStorage.getString('user_name') || null,
     email: userStorage.getString('user_email') || null,
@@ -82,6 +85,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
     timezone: userStorage.getString('user_timezone') || null,
     pregnancyWeek: userStorage.getNumber('user_pregnancy_week') || null,
     pregnancyWeekSetDate: userStorage.getString('user_pregnancy_week_set_date') || null,
+    pregnancyWeekConfirmed:
+      userStorage.getBoolean('user_pregnancy_week_confirmed') ??
+      Boolean(
+        userStorage.getBoolean('user_agreement_accepted') &&
+          userStorage.getNumber('user_pregnancy_week'),
+      ),
     pregnancyNumber: userStorage.getString('user_pregnancy_number') || null,
     timeSpent: userStorage.getString('user_time_spent') || null,
     timeOfDay: userStorage.getString('user_time_of_day') || null,
@@ -184,12 +193,19 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (week !== null) {
       userStorage.set('user_pregnancy_week', week);
       userStorage.set('user_pregnancy_week_set_date', today);
+      userStorage.set('user_pregnancy_week_confirmed', true);
     } else {
       userStorage.remove('user_pregnancy_week');
       userStorage.remove('user_pregnancy_week_set_date');
+      userStorage.remove('user_pregnancy_week_confirmed');
     }
     set((state) => ({
-      profile: { ...state.profile, pregnancyWeek: week, pregnancyWeekSetDate: week !== null ? today : null },
+      profile: {
+        ...state.profile,
+        pregnancyWeek: week,
+        pregnancyWeekSetDate: week !== null ? today : null,
+        pregnancyWeekConfirmed: week !== null,
+      },
     }));
   },
   setPregnancyNumber: (n) => {
@@ -307,6 +323,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   },
   setProfile: (profileData) => {
     // Bulk update store and storage
+    if (profileData.backendUserId != null) userStorage.set('user_backend_id', profileData.backendUserId);
     if (profileData.photo) userStorage.set('user_photo', profileData.photo);
     if (profileData.name) userStorage.set('user_name', profileData.name);
     if (profileData.email) userStorage.set('user_email', profileData.email);
@@ -319,6 +336,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (profileData.timezone) userStorage.set('user_timezone', profileData.timezone);
     if (profileData.pregnancyWeek) userStorage.set('user_pregnancy_week', profileData.pregnancyWeek);
     if (profileData.pregnancyWeekSetDate) userStorage.set('user_pregnancy_week_set_date', profileData.pregnancyWeekSetDate);
+    if (profileData.pregnancyWeekConfirmed !== undefined) userStorage.set('user_pregnancy_week_confirmed', profileData.pregnancyWeekConfirmed);
     if (profileData.pregnancyNumber) userStorage.set('user_pregnancy_number', profileData.pregnancyNumber);
     if (profileData.timeSpent) userStorage.set('user_time_spent', profileData.timeSpent);
     if (profileData.timeOfDay) userStorage.set('user_time_of_day', profileData.timeOfDay);
@@ -343,6 +361,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     return get().profile;
   },
   clearUser: () => {
+    userStorage.remove('user_backend_id');
     userStorage.remove('user_photo');
     userStorage.remove('user_name');
     userStorage.remove('user_email');
@@ -355,6 +374,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     userStorage.remove('user_timezone');
     userStorage.remove('user_pregnancy_week');
     userStorage.remove('user_pregnancy_week_set_date');
+    userStorage.remove('user_pregnancy_week_confirmed');
     userStorage.remove('user_pregnancy_number');
     userStorage.remove('user_time_spent');
     userStorage.remove('user_time_of_day');
@@ -373,6 +393,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     
     set({
       profile: {
+        backendUserId: null,
         photo: null,
         name: null,
         email: null,
@@ -385,6 +406,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         timezone: null,
         pregnancyWeek: null,
         pregnancyWeekSetDate: null,
+        pregnancyWeekConfirmed: false,
         pregnancyNumber: null,
         timeSpent: null,
         timeOfDay: null,

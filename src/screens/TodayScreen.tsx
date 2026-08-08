@@ -1,1077 +1,2398 @@
-import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  TouchableOpacity,
+  AccessibilityInfo,
   Animated,
+  Easing,
+  findNodeHandle,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
 } from 'react-native';
-
-import Svg, { G, Path, Defs, ClipPath, Mask, Rect, Pattern } from 'react-native-svg';
-import { SvgXml } from 'react-native-svg';
-import { useTheme, spacing } from '../theme';
-import { useUserStore } from '../store/useUserStore';
-import { WaveCard, ExposureAccordion, TaskCard, FloatingActionButton, useToast, ReminderTimePicker, TransitionLoader } from '../components/ui';
-import { AdsScreen } from './AdsScreen';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SVG_ICONS, WAVE_BACKGROUND_SVG, DIET_SVG, RUNNING_SVG, BEHAVIOUR_SVG, MOTHER_RISK_SVG, BABY_RISK_SVG } from '../utils/svgIcons';
-import { responsiveUtils } from '../utils/responsiveUtils';
-import { SummaryService, type SummaryResponse } from '../services/api/SummaryService';
-import { LifestyleService } from '../services/api/LifestyleService';
-import { DailyTasksService, type DailyTask } from '../services/api/DailyTasksService';
-import { WellbeingService } from '../services/api/WellbeingService';
-import { TaskCompletionService } from '../services/api/TaskCompletionService';
-import { DailyCheckinService } from '../services/api/DailyCheckinService';
-import { ExposureService, type AirExposure } from '../services/api/ExposureService';
-import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import {
+  faArrowLeft,
+  faBaby,
+  faBed,
+  faCheck,
+  faChevronRight,
+  faCircleExclamation,
+  faHeart,
+  faShieldHeart,
+  faTimes,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
+import LinearGradient from 'react-native-linear-gradient';
 import { useTranslation } from 'react-i18next';
+import { useFocusEffect } from '@react-navigation/native';
+import { useTheme, radius, spacing } from '../theme';
+import { useUserStore } from '../store/useUserStore';
+import {
+  BottomSheet,
+  ExposureAccordion,
+  SystemProgressIcon,
+  TransitionLoader,
+  WaveCard,
+} from '../components/ui';
+import { DailyPlanView } from '../components/recommendations/DailyPlanView';
+import { ExploreMoreView } from '../components/recommendations/ExploreMoreView';
+import {
+  TodayQuickCheckInSheet,
+  type TodayQuickCheckInKind,
+} from '../components/today/TodayQuickCheckInSheet';
+import { AdsScreen } from './AdsScreen';
+import { type SummaryResponse } from '../services/api/SummaryService';
+import { LifestyleService } from '../services/api/LifestyleService';
+import { DailyCheckinService } from '../services/api/DailyCheckinService';
+import {
+  ExposureService,
+  type AirExposure,
+} from '../services/api/ExposureService';
+import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { formatLocalDate } from '../utils/dateUtils';
+import { SVG_ICONS } from '../utils/svgIcons';
+import { WEEKS_DATA } from './HomeScreen';
+import {
+  loadDailyPlanExperience,
+  updateDailyPlanActionState,
+} from '../services/recommendationExperience/DailyPlanRepository';
+import { loadFeelingCheckInExperience } from '../services/recommendationExperience/FeelingCheckInRepository';
+import {
+  completeTodayPresentation,
+  loadWeeklySummaryExperience,
+} from '../services/recommendationExperience/PresentationJourneyRepository';
+import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
+import type {
+  DailyActionState,
+  DailyMomentRecord,
+  DailyPlanAction,
+  DailyPlanExperience,
+  FeelingCheckInExperience,
+  FeelingCheckInItem,
+  ExposureTrendPoint,
+  RecommendationExperienceIdentity,
+} from '../types/recommendationExperience';
+import { EveningWindDown } from '../components/today/EveningWindDown';
+import { DEV_LOCAL_SESSION } from '../config/dev';
+import { ExposureTrendView } from '../components/today/ExposureTrendView';
+import { loadExposureTrend } from '../services/recommendationExperience/ExposureTrendRepository';
+import { ProductAnalytics } from '../services/recommendationExperience/ProductAnalytics';
+import { getPersistentStreak } from '../services/recommendationExperience/ProgressionRepository';
 
-const getTodayDate = (): string => new Date().toLocaleDateString('en-CA');
+const getTodayDate = (): string =>
+  formatLocalDate(new Date());
+const EMPTY_DAILY_MOMENTS: Record<string, DailyMomentRecord> = {};
 
+const DASHBOARD_CAROUSEL_GAP = 12;
+const DASHBOARD_CAROUSEL_PEEK = 24;
 
-const ICON_SIZE = 48;
-const ICON_STROKE_WIDTH = 1.5;
-
-// Helper function to increase stroke-width in SVG
-const increaseStrokeWidth = (svgXml: string, strokeWidth: number): string => {
-  return svgXml.replace(
-    /stroke-width="([^"]*)"/g,
-    `stroke-width="${strokeWidth}"`
-  ).replace(
-    /stroke-width='([^']*)'/g,
-    `stroke-width='${strokeWidth}'`
-  );
-};
-
-// Component for icon with wave effect (copied from WeekCycleView)
-const IconWithWave: React.FC<{
-  svgXml: string;
-  width: number;
-  height: number;
-  percentage: number;
-  uniqueId: string;
-}> = ({ svgXml, width, height, percentage, uniqueId }) => {
-  const waveAnim = useRef(new Animated.Value(0)).current;
-  const [waveTranslateX, setWaveTranslateX] = React.useState(0);
-  
-  const waveViewBoxMatch = WAVE_BACKGROUND_SVG.match(/viewBox="([^"]*)"/);
-  const waveViewBox = waveViewBoxMatch ? waveViewBoxMatch[1].split(' ').map(Number) : [0, 0, 113, 29];
-  const waveWidth = waveViewBox[2] || 113;
-  const waveHeight = waveViewBox[3] || 29;
-  
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.timing(waveAnim, {
-        toValue: 1,
-        duration: 5000,
-        useNativeDriver: false,
-      })
-    );
-    
-    animation.start();
-    
-    const listener = waveAnim.addListener(({ value }) => {
-      const translateX = value * -waveWidth;
-      setWaveTranslateX(translateX);
-    });
-    
-    return () => {
-      animation.stop();
-      waveAnim.removeListener(listener);
-    };
-  }, [waveAnim, waveWidth]);
-
-  const viewBoxMatch = svgXml.match(/viewBox="([^"]*)"/);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1].split(' ').map(Number) : [0, 0, width, height];
-  const svgWidth = viewBox[2] || width;
-  const svgHeight = viewBox[3] || height;
-  const fillHeight = (svgHeight * percentage) / 100;
-
-  const pathMatches = svgXml.match(/<path[^>]*d="([^"]*)"[^>]*>/g);
-  const iconPathData = pathMatches ? pathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const strokeMatch = m.match(/stroke="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    const strokeWidthMatch = m.match(/stroke-width="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      stroke: strokeMatch ? strokeMatch[1] : undefined,
-      fill: fillMatch ? fillMatch[1] : 'transparent',
-      strokeWidth: strokeWidthMatch ? strokeWidthMatch[1] : undefined,
-    };
-  }).filter(p => p.d) : [];
-  
-  const wavePathMatches = WAVE_BACKGROUND_SVG.match(/<path[^>]*d="([^"]*)"[^>]*fill="([^"]*)"[^>]*>/g);
-  const wavePaths = wavePathMatches ? wavePathMatches.map(m => {
-    const dMatch = m.match(/d="([^"]*)"/);
-    const fillMatch = m.match(/fill="([^"]*)"/);
-    return {
-      d: dMatch ? dMatch[1] : '',
-      fill: fillMatch ? fillMatch[1] : '#FF6900',
-    };
-  }).filter(p => p.d) : [];
-
-  return (
-    <View style={{ width, height }}>
-      {percentage > 0 && wavePaths.length > 0 && iconPathData.length > 0 ? (
-        <Svg width={width} height={height} viewBox={viewBox.join(' ')}>
-          <Defs>
-            <Pattern
-              id={`wavePattern-${uniqueId}`}
-              x="0"
-              y={svgHeight - fillHeight}
-              width={waveWidth}
-              height={waveHeight}
-              patternUnits="userSpaceOnUse"
-            >
-              <G transform={`translate(${waveTranslateX}, 0)`}>
-                <G>
-                  {wavePaths.map((wavePath, idx) => (
-                    <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-                  ))}
-                </G>
-                <G transform={`translate(${waveWidth - 1}, 0)`}>
-                  {wavePaths.map((wavePath, idx) => (
-                    <Path key={idx} d={wavePath.d} fill={wavePath.fill} />
-                  ))}
-                </G>
-              </G>
-            </Pattern>
-            
-            <ClipPath id={`percentageClip-${uniqueId}`}>
-              <Rect 
-                x="0" 
-                y={svgHeight - fillHeight} 
-                width={svgWidth} 
-                height={fillHeight} 
-              />
-            </ClipPath>
-            
-            <Mask id={`iconMask-${uniqueId}`}>
-              <Rect width={svgWidth} height={svgHeight} fill="black" />
-              {iconPathData.map((pathData, idx) => (
-                <Path 
-                  key={idx} 
-                  d={pathData.d} 
-                  fill="white" 
-                  stroke="white" 
-                  strokeWidth={pathData.strokeWidth} 
-                />
-              ))}
-            </Mask>
-          </Defs>
-          
-          {iconPathData.map((pathData, idx) => (
-            <Path
-              key={`icon-${idx}`}
-              d={pathData.d}
-              stroke={pathData.stroke}
-              fill={pathData.fill}
-              strokeWidth={pathData.strokeWidth}
-            />
-          ))}
-          
-          <G mask={`url(#iconMask-${uniqueId})`} clipPath={`url(#percentageClip-${uniqueId})`}>
-            <Rect
-              x="0"
-              y="0"
-              width={svgWidth}
-              height={svgHeight}
-              fill={`url(#wavePattern-${uniqueId})`}
-            />
-          </G>
-        </Svg>
-      ) : (
-        <SvgXml xml={svgXml} width={width} height={height} />
-      )}
-    </View>
-  );
-};
+type DashboardDetailSheet = 'snapshot' | 'risks' | null;
+type DashboardStatus =
+  | 'stable'
+  | 'attention'
+  | 'context'
+  | 'unavailable';
 
 interface TodayScreenProps {
   onNavigateToProfile?: () => void;
   onNavigateToBabyStatus?: () => void;
+  onNavigateToSymptomsHistory?: () => void;
+  onNavigateToWeeklySummary?: () => void;
   onBackPress?: () => void;
+  initialActionKey?: string;
+  initialFocus?: 'plan' | 'progress';
 }
 
-export const TodayScreen: React.FC<TodayScreenProps> = React.memo(({ onNavigateToProfile: _onNavigateToProfile, onNavigateToBabyStatus, onBackPress }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-  const { showToast } = useToast();
-  const { profile } = useUserStore();
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
-  const [lifestyle, setLifestyle] = useState<any | null>(null);
-  const [dailyTasks, setDailyTasks] = useState<DailyTask[]>([]);
-  const [completedTaskCodes, setCompletedTaskCodes] = useState<string[]>([]);
-  const [wellbeingMoodIds, setWellbeingMoodIds] = useState<number[]>([]);
-  const [wellbeingFeelingIds, setWellbeingFeelingIds] = useState<number[]>([]);
-  const [wellbeingMoodCount, setWellbeingMoodCount] = useState<number>(0);
-  const [wellbeingFeelingCount, setWellbeingFeelingCount] = useState<number>(0);
-  const [waterAmount, setWaterAmount] = useState<number>(0);
-  const [airExposure, setAirExposure] = useState<AirExposure | null>(null);
-  const [_loading, setLoading] = useState(false);
-  const [_error, setError] = useState<string | null>(null);
-  const [showBabyAds, setShowBabyAds] = useState(false);
-  const [isNavigatingToBaby, setIsNavigatingToBaby] = useState(false);
-  const currentWeek = summary?.week_info?.week || getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 19;
+const selectedItemSummary = (
+  keys: string[],
+  items: FeelingCheckInItem[],
+  emptyLabel: string,
+): string => {
+  if (keys.length === 0) return emptyLabel;
+  const first = items.find(item => keys.includes(item.key));
+  if (!first) return emptyLabel;
+  return keys.length > 1
+    ? `${first.name} +${keys.length - 1}`
+    : first.name;
+};
 
-  const handleNavigateToBabyStatus = useCallback(() => {
-    if (showBabyAds || isNavigatingToBaby) return;
-    setIsNavigatingToBaby(true);
-    setTimeout(() => {
-      setIsNavigatingToBaby(false);
-      setShowBabyAds(true);
-    }, 350);
-  }, [showBabyAds, isNavigatingToBaby]);
-  const insets = useSafeAreaInsets();
+const statusColor = (status: DashboardStatus): string =>
+  status === 'attention'
+    ? '#B93838'
+    : status === 'stable'
+    ? '#2D7B46'
+    : status === 'context'
+    ? '#C95600'
+    : '#6B6B6B';
 
-  useEffect(() => {
-    let mounted = true;
-    const todayDate = getTodayDate();
-    (async () => {
-      try {
-        setLoading(true);
-        const [summaryData, lifestyleData, tasksData, completedData, wellbeingLog, wellbeingCatalog, airExposureData] = await Promise.all([
-          SummaryService.getSummary().catch(() => null),
-          LifestyleService.getLifestyle().catch(() => null),
-          DailyTasksService.getDailyTasks().catch(() => []),
-          TaskCompletionService.getCompleted(todayDate).catch(() => []),
-          WellbeingService.getLog(todayDate),
-          WellbeingService.getCatalog().catch(() => ({ moods: [], feelings: [] } as any)),
-          ExposureService.getAirExposure().catch(() => null),
-        ]);
-        if (mounted) {
-          setSummary(summaryData);
-          setLifestyle(lifestyleData);
-          setDailyTasks(tasksData);
-          setCompletedTaskCodes(completedData);
-          if (wellbeingLog) {
-            setWellbeingMoodIds(wellbeingLog.mood_ids);
-            setWellbeingFeelingIds(wellbeingLog.feeling_ids);
-            setWaterAmount(wellbeingLog.water_amount || 0);
-          }
-          setWellbeingMoodCount(wellbeingCatalog.moods.length);
-          setWellbeingFeelingCount(wellbeingCatalog.feelings.length);
-          setAirExposure(airExposureData);
+export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
+  ({
+    onNavigateToProfile: _onNavigateToProfile,
+    onNavigateToBabyStatus,
+    onNavigateToSymptomsHistory,
+    onNavigateToWeeklySummary,
+    onBackPress,
+    initialActionKey,
+    initialFocus,
+  }) => {
+    const theme = useTheme();
+    const { t, i18n } = useTranslation();
+    const locale = i18n.resolvedLanguage === 'fr'
+      ? 'fr-FR'
+      : i18n.resolvedLanguage === 'sw'
+        ? 'sw-KE'
+        : 'en-US';
+    const insets = useSafeAreaInsets();
+    const { width: windowWidth } = useWindowDimensions();
+    const { profile } = useUserStore();
+    const [summary, setSummary] =
+      useState<SummaryResponse | null>(null);
+    const [lifestyle, setLifestyle] = useState<any | null>(null);
+    const [dailyPlan, setDailyPlan] =
+      useState<DailyPlanExperience | null>(null);
+    const [checkIn, setCheckIn] =
+      useState<FeelingCheckInExperience | null>(null);
+    const [airExposure, setAirExposure] =
+      useState<AirExposure | null>(null);
+    const [
+      isPresentationMotherBabyContext,
+      setIsPresentationMotherBabyContext,
+    ] = useState(false);
+    const [exposureTrend, setExposureTrend] = useState<
+      ExposureTrendPoint[]
+    >([]);
+    const [quickCheckInKind, setQuickCheckInKind] =
+      useState<TodayQuickCheckInKind | null>(null);
+    const [detailSheet, setDetailSheet] =
+      useState<DashboardDetailSheet>(null);
+    const [showBabyAds, setShowBabyAds] = useState(false);
+    const [isNavigatingToBaby, setIsNavigatingToBaby] =
+      useState(false);
+    const [showDailyWin, setShowDailyWin] = useState(false);
+    const [streakDays, setStreakDays] = useState(0);
+    const [dashboardPage, setDashboardPage] = useState(0);
+    const [dashboardCardHeight, setDashboardCardHeight] =
+      useState(0);
+    const hasFocusedOnce = useRef(false);
+    const waveAnimationProgress =
+      useRef(new Animated.Value(0)).current;
+    const lastSheetTrigger =
+      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const dashboardCarouselRef = useRef<ScrollView | null>(null);
+    const pageScrollRef = useRef<ScrollView | null>(null);
+    const planSectionY = useRef(0);
+    const appliedFocusKey = useRef<string | null>(null);
+
+    const dashboardViewportWidth = Math.max(
+      280,
+      Math.min(windowWidth, 680) - spacing('md') * 2,
+    );
+    const dashboardCardWidth =
+      dashboardViewportWidth - DASHBOARD_CAROUSEL_PEEK;
+    const dashboardSecondOffset =
+      dashboardCardWidth +
+      DASHBOARD_CAROUSEL_GAP -
+      DASHBOARD_CAROUSEL_PEEK;
+    const dashboardCardInnerWidth =
+      dashboardCardWidth - spacing('md') * 2;
+    const dashboardCardStyle = useMemo(
+      () => ({ width: dashboardCardWidth }),
+      [dashboardCardWidth],
+    );
+    const weekCardHeightStyle = useMemo(
+      () =>
+        dashboardCardHeight > 0
+          ? { minHeight: dashboardCardHeight }
+          : undefined,
+      [dashboardCardHeight],
+    );
+
+    const date = useMemo(() => getTodayDate(), []);
+    const dailyMoments = useRecommendationExperienceStore(
+      state =>
+        state.dailyMoments[date] ?? EMPTY_DAILY_MOMENTS,
+    );
+    const identity = useMemo<RecommendationExperienceIdentity>(
+      () => ({
+        backendUserId: profile.backendUserId,
+        email: profile.email,
+      }),
+      [profile.backendUserId, profile.email],
+    );
+    const currentWeek =
+      getCurrentPregnancyWeek(
+        profile.pregnancyWeek,
+        profile.pregnancyWeekSetDate,
+      ) ||
+      summary?.week_info?.week ||
+      19;
+
+    const currentDateLabel = useMemo(
+      () =>
+        new Date().toLocaleDateString(locale, {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        }),
+      [locale],
+    );
+
+    const refreshToday = useCallback(async () => {
+      const [
+        planResult,
+        checkInExperience,
+        lifestyleData,
+        airExposureData,
+      ] = await Promise.all([
+        loadDailyPlanExperience(
+          identity,
+          date,
+          (key, fallback) => t(key, { defaultValue: fallback }),
+        ),
+        loadFeelingCheckInExperience(identity, date),
+        DEV_LOCAL_SESSION
+          ? Promise.resolve(null)
+          : LifestyleService.getLifestyle().catch(() => null),
+        DEV_LOCAL_SESSION
+          ? Promise.resolve(null)
+          : ExposureService.getAirExposure().catch(() => null),
+      ]);
+
+      const pregnancyWeek =
+        getCurrentPregnancyWeek(
+          profile.pregnancyWeek,
+          profile.pregnancyWeekSetDate,
+        ) ??
+        planResult.summary?.week_info?.week ??
+        19;
+      const completedPresentation = completeTodayPresentation({
+        identity,
+        date,
+        pregnancyWeek,
+        summary: planResult.summary,
+        airExposure: airExposureData,
+        lifestyle: lifestyleData,
+        checkIn: checkInExperience,
+      });
+
+      setSummary(completedPresentation.summary);
+      setDailyPlan(planResult.experience);
+      setCheckIn(completedPresentation.checkIn);
+      setLifestyle(completedPresentation.lifestyle);
+      setAirExposure(completedPresentation.airExposure);
+      setIsPresentationMotherBabyContext(
+        completedPresentation.sourceFlags.motherBabyContext,
+      );
+      loadExposureTrend({
+        summary: completedPresentation.summary,
+        endDate: date,
+        pregnancyWeek,
+      })
+        .then(result => setExposureTrend(result.points))
+        .catch(() => setExposureTrend([]));
+      const milestone =
+        completedPresentation.summary.week_info?.text ??
+        t(
+          `home.week_desc_w${String(pregnancyWeek).padStart(2, '0')}`,
+        );
+      setStreakDays(
+        loadWeeklySummaryExperience({
+          identity,
+          pregnancyWeek,
+          endDate: date,
+          milestone,
+          backendSummary: completedPresentation.summary,
+        }).streakDays,
+      );
+    }, [
+      date,
+      identity,
+      t,
+      profile.pregnancyWeek,
+      profile.pregnancyWeekSetDate,
+    ]);
+
+    useEffect(() => {
+      refreshToday().catch(() => setDailyPlan(null));
+      DailyCheckinService.ensureCheckin(date);
+    }, [date, refreshToday]);
+
+    useFocusEffect(
+      useCallback(() => {
+        if (!hasFocusedOnce.current) {
+          hasFocusedOnce.current = true;
+          return undefined;
         }
-      } catch {
-        if (mounted) setError('Failed to load data.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    // Ensure daily check-in exists for today (fire-and-forget)
-    DailyCheckinService.ensureCheckin(todayDate);
-    return () => { mounted = false; };
-  }, []);
+        refreshToday().catch(() => {});
+        return undefined;
+      }, [refreshToday]),
+    );
 
+    useFocusEffect(
+      useCallback(() => {
+        waveAnimationProgress.setValue(0);
+        const animation = Animated.loop(
+          Animated.timing(waveAnimationProgress, {
+            toValue: 1,
+            duration: 11000,
+            easing: Easing.linear,
+            useNativeDriver: true,
+            isInteraction: false,
+          }),
+        );
+        animation.start();
 
-  const handleDelayTask = (taskTitle: string) => {
-    showToast({
-      type: 'success',
-      title: taskTitle,
-      message: 'This task was delayed by 15 minutes.',
-    });
-  };
+        return () => {
+          animation.stop();
+          waveAnimationProgress.stopAnimation();
+        };
+      }, [waveAnimationProgress]),
+    );
 
-  const [reminderPickerVisible, setReminderPickerVisible] = useState(false);
-  const [reminderTaskTitle, setReminderTaskTitle] = useState<string | null>(null);
+    const handleNavigateToBabyStatus = useCallback(() => {
+      if (showBabyAds || isNavigatingToBaby) return;
+      setIsNavigatingToBaby(true);
+      setTimeout(() => {
+        setIsNavigatingToBaby(false);
+        setShowBabyAds(true);
+      }, 350);
+    }, [isNavigatingToBaby, showBabyAds]);
 
-  const openReminderPicker = (taskTitle: string) => {
-    setReminderTaskTitle(taskTitle);
-    setReminderPickerVisible(true);
-  };
+    const totalTasks = dailyPlan?.primaryActions.length ?? 0;
+    const doneTasks =
+      dailyPlan?.primaryActions.filter(action => action.completed)
+        .length ?? 0;
+    const protectionPct =
+      totalTasks > 0
+        ? Math.round((doneTasks / totalTasks) * 100)
+        : 0;
 
-  const handleReminderConfirm = (hour: number, minute: number) => {
-    const titleForToast = reminderTaskTitle ?? 'Reminder';
-    setReminderPickerVisible(false);
-    setReminderTaskTitle(null);
-    showToast({
-      type: 'success',
-      title: titleForToast,
-      message: `Reminder set for ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}.`,
-    });
-  };
-
-  const tasksByCategory = useMemo(() => ({
-    diet: dailyTasks.filter(t => t.category === 'diet'),
-    activity: dailyTasks.filter(t => t.category === 'activity'),
-    behaviour: dailyTasks.filter(t => t.category === 'behavior'),
-  }), [dailyTasks]);
-
-  // Badge counts driven by task completion (not recommendation completion)
-  const dietCounts = {
-    done: tasksByCategory.diet.filter(t => completedTaskCodes.includes(t.code)).length,
-    total: tasksByCategory.diet.length,
-  };
-  const exerciseCounts = {
-    done: tasksByCategory.activity.filter(t => completedTaskCodes.includes(t.code)).length,
-    total: tasksByCategory.activity.length,
-  };
-  const behaviorCounts = {
-    done: tasksByCategory.behaviour.filter(t => completedTaskCodes.includes(t.code)).length,
-    total: tasksByCategory.behaviour.length,
-  };
-
-  const totalTasks = dailyTasks.length;
-  const doneTasks = completedTaskCodes.filter(code => dailyTasks.some(t => t.code === code)).length;
-  const protectionPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
-
-  // Get current date info
-  const today = new Date();
-  const dateString = today.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).replace(/\//g, '/');
-  const tasksDayLabel = today.toLocaleDateString('en-US', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-
-  const styles = useMemo(() => StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: '#fff',
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing('md'),
-      paddingTop: insets.top + spacing('md'),
-      paddingBottom: spacing('md'),
-      backgroundColor: '#fff',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 3,
-      elevation: 3,
-    },
-    backButton: {
-      padding: spacing('sm'),
-      marginRight: spacing('sm'),
-    },
-    headerTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(18),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    content: {
-      flex: 1,
-      paddingHorizontal: spacing('md'),
-    },
-    dateSection: {
-      paddingTop: spacing('lg'),
-    },
-    dateText: {
-      fontSize: responsiveUtils.getFixedFontSize(24),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    dayWeekText: {
-      fontSize: responsiveUtils.getFixedFontSize(16),
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.neutral500,
-    },
-    cardsSection: {
-      paddingTop: spacing('lg'),
-      alignItems: 'center',
-    },
-    cardsContainer: {
-      backgroundColor: '#FFF',
-      borderWidth: 1,
-      borderColor: theme.colors.neutral100,
-      borderRadius: 12,
-      padding: 16,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 3,
-      elevation: 2,
-      alignSelf: 'center',
-    },
-    cardsRow: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      alignItems: 'center',
-      gap: 8,
-    },
-    weekCard: {
-      backgroundColor: '#FFF',
-      borderRadius: 12,
-      padding: spacing('md'),
-      marginTop: spacing('md'),
-      shadowColor: theme.colors.orange500,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 10,
-      elevation: 10,
-    },
-    weekTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(20),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginBottom: spacing('sm'),
-    },
-    weekDescription: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: responsiveUtils.getFixedLineHeight(14, 20),
-      marginBottom: spacing('md'),
-    },
-    divider: {
-      height: 1,
-      backgroundColor: theme.colors.neutral200,
-      marginBottom: spacing('md'),
-    },
-    featureItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing('md'),
-      marginBottom: spacing('md'),
-    },
-    iconCircle: {
-      width: ICON_SIZE,
-      height: ICON_SIZE,
-      borderRadius: ICON_SIZE / 2,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: theme.colors.orange100,
-    },
-    featureText: {
-      flex: 1,
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.medium,
-      color: theme.colors.orange500,
-    },
-    showMoreButton: {
-      alignItems: 'center',
-      paddingTop: spacing('sm'),
-    },
-    showMoreText: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.medium,
-      color: theme.colors.textPrimary,
-    },
-    protectionCard: {
-      backgroundColor: '#FFF',
-      borderRadius: 12,
-      padding: spacing('md'),
-      marginTop: spacing('md'),
-      shadowColor: theme.colors.orange500,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 10,
-      elevation: 10,
-    },
-    headerBadges: {
-      flexDirection: 'row',
-      gap: spacing('sm'),
-      marginBottom: spacing('lg'),
-    },
-    badge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 20,
-      gap: 6,
-    },
-    badgeGreen: {
-      backgroundColor: '#E8F5E9',
-    },
-    badgeYellow: {
-      backgroundColor: '#FFF9E6',
-    },
-    badgeRed: {
-      backgroundColor: '#FFE5E5',
-    },
-    badgeText: {
-      fontSize: responsiveUtils.getBadgeFontSize(),
-      fontFamily: theme.typography.fontFamily.medium,
-    },
-    badgeTextGreen: {
-      color: '#4CAF50',
-    },
-    badgeTextYellow: {
-      color: '#FF9800',
-    },
-    badgeTextRed: {
-      color: '#F44336',
-    },
-    protectionSection: {
-      marginBottom: spacing('lg'),
-    },
-    protectionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing('md'),
-      marginBottom: spacing('sm'),
-    },
-    protectionIcon: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    protectionIconGreen: {
-      backgroundColor: '#E8F5E9',
-    },
-    protectionIconYellow: {
-      backgroundColor: '#FFF9E6',
-    },
-    protectionTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(16),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      flex: 1,
-    },
-    progressContainer: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing('sm'),
-    },
-    progressBar: {
-      flex: 1,
-      height: 8,
-      borderRadius: 4,
-      flexDirection: 'row',
-      overflow: 'hidden',
-    },
-    progressBarFill: {
-      height: '100%',
-      borderRadius: 4,
-    },
-    progressBarEmpty: {
-      height: '100%',
-      flex: 1,
-      borderRadius: 4,
-    },
-    progressBarFillGreen: {
-      backgroundColor: '#4CAF50',
-    },
-    progressBarFillOrange: {
-      backgroundColor: '#FF6900',
-    },
-    progressBarEmptyGreen: {
-      backgroundColor: '#E8F5E9',
-    },
-    progressBarEmptyOrange: {
-      backgroundColor: '#FFF5E0',
-    },
-    progressText: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.bold,
-      minWidth: 40,
-      textAlign: 'right',
-    },
-    progressTextGreen: {
-      color: '#4CAF50',
-    },
-    progressTextOrange: {
-      color: '#FF6900',
-    },
-
-    tasksContainer:{
-      display:'flex',
-      flexDirection:'column',
-      flex:1,
-    },
-    categorySection: {
-      marginTop: spacing('lg'),
-    },
-    categoryHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing('sm'),
-      marginBottom: spacing('xs'),
-    },
-    categoryIconCircle: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    categoryTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(16),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    categoryHeaderCard: {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      gap: spacing('sm'),
-      borderRadius: 10,
-      padding: spacing('sm'),
-      marginBottom: spacing('xs'),
-    },
-    categoryTitleBlock: {
-      flex: 1,
-    },
-    categorySubtitle: {
-      fontSize: responsiveUtils.getFixedFontSize(12),
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textSecondary,
-      lineHeight: responsiveUtils.getFixedLineHeight(12, 18),
-      marginTop: 2,
-    },
-    categoryCount: {
-      fontSize: responsiveUtils.getFixedFontSize(13),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.neutral500,
-    },
-    healthRisksCard: {
-      backgroundColor: '#FFF',
-      borderRadius: 12,
-      padding: spacing('md'),
-      marginTop: spacing('lg'),
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 3,
-      elevation: 2,
-      marginBottom:100,
-    },
-    healthRisksHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: spacing('md'),
-      gap: spacing('sm'),
-    },
-    healthRisksTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(18),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-    },
-    riskSection: {
-      backgroundColor: '#FFF',
-      borderRadius: 8,
-      padding: spacing('md'),
-      marginBottom: spacing('md'),
-    },
-    riskSectionMother: {
-      backgroundColor: '#FFF6F0',
-    },
-    riskSectionBaby: {
-      backgroundColor: '#FFF8FA',
-    },
-    riskTitle: {
-      fontSize: responsiveUtils.getFixedFontSize(16),
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginBottom: spacing('xs'),
-    },
-    riskDecrease: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.medium,
-      color: '#4CAF50',
-      marginBottom: spacing('sm'),
-    },
-    riskIncrease: {
-      fontSize: responsiveUtils.getFixedFontSize(14),
-      fontFamily: theme.typography.fontFamily.medium,
-      color: '#F44336',
-      marginBottom: spacing('sm'),
-    },
-    riskProgressContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing('sm'),
-      marginBottom: spacing('sm'),
-    },
-    riskProgressBar: {
-      flex: 1,
-      height: 8,
-      borderRadius: 4,
-      flexDirection: 'row',
-      overflow: 'hidden',
-    },
-    riskProgressBarFill: {
-      height: '100%',
-      borderRadius: 4,
-    },
-    riskProgressBarEmpty: {
-      height: '100%',
-      flex: 1,
-      borderRadius: 4,
-    },
-    riskProgressBarFillMother: {
-      backgroundColor: '#FF6900',
-    },
-    riskProgressBarFillBaby: {
-      backgroundColor: '#9C27B0',
-    },
-    riskProgressBarEmptyMother: {
-      backgroundColor: '#FFE0B2',
-    },
-    riskProgressBarEmptyBaby: {
-      backgroundColor: '#E1BEE7',
-    },
-    riskTag: {
-      paddingHorizontal: spacing('sm'),
-      paddingVertical: spacing('xs'),
-      borderRadius: 6,
-      alignSelf: 'flex-start',
-    },
-    riskTagMother: {
-      backgroundColor: '#FFE0B2',
-    },
-    riskTagBaby: {
-      backgroundColor: '#E1BEE7',
-    },
-    riskTagText: {
-      fontSize: responsiveUtils.getFixedFontSize(12),
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.textPrimary,
-    },
-  }), [theme, insets.top]);
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={onBackPress}
-          activeOpacity={0.7}
-        >
-          <FontAwesomeIcon 
-            icon={faArrowLeft as any} 
-            size={20} 
-            color={theme.colors.textPrimary} 
-          />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} allowFontScaling={false}>{t('today.title')}</Text>
-      </View>
-      
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Date Section */}
-        <View style={styles.dateSection}>
-          <Text style={styles.dateText} allowFontScaling={false}>{dateString}</Text>
-          <Text style={styles.dayWeekText} allowFontScaling={false}>{t('today.day_week', { week: currentWeek })}</Text>
-        </View>
-
-        {/* Wave Cards Section */}
-        <View style={styles.cardsSection}>
-          <View style={styles.cardsContainer}>
-            <View style={styles.cardsRow}>
-              <WaveCard
-                type="water"
-                percentage={Math.min(100, Math.round((waterAmount / (lifestyle?.hydration_target_ml_per_day || 2000)) * 100))}
-                label={`${t('today.water')}\n${waterAmount}/${lifestyle?.hydration_target_ml_per_day || 2000}ml`}
-              />
-              <WaveCard
-                type="mood"
-                percentage={wellbeingMoodCount > 0 ? Math.min(100, Math.round((wellbeingMoodIds.length / wellbeingMoodCount) * 100)) : 0}
-                label={t('today.mood')}
-              />
-              <WaveCard
-                type="feeling"
-                percentage={wellbeingFeelingCount > 0 ? Math.min(100, Math.round((wellbeingFeelingIds.length / wellbeingFeelingCount) * 100)) : 0}
-                label={t('today.feeling')}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Exposure Accordion */}
-        <ExposureAccordion airExposure={airExposure} />
-
-        {/* Week Info Card */}
-        <View style={styles.weekCard}>
-          <Text style={styles.weekTitle} allowFontScaling={false}>{t('today.week_label', { week: currentWeek })}</Text>
-          <Text style={styles.weekDescription} allowFontScaling={false}>
-            {summary?.week_info?.text || t('today.week_default_text')}
-          </Text>
-          
-          <View style={styles.divider} />
-          
-          {/* Feature Items */}
-          <View style={styles.featureItem}>
-            <View style={styles.iconCircle}>
-              {SVG_ICONS['senseSystem.svg'] && (
-                <IconWithWave
-                  svgXml={increaseStrokeWidth(SVG_ICONS['senseSystem.svg'], ICON_STROKE_WIDTH)}
-                  width={28}
-                  height={28}
-                  percentage={60}
-                  uniqueId="sense-week19"
-                />
-              )}
-            </View>
-            <Text style={styles.featureText} allowFontScaling={false}>
-              {t('today.feature_nervous_system')}
-            </Text>
-          </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.featureItem}>
-            <View style={styles.iconCircle}>
-              {SVG_ICONS['brainSystem.svg'] && (
-                <IconWithWave
-                  svgXml={increaseStrokeWidth(SVG_ICONS['brainSystem.svg'], ICON_STROKE_WIDTH)}
-                  width={28}
-                  height={28}
-                  percentage={70}
-                  uniqueId="brain-week19"
-                />
-              )}
-            </View>
-            <Text style={styles.featureText} allowFontScaling={false}>
-              {t('today.feature_senses')}
-            </Text>
-          </View>
-          
-          <View style={styles.divider} />
-          
-          <TouchableOpacity style={styles.showMoreButton} activeOpacity={0.7} onPress={handleNavigateToBabyStatus}>
-            <Text style={styles.showMoreText} allowFontScaling={false}>{t('common.show_more')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Protection Card */}
-        <View style={styles.protectionCard}>
-          {/* Header Badges */}
-          <View style={styles.headerBadges}>
-            <View style={[styles.badge, styles.badgeGreen]}>
-              <SvgXml xml={DIET_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextGreen]} allowFontScaling={false}>
-                {dietCounts.done}/{dietCounts.total}
-              </Text>
-            </View>
-            <View style={[styles.badge, styles.badgeYellow]}>
-              <SvgXml xml={RUNNING_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextYellow]} allowFontScaling={false}>
-                {exerciseCounts.done}/{exerciseCounts.total}
-              </Text>
-            </View>
-            <View style={[styles.badge, styles.badgeRed]}>
-              <SvgXml xml={BEHAVIOUR_SVG} width={18} height={18} />
-              <Text style={[styles.badgeText, styles.badgeTextRed]} allowFontScaling={false}>
-                {behaviorCounts.done}/{behaviorCounts.total}
-              </Text>
-            </View>
-          </View>
-
-          {/* Mother's Protection */}
-          <View style={styles.protectionSection}>
-            <View style={styles.protectionRow}>
-              <View style={[styles.protectionIcon, styles.protectionIconGreen]}>
-                <SvgXml xml={MOTHER_RISK_SVG} width={40} height={40} />
-              </View>
-              <Text style={styles.protectionTitle} allowFontScaling={false}>{t('today.mothers_protection')}</Text>
-            </View>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View style={[styles.progressBarFill, styles.progressBarFillGreen, { width: `${protectionPct}%` }]} />
-                <View style={[styles.progressBarEmpty, styles.progressBarEmptyGreen]} />
-              </View>
-              <Text style={[styles.progressText, styles.progressTextGreen]} allowFontScaling={false}>{protectionPct}%</Text>
-            </View>
-          </View>
-
-          {/* Baby's Protection */}
-          <View style={styles.protectionSection}>
-            <View style={styles.protectionRow}>
-              <View style={[styles.protectionIcon, styles.protectionIconYellow]}>
-                <SvgXml xml={BABY_RISK_SVG} width={40} height={40} />
-              </View>
-              <Text style={styles.protectionTitle} allowFontScaling={false}>{t('today.babys_protection')}</Text>
-            </View>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View style={[styles.progressBarFill, styles.progressBarFillOrange, { width: `${protectionPct}%` }]} />
-                <View style={[styles.progressBarEmpty, styles.progressBarEmptyOrange]} />
-              </View>
-              <Text style={[styles.progressText, styles.progressTextOrange]} allowFontScaling={false}>{protectionPct}%</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Today's Tasks Section */}
-        <View style={styles.dateSection}>
-          <Text style={styles.dateText} allowFontScaling={false}>{t('today.tasks_title')}</Text>
-          <Text style={styles.dayWeekText} allowFontScaling={false}>{tasksDayLabel}</Text>
-        </View>
-
-        <View style={styles.tasksContainer}>
-          {([
-            { key: 'diet' as const,      label: t('today.diet'),      icon: DIET_SVG,      apiCategory: 'diet',     headerBg: '#F0FBF0', iconBg: '#C8EFD4' },
-            { key: 'activity' as const,  label: t('today.activity'),  icon: RUNNING_SVG,   apiCategory: 'exercise', headerBg: '#FFFBF0', iconBg: '#FFE8A3' },
-            { key: 'behaviour' as const, label: t('today.behaviour'), icon: BEHAVIOUR_SVG, apiCategory: 'behavior', headerBg: '#FFF5F5', iconBg: '#FFCDD2' },
-          ] as const).map(section => {
-            const sectionTasks = tasksByCategory[section.key];
-            if (sectionTasks.length === 0) return null;
-            const rec = (summary?.recommendations ?? []).find(r => r.category === section.apiCategory);
-            const doneCount = sectionTasks.filter(t => completedTaskCodes.includes(t.code)).length;
-            return (
-              <View key={section.key} style={styles.categorySection}>
-                <View style={[styles.categoryHeaderCard, { backgroundColor: section.headerBg }]}>
-                  <View style={[styles.categoryIconCircle, { backgroundColor: section.iconBg }]}>
-                    <SvgXml xml={section.icon} width={18} height={18} />
-                  </View>
-                  <View style={styles.categoryTitleBlock}>
-                    <Text style={styles.categoryTitle} allowFontScaling={false}>{section.label}</Text>
-                    {rec && (
-                      <Text style={styles.categorySubtitle} allowFontScaling={false} numberOfLines={2}>
-                        {rec.message}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.categoryCount} allowFontScaling={false}>{doneCount}/{sectionTasks.length}</Text>
-                </View>
-                {sectionTasks.map(task => (
-                  <TaskCard
-                    key={task.code}
-                    type={section.key}
-                    hideIcon
-                    title={task.title}
-                    initialChecked={completedTaskCodes.includes(task.code)}
-                    buttons={[{ label: t('today.set_reminder'), onPress: () => openReminderPicker(task.title), variant: 'reminder' }]}
-                    onCheck={(checked) => {
-                      const todayDate = getTodayDate();
-                      const updated = checked
-                        ? [...completedTaskCodes, task.code]
-                        : completedTaskCodes.filter(c => c !== task.code);
-                      setCompletedTaskCodes(updated);
-                      TaskCompletionService.saveCompleted(todayDate, updated).catch(() => {});
-                    }}
-                  />
-                ))}
-              </View>
+    const handleChangeActionState = useCallback(
+      (action: DailyPlanAction, state: DailyActionState) => {
+        if (!dailyPlan) return;
+        const hadCompletedAction = dailyPlan.primaryActions.some(
+          item => item.completed,
+        );
+        const isPrimary = dailyPlan.primaryActions.some(
+          item => item.key === action.key,
+        );
+        const update = updateDailyPlanActionState(
+          identity,
+          dailyPlan,
+          action.key,
+          state,
+        );
+        setDailyPlan(update.experience);
+        if (state === 'completed' && !action.completed) {
+          ProductAnalytics.track(identity, 'task_complete', {
+            kind: isPrimary ? 'primary' : 'extra',
+            domain: action.domain,
+          });
+          ProductAnalytics.track(
+            identity,
+            'domain_participation',
+            {
+              domain: action.domain,
+              completedCount: 1,
+            },
+          );
+          if (isPrimary) {
+            const streak = getPersistentStreak(
+              identity,
+              date,
             );
-          })}
-        </View>
-
-        {/* Health Risks Card */}
-        <View style={styles.healthRisksCard}>
-          <View style={styles.healthRisksHeader}>
-            <Svg width={24} height={24} viewBox="0 0 24 24">
-              <Path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"
-                fill="none"
-                stroke="#FFB86A"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-              <Path
-                d="M12 2C6.48 2 2 6.48 2 12"
-                fill="none"
-                stroke="#FF6900"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeDasharray="31.4"
-                strokeDashoffset="18.84"
-              />
-            </Svg>
-            <Text style={styles.healthRisksTitle} allowFontScaling={false}>{t('today.health_risks')}</Text>
-          </View>
-
-          {/* Mother's Risk Section */}
-          <View style={[styles.riskSection, styles.riskSectionMother]}>
-            <Text style={styles.riskTitle} allowFontScaling={false}>{t('today.mothers_risk')}</Text>
-            <Text
-              style={summary?.risks_delta?.mom && summary.risks_delta.mom > 0 ? styles.riskIncrease : styles.riskDecrease}
-              allowFontScaling={false}
-            >
-              {summary?.risks_delta?.mom ? `${Math.abs(summary.risks_delta.mom).toFixed(1)}% ${summary.risks_delta.mom < 0 ? t('today.decrease') : t('today.increase')}` : t('today.no_change')}
-            </Text>
-            <View style={styles.riskProgressContainer}>
-              <View style={styles.riskProgressBar}>
-                <View style={[styles.riskProgressBarFill, styles.riskProgressBarFillMother, { width: `${((summary?.mom_exposure?.exposure_level || 0) / 8) * 100}%` }]} />
-                <View style={[styles.riskProgressBarEmpty, styles.riskProgressBarEmptyMother]} />
-              </View>
-            </View>
-            <View style={[styles.riskTag, styles.riskTagMother]}>
-              <Text style={styles.riskTagText} allowFontScaling={false}>
-                {(summary?.mom_exposure?.exposure_level || 0)}/8 {t('today.exposure_level')}
-              </Text>
-            </View>
-          </View>
-
-          {/* Baby's Risk Section */}
-          <View style={[styles.riskSection, styles.riskSectionBaby]}>
-            <Text style={styles.riskTitle} allowFontScaling={false}>{t('today.babys_risk')}</Text>
-            <Text
-              style={summary?.risks_delta?.baby && summary.risks_delta.baby > 0 ? styles.riskIncrease : styles.riskDecrease}
-              allowFontScaling={false}
-            >
-              {summary?.risks_delta?.baby ? `${Math.abs(summary.risks_delta.baby).toFixed(1)}% ${summary.risks_delta.baby < 0 ? t('today.decrease') : t('today.increase')}` : t('today.no_change')}
-            </Text>
-            <View style={styles.riskProgressContainer}>
-              <View style={styles.riskProgressBar}>
-                <View style={[styles.riskProgressBarFill, styles.riskProgressBarFillBaby, { width: `${((summary?.baby_exposure?.exposure_level || 0) / 8) * 100}%` }]} />
-                <View style={[styles.riskProgressBarEmpty, styles.riskProgressBarEmptyBaby]} />
-              </View>
-            </View>
-            <View style={[styles.riskTag, styles.riskTagBaby]}>
-              <Text style={styles.riskTagText} allowFontScaling={false}>
-                {(summary?.baby_exposure?.exposure_level || 0)}/8 {t('today.exposure_level')}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* FAB */}
-      <FloatingActionButton
-        initialMoodIds={wellbeingMoodIds}
-        initialFeelingIds={wellbeingFeelingIds}
-        waterDailyTotal={waterAmount}
-        waterTarget={lifestyle?.hydration_target_ml_per_day || 2000}
-        onApply={(data) => {
-          const todayDate = getTodayDate();
-          WellbeingService.saveLog({
-            date: todayDate,
-            mood_ids: data.mood_ids,
-            feeling_ids: data.feeling_ids,
-            water_amount: data.water_amount,
-          }).catch(() => {});
-          setWellbeingMoodIds(data.mood_ids);
-          setWellbeingFeelingIds(data.feeling_ids);
-          if (data.water_amount > 0) {
-            setWaterAmount(prev => prev + data.water_amount);
+            ProductAnalytics.track(
+              identity,
+              'streak_progress',
+              {
+                days: streak.days,
+                freezeAvailable: streak.freezeAvailable,
+              },
+            );
           }
-        }}
-      />
+        }
 
-      <ReminderTimePicker
-        visible={reminderPickerVisible}
-        onClose={() => {
-          setReminderPickerVisible(false);
-          setReminderTaskTitle(null);
-        }}
-        onConfirm={handleReminderConfirm}
-        taskTitle={reminderTaskTitle ?? undefined}
-      />
+        if (
+          state === 'completed' &&
+          isPrimary &&
+          !hadCompletedAction &&
+          !useRecommendationExperienceStore
+            .getState()
+            .hasCelebratedDailyWin(date)
+        ) {
+          useRecommendationExperienceStore
+            .getState()
+            .markDailyWinCelebrated(date);
+          setShowDailyWin(true);
+        }
+        const milestone = t(
+          `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
+        );
+        setStreakDays(
+          loadWeeklySummaryExperience({
+            identity,
+            pregnancyWeek: currentWeek,
+            endDate: date,
+            milestone,
+            backendSummary: summary,
+          }).streakDays,
+        );
+        update.sync.catch(() => {});
+      },
+      [currentWeek, dailyPlan, date, identity, summary, t],
+    );
 
-      <TransitionLoader visible={isNavigatingToBaby} />
+    const handleToggleAction = useCallback(
+      (action: DailyPlanAction, completed: boolean) => {
+        handleChangeActionState(
+          action,
+          completed ? 'completed' : 'pending',
+        );
+      },
+      [handleChangeActionState],
+    );
 
-      <Modal
-        visible={showBabyAds}
-        animationType="fade"
-        onRequestClose={() => {}}
-      >
-        <AdsScreen
-          onClose={() => {
-            setShowBabyAds(false);
-            onNavigateToBabyStatus?.();
+    const criticalRecommendation = summary?.recommendations?.find(
+      recommendation => {
+        const severity = recommendation.severity
+          ?.trim()
+          .toLowerCase();
+        return (
+          ['critical', 'urgent', 'high'].includes(severity) &&
+          Boolean(
+            recommendation.alert ||
+              recommendation.message ||
+              recommendation.title,
+          )
+        );
+      },
+    );
+
+    const motherDataAvailable = Boolean(
+      summary?.mom_exposure ||
+        summary?.risks_delta?.mom !== undefined,
+    );
+    const babyDataAvailable = Boolean(
+      summary?.baby_exposure ||
+        summary?.risks_delta?.baby !== undefined,
+    );
+    const motherStatus: DashboardStatus =
+      isPresentationMotherBabyContext && !motherDataAvailable
+      ? 'context'
+      : !motherDataAvailable
+      ? 'unavailable'
+      : (summary?.risks_delta?.mom ?? 0) > 0
+      ? 'attention'
+      : 'stable';
+    const babyStatus: DashboardStatus =
+      isPresentationMotherBabyContext && !babyDataAvailable
+      ? 'context'
+      : !babyDataAvailable
+      ? 'unavailable'
+      : (summary?.risks_delta?.baby ?? 0) > 0
+      ? 'attention'
+      : 'stable';
+    const motherAndBabyAttention =
+      motherStatus === 'attention' ||
+      babyStatus === 'attention';
+    const motherAndBabyStatus: DashboardStatus =
+      motherAndBabyAttention
+        ? 'attention'
+        : motherStatus === 'context' &&
+          babyStatus === 'context'
+        ? 'context'
+        : motherDataAvailable || babyDataAvailable
+        ? 'stable'
+        : 'unavailable';
+
+    const statusLabel = (status: DashboardStatus): string =>
+      t(
+        status === 'stable'
+          ? 'today.status_stable'
+          : status === 'attention'
+          ? 'today.status_attention'
+          : status === 'context'
+          ? 'today.status_care_context'
+          : 'today.status_unavailable',
+      );
+
+    const moodSummary = checkIn
+      ? selectedItemSummary(
+          checkIn.selection.moodKeys,
+          checkIn.moods,
+          t('today.log_now'),
+        )
+      : t('today.log_now');
+    const feelingSummary = checkIn
+      ? selectedItemSummary(
+          checkIn.selection.feelingKeys,
+          checkIn.feelings,
+          t('today.log_now'),
+        )
+      : t('today.log_now');
+    const hydrationTarget =
+      lifestyle?.hydration_target_ml_per_day ?? 2000;
+    const waterProgress = Math.min(
+      100,
+      Math.round(
+        ((checkIn?.waterDailyTotalMl ?? 0) /
+          hydrationTarget) *
+          100,
+      ),
+    );
+    const moodProgress =
+      checkIn && checkIn.moods.length > 0
+        ? Math.min(
+            100,
+            Math.round(
+              (checkIn.selection.moodKeys.length /
+                checkIn.moods.length) *
+                100,
+            ),
+          )
+        : 0;
+    const feelingProgress =
+      checkIn && checkIn.feelings.length > 0
+        ? Math.min(
+            100,
+            Math.round(
+              (checkIn.selection.feelingKeys.length /
+                checkIn.feelings.length) *
+                100,
+            ),
+          )
+        : 0;
+    const selectedMommySymptomKeys = new Set(
+      checkIn?.selection.mommySymptomKeys ?? [],
+    );
+    const selectedMommySymptoms =
+      checkIn?.mommySymptoms.filter(item =>
+        selectedMommySymptomKeys.has(item.key),
+      ) ?? [];
+    const warningSymptoms = selectedMommySymptoms.filter(
+      item => item.group === 'warning',
+    );
+    const symptomCount = selectedMommySymptoms.length;
+    const symptomRecordKnown =
+      checkIn?.recordState === 'recorded';
+    const symptomSummary =
+      warningSymptoms.length > 0
+        ? t('today.warning_symptoms_recorded', {
+            count: warningSymptoms.length,
+            total: symptomCount,
+          })
+        : symptomCount > 0
+        ? t('today.symptoms_recorded', {
+            count: symptomCount,
+          })
+        : symptomRecordKnown
+        ? t('today.no_symptoms_reported')
+        : t('today.log_symptoms');
+    const symptomUtilitySummary =
+      warningSymptoms.length > 0
+        ? t('today.symptom_warning_compact', {
+            count: warningSymptoms.length,
+            total: symptomCount,
+          })
+        : symptomCount > 0
+        ? t('today.symptom_count_compact', {
+            count: symptomCount,
+          })
+        : symptomRecordKnown
+        ? t('today.symptom_none_compact')
+        : t('today.log_symptoms');
+    const quickRest = dailyMoments['quick-rest'];
+    const restSummary = quickRest?.completed
+      ? t('today.rest_logged', {
+          minutes: quickRest.durationMinutes ?? 10,
+        })
+      : t('today.log_rest');
+    const growingSystems = useMemo(() => {
+      const weekIndex = Math.max(
+        0,
+        Math.min(WEEKS_DATA.length - 1, currentWeek - 1),
+      );
+      const systems = WEEKS_DATA[weekIndex]?.circleIcons ?? [];
+      if (systems.length > 0) return systems.slice(0, 3);
+      return [
+        {
+          index: 0,
+          iconPath: 'brainSystem.svg',
+          percentage: 0,
+        },
+        {
+          index: 1,
+          iconPath: 'senseSystem.svg',
+          percentage: 0,
+        },
+      ];
+    }, [currentWeek]);
+
+    const getSystemLabel = (iconPath?: string): string => {
+      const rawKey = (iconPath || 'heartSystem.svg').replace(
+        '.svg',
+        '',
+      );
+      const translated = t(
+        `baby.system_${rawKey}` as any,
+        { defaultValue: '' },
+      );
+      return (
+        translated ||
+        rawKey
+          .replace(/System$/, '')
+          .replace(/([A-Z])/g, ' $1')
+          .trim()
+      );
+    };
+
+    const openQuickCheckIn = (
+      kind: TodayQuickCheckInKind,
+      trigger: React.ElementRef<typeof Pressable> | null,
+    ) => {
+      lastSheetTrigger.current = trigger;
+      setQuickCheckInKind(kind);
+    };
+
+    const openDetailSheet = (
+      sheet: Exclude<DashboardDetailSheet, null>,
+      trigger: React.ElementRef<typeof Pressable> | null,
+    ) => {
+      lastSheetTrigger.current = trigger;
+      setDetailSheet(sheet);
+    };
+
+    const restoreSheetTriggerFocus = () => {
+      const trigger = lastSheetTrigger.current;
+      setTimeout(() => {
+        const node = trigger ? findNodeHandle(trigger) : null;
+        if (node) AccessibilityInfo.setAccessibilityFocus(node);
+      }, 350);
+    };
+
+    const closeQuickCheckIn = () => {
+      setQuickCheckInKind(null);
+      restoreSheetTriggerFocus();
+    };
+
+    const closeDetailSheet = () => {
+      setDetailSheet(null);
+      restoreSheetTriggerFocus();
+    };
+
+    const waterRef =
+      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const moodRef =
+      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const feelingRef =
+      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const snapshotRef =
+      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const symptomRef =
+      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const restRef =
+      useRef<React.ElementRef<typeof Pressable> | null>(null);
+
+    const formatRiskDelta = (
+      delta: number | undefined,
+    ): string => {
+      if (delta === undefined) {
+        return t('today.status_unavailable');
+      }
+      if (delta === 0) return t('today.no_change');
+      return `${Math.abs(delta).toFixed(1)}% ${t(
+        delta < 0 ? 'today.decrease' : 'today.increase',
+      )}`;
+    };
+
+    const handleDashboardCardLayout = useCallback(
+      (event: any) => {
+        const nextHeight = Math.ceil(
+          event.nativeEvent.layout.height,
+        );
+        setDashboardCardHeight(previousHeight =>
+          Math.abs(previousHeight - nextHeight) > 1
+            ? nextHeight
+            : previousHeight,
+        );
+      },
+      [],
+    );
+
+    const handleDashboardScrollEnd = useCallback(
+      (
+        event: NativeSyntheticEvent<NativeScrollEvent>,
+      ) => {
+        const nextPage =
+          event.nativeEvent.contentOffset.x >=
+          dashboardSecondOffset / 2
+            ? 1
+            : 0;
+        setDashboardPage(nextPage);
+      },
+      [dashboardSecondOffset],
+    );
+
+    const showDashboardPage = useCallback(
+      (page: number) => {
+        const nextPage = page === 1 ? 1 : 0;
+        dashboardCarouselRef.current?.scrollTo({
+          x:
+            nextPage === 1
+              ? dashboardSecondOffset
+              : 0,
+          animated: true,
+        });
+        setDashboardPage(nextPage);
+      },
+      [dashboardSecondOffset],
+    );
+
+    const styles = useMemo(
+      () =>
+        StyleSheet.create({
+          container: {
+            flex: 1,
+            backgroundColor: '#FFFFFF',
+          },
+          pageGradient: {
+            ...StyleSheet.absoluteFillObject,
+          },
+          navHeader: {
+            minHeight: 54,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: spacing('sm'),
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: theme.colors.neutral200,
+            backgroundColor: 'rgba(255, 255, 255, 0.97)',
+          },
+          backButton: {
+            width: 48,
+            height: 48,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          navTitle: {
+            flex: 1,
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 18,
+          },
+          scroll: {
+            flex: 1,
+          },
+          content: {
+            width: '100%',
+            maxWidth: 680,
+            alignSelf: 'center',
+            paddingHorizontal: spacing('md'),
+            paddingBottom: spacing('xl') + 16,
+          },
+          warning: {
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            padding: spacing('md'),
+            marginTop: spacing('md'),
+            borderRadius: radius('lg'),
+            borderWidth: 1,
+            borderColor: '#E8A4A4',
+            backgroundColor: '#FFF1F1',
+            gap: spacing('sm'),
+          },
+          warningCopy: {
+            flex: 1,
+          },
+          warningTitle: {
+            color: '#852525',
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 15,
+          },
+          warningBody: {
+            marginTop: spacing('xs'),
+            color: '#6E2B2B',
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 13,
+            lineHeight: 19,
+          },
+          section: {
+            marginTop: spacing('md'),
+          },
+          sectionTitle: {
+            marginBottom: spacing('sm'),
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 20,
+          },
+          dashboardCarouselShell: {
+            marginTop: spacing('md'),
+          },
+          dashboardCarousel: {
+            overflow: 'visible',
+          },
+          dashboardCarouselContent: {
+            alignItems: 'stretch',
+            paddingVertical: 10,
+            gap: DASHBOARD_CAROUSEL_GAP,
+          },
+          dashboardSlide: {
+            justifyContent: 'flex-start',
+          },
+          carouselPagination: {
+            minHeight: 28,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+          },
+          pageIndicatorHit: {
+            width: 28,
+            height: 28,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          pageIndicator: {
+            width: 7,
+            height: 5,
+            borderRadius: 3,
+            backgroundColor: '#D8D2CF',
+          },
+          pageIndicatorActive: {
+            width: 22,
+            backgroundColor: theme.colors.orange500,
+          },
+          liveCard: {
+            padding: spacing('md'),
+            borderRadius: 24,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: '#E9E5E2',
+            backgroundColor: '#FFFFFF',
+            shadowColor: '#5F4858',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.1,
+            shadowRadius: 18,
+            elevation: 5,
+          },
+          liveMeta: {
+            minHeight: 56,
+            flexDirection: 'row',
+            alignItems: 'center',
+          },
+          liveMetaCopy: {
+            flex: 1,
+          },
+          liveWeek: {
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 16,
+          },
+          liveDate: {
+            marginTop: 3,
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 11,
+          },
+          liveDivider: {
+            height: StyleSheet.hairlineWidth,
+            marginVertical: spacing('sm'),
+            backgroundColor: '#ECE9E6',
+          },
+          signalsHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: spacing('sm'),
+          },
+          signalsLabel: {
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 10,
+            letterSpacing: 0.55,
+            textTransform: 'uppercase',
+          },
+          careStatusRow: {
+            minHeight: 58,
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: spacing('md'),
+            paddingHorizontal: spacing('sm'),
+            borderRadius: 16,
+            backgroundColor: '#F7F6F5',
+          },
+          careStatusIcon: {
+            width: 34,
+            height: 34,
+            borderRadius: 17,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing('sm'),
+            backgroundColor: '#FFFFFF',
+          },
+          careStatusCopy: {
+            flex: 1,
+          },
+          careStatusLabel: {
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 10,
+          },
+          careStatusValue: {
+            marginTop: 2,
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 12,
+          },
+          statusDot: {
+            width: 7,
+            height: 7,
+            marginRight: spacing('sm'),
+            borderRadius: 4,
+          },
+          heroCard: {
+            overflow: 'hidden',
+            marginTop: spacing('md'),
+            borderRadius: 24,
+            shadowColor: '#C63A22',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.22,
+            shadowRadius: 18,
+            elevation: 8,
+          },
+          heroGradient: {
+            minHeight: 220,
+            padding: spacing('lg'),
+          },
+          heroGlowOne: {
+            position: 'absolute',
+            top: -55,
+            right: -30,
+            width: 155,
+            height: 155,
+            borderRadius: 78,
+            backgroundColor: 'rgba(255,255,255,0.16)',
+          },
+          heroGlowTwo: {
+            position: 'absolute',
+            bottom: -70,
+            left: -25,
+            width: 180,
+            height: 180,
+            borderRadius: 90,
+            backgroundColor: 'rgba(126,35,118,0.18)',
+          },
+          heroTop: {
+            flexDirection: 'row',
+            alignItems: 'center',
+          },
+          heroCopy: {
+            flex: 1,
+            paddingRight: spacing('md'),
+          },
+          heroEyebrow: {
+            color: 'rgba(255,255,255,0.82)',
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 12,
+            letterSpacing: 0.7,
+            textTransform: 'uppercase',
+          },
+          heroWeek: {
+            marginTop: spacing('xs'),
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 25,
+            lineHeight: 32,
+          },
+          heroDate: {
+            marginTop: 2,
+            color: 'rgba(255,255,255,0.84)',
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 13,
+          },
+          progressRing: {
+            width: 82,
+            height: 82,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          progressRingValue: {
+            position: 'absolute',
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 17,
+          },
+          progressRingLabel: {
+            marginTop: spacing('xs'),
+            color: 'rgba(255,255,255,0.8)',
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 10,
+            textAlign: 'center',
+          },
+          heroStatuses: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: spacing('lg'),
+            gap: spacing('sm'),
+          },
+          heroStatus: {
+            minHeight: 55,
+            flex: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: spacing('sm'),
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.18)',
+            borderRadius: radius('md'),
+            backgroundColor: 'rgba(255,255,255,0.16)',
+          },
+          heroStatusIcon: {
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing('xs'),
+            backgroundColor: 'rgba(255,255,255,0.22)',
+          },
+          heroStatusCopy: {
+            flex: 1,
+          },
+          heroStatusLabel: {
+            color: 'rgba(255,255,255,0.72)',
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 10,
+          },
+          heroStatusValue: {
+            marginTop: 1,
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 12,
+          },
+          heroFooter: {
+            minHeight: 42,
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: spacing('sm'),
+            paddingHorizontal: spacing('sm'),
+            borderRadius: radius('md'),
+            backgroundColor: 'rgba(29,9,19,0.16)',
+          },
+          heroFooterText: {
+            flex: 1,
+            marginHorizontal: spacing('sm'),
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 12,
+          },
+          checkInCard: {
+            flexDirection: 'row',
+            gap: spacing('sm'),
+          },
+          checkInItem: {
+            borderRadius: 9,
+          },
+          checkInUtilityRail: {
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            marginTop: spacing('sm'),
+            overflow: 'hidden',
+            borderRadius: 14,
+            backgroundColor: '#FAF9F7',
+          },
+          checkInUtilityItem: {
+            flex: 1,
+            minHeight: 66,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: spacing('sm'),
+            paddingVertical: spacing('xs'),
+          },
+          checkInUtilityDivider: {
+            width: StyleSheet.hairlineWidth,
+            marginVertical: spacing('sm'),
+            backgroundColor: theme.colors.neutral200,
+          },
+          checkInUtilityIcon: {
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing('xs'),
+            backgroundColor: theme.colors.orange50,
+          },
+          checkInUtilityIconWarning: {
+            backgroundColor: '#FFF0F0',
+          },
+          checkInUtilityIconRest: {
+            backgroundColor: '#F3EAF8',
+          },
+          checkInUtilityCopy: {
+            flex: 1,
+            minWidth: 0,
+          },
+          checkInUtilityTitle: {
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 9,
+            letterSpacing: 0.35,
+            textTransform: 'uppercase',
+          },
+          checkInUtilityValue: {
+            marginTop: 2,
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 11,
+            lineHeight: 14,
+          },
+          checkInUtilityWarning: {
+            color: '#8A2525',
+          },
+          checkInUtilityChevron: {
+            marginLeft: 3,
+          },
+          preparingPlan: {
+            minHeight: 110,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: spacing('lg'),
+            marginTop: spacing('lg'),
+            borderRadius: radius('lg'),
+            borderWidth: 1,
+            borderColor: theme.colors.orange200,
+            backgroundColor: theme.colors.orange50,
+          },
+          preparingText: {
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 14,
+          },
+          riskCard: {
+            overflow: 'hidden',
+            borderRadius: 22,
+            backgroundColor: '#24222D',
+            shadowColor: '#17151D',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.22,
+            shadowRadius: 14,
+            elevation: 6,
+          },
+          riskSummary: {
+            minHeight: 92,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: spacing('md'),
+            paddingVertical: spacing('sm'),
+          },
+          riskIcon: {
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing('sm'),
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.18)',
+            backgroundColor: 'rgba(255,255,255,0.11)',
+          },
+          riskCopy: {
+            flex: 1,
+          },
+          riskLabel: {
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 15,
+          },
+          riskDetail: {
+            marginTop: 3,
+            color: 'rgba(255,255,255,0.64)',
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 12,
+          },
+          riskStatusPill: {
+            marginRight: spacing('sm'),
+            paddingHorizontal: spacing('sm'),
+            paddingVertical: 6,
+            borderRadius: 15,
+            backgroundColor: 'rgba(255,255,255,0.13)',
+          },
+          riskStatusText: {
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 11,
+            textAlign: 'right',
+          },
+          weekCard: {
+            position: 'relative',
+            overflow: 'hidden',
+            padding: spacing('md'),
+            borderRadius: 24,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: '#E7E0E9',
+            backgroundColor: '#FFFFFF',
+            shadowColor: '#654676',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.1,
+            shadowRadius: 18,
+            elevation: 5,
+          },
+          weekAccent: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 5,
+          },
+          weekGlow: {
+            position: 'absolute',
+            top: -72,
+            right: -58,
+            width: 170,
+            height: 170,
+            borderRadius: 85,
+            backgroundColor: 'rgba(112,66,143,0.07)',
+          },
+          weekHeader: {
+            minHeight: 54,
+            flexDirection: 'row',
+            alignItems: 'center',
+          },
+          weekHeaderIcon: {
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing('sm'),
+            backgroundColor: '#F3EAF8',
+          },
+          weekHeaderCopy: {
+            flex: 1,
+          },
+          weekLabel: {
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 10,
+            letterSpacing: 0.55,
+            textTransform: 'uppercase',
+          },
+          weekBadge: {
+            paddingHorizontal: spacing('sm'),
+            paddingVertical: 6,
+            borderRadius: 14,
+            backgroundColor: '#FFF0E2',
+          },
+          weekBadgeText: {
+            color: '#A84E13',
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 10,
+          },
+          weekSummary: {
+            marginTop: spacing('xs'),
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 14,
+            lineHeight: 21,
+          },
+          systemsLabel: {
+            marginTop: spacing('md'),
+            marginBottom: 3,
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 10,
+            letterSpacing: 0.4,
+            textTransform: 'uppercase',
+          },
+          systemsList: {
+            flex: 1,
+          },
+          systemRow: {
+            minHeight: 62,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: spacing('sm'),
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: '#F0E5DC',
+          },
+          systemRowLast: {
+            borderBottomWidth: 0,
+          },
+          systemIcon: {
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: spacing('sm'),
+            backgroundColor: '#FFF0E2',
+          },
+          systemCopy: {
+            flex: 1,
+          },
+          systemName: {
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 12,
+          },
+          systemProgressRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: 6,
+            gap: spacing('sm'),
+          },
+          systemPercentage: {
+            color: theme.colors.orange700,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 10,
+          },
+          systemProgressTrack: {
+            height: 5,
+            flex: 1,
+            overflow: 'hidden',
+            borderRadius: 3,
+            backgroundColor: '#F5D7BE',
+          },
+          systemProgressFill: {
+            height: 5,
+            borderRadius: 3,
+            backgroundColor: theme.colors.orange500,
+          },
+          weekAction: {
+            minHeight: 46,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: spacing('sm'),
+            paddingTop: spacing('sm'),
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: '#E7E0E9',
+            gap: spacing('xs'),
+          },
+          weekActionText: {
+            color: theme.colors.orange700,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 13,
+          },
+          sheet: {
+            maxHeight: 620,
+            paddingBottom: insets.bottom + spacing('xs'),
+          },
+          sheetHeader: {
+            minHeight: 48,
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: spacing('md'),
+          },
+          sheetTitle: {
+            flex: 1,
+            paddingRight: spacing('sm'),
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 21,
+            lineHeight: 28,
+          },
+          closeButton: {
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: theme.colors.neutral100,
+          },
+          sheetScroll: {
+            maxHeight: 480,
+          },
+          detailRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: spacing('md'),
+            borderBottomWidth: 1,
+            borderBottomColor: theme.colors.neutral200,
+          },
+          detailIcon: {
+            width: 38,
+            alignItems: 'center',
+            marginRight: spacing('sm'),
+          },
+          detailCopy: {
+            flex: 1,
+          },
+          detailLabel: {
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 14,
+          },
+          detailText: {
+            marginTop: 2,
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 12,
+            lineHeight: 18,
+          },
+          detailValue: {
+            marginLeft: spacing('sm'),
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 13,
+            textAlign: 'right',
+          },
+          recordedSymptoms: {
+            marginBottom: spacing('md'),
+            padding: spacing('md'),
+            borderRadius: radius('md'),
+            backgroundColor: '#FFF8F2',
+          },
+          recordedSymptomsWarning: {
+            borderWidth: 1,
+            borderColor: '#E8B3B3',
+            backgroundColor: '#FFF4F4',
+          },
+          recordedSymptomsHeader: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: spacing('xs'),
+          },
+          recordedSymptomsTitle: {
+            flex: 1,
+            marginLeft: spacing('sm'),
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 14,
+          },
+          recordedSymptomRow: {
+            paddingVertical: spacing('xs'),
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 13,
+            lineHeight: 18,
+          },
+          symptomWarningNote: {
+            marginTop: spacing('sm'),
+            color: '#8A2525',
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 12,
+            lineHeight: 18,
+          },
+          historyButton: {
+            minHeight: 42,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: spacing('sm'),
+            borderRadius: 21,
+            backgroundColor: '#FFFFFF',
+            gap: spacing('xs'),
+          },
+          historyButtonText: {
+            color: theme.colors.orange600,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 13,
+          },
+        }),
+      [insets.bottom, theme],
+    );
+
+    const renderSheetHeader = (title: string) => (
+      <View style={styles.sheetHeader}>
+        <Text
+          accessibilityRole="header"
+          style={styles.sheetTitle}
+        >
+          {title}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('common.close')}
+          onPress={closeDetailSheet}
+          style={styles.closeButton}
+        >
+          <FontAwesomeIcon
+            icon={faTimes}
+            size={18}
+            color={theme.colors.textPrimary}
+          />
+        </Pressable>
+      </View>
+    );
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['#FFFFFF', '#FFFEFD', '#FAFAFC']}
+          locations={[0, 0.62, 1]}
+          style={styles.pageGradient}
+        />
+        <View style={styles.navHeader}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('common.back')}
+            onPress={onBackPress}
+            style={styles.backButton}
+          >
+            <FontAwesomeIcon
+              icon={faArrowLeft}
+              size={19}
+              color={theme.colors.textPrimary}
+            />
+          </Pressable>
+          <Text
+            accessibilityRole="header"
+            style={styles.navTitle}
+          >
+            {t('today.title')}
+          </Text>
+          {dailyPlan ? (
+            <ExploreMoreView
+              experience={dailyPlan}
+              onChangeActionState={handleChangeActionState}
+            />
+          ) : null}
+        </View>
+
+        <ScrollView
+          ref={pageScrollRef}
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {criticalRecommendation ? (
+            <View
+              accessibilityRole="alert"
+              style={styles.warning}
+            >
+              <FontAwesomeIcon
+                icon={faTriangleExclamation}
+                size={19}
+                color="#A63232"
+              />
+              <View style={styles.warningCopy}>
+                <Text style={styles.warningTitle}>
+                  {criticalRecommendation.title ||
+                    t('today.attention_required')}
+                </Text>
+                <Text style={styles.warningBody}>
+                  {criticalRecommendation.alert ||
+                    criticalRecommendation.message}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.dashboardCarouselShell}>
+            <ScrollView
+              ref={dashboardCarouselRef}
+              horizontal
+              nestedScrollEnabled
+              directionalLockEnabled
+              decelerationRate="fast"
+              disableIntervalMomentum
+              snapToOffsets={[0, dashboardSecondOffset]}
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={handleDashboardScrollEnd}
+              style={styles.dashboardCarousel}
+              contentContainerStyle={
+                styles.dashboardCarouselContent
+              }
+            >
+              <View
+                style={[
+                  styles.dashboardSlide,
+                  dashboardCardStyle,
+                ]}
+              >
+                <View
+                  onLayout={handleDashboardCardLayout}
+                  style={styles.liveCard}
+                >
+                  <View style={styles.liveMeta}>
+                    <View style={styles.liveMetaCopy}>
+                      <Text style={styles.liveWeek}>
+                        {t('today.week_label', {
+                          week: currentWeek,
+                        })}
+                      </Text>
+                      <Text style={styles.liveDate}>
+                        {`${t('today.day_week', {
+                          week: currentWeek,
+                        })
+                          .split('/')[0]
+                        .trim()} · ${currentDateLabel}`}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.liveDivider} />
+                  <ExposureAccordion
+                    airExposure={airExposure}
+                    embedded
+                    ventilation={profile.ventilation}
+                    onOpenHistory={() =>
+                      openDetailSheet('risks', null)
+                    }
+                  />
+                  <View style={styles.liveDivider} />
+
+                  <View style={styles.signalsHeader}>
+                    <Text style={styles.signalsLabel}>
+                      {t('today.todays_checkin')}
+                    </Text>
+                  </View>
+                  <View style={styles.checkInCard}>
+                    <Pressable
+                      ref={waterRef}
+                      accessibilityRole="button"
+                      accessibilityLabel={t(
+                        'today.water_checkin_accessibility',
+                        {
+                          amount:
+                            checkIn?.waterDailyTotalMl ?? 0,
+                          target: hydrationTarget,
+                        },
+                      )}
+                      onPress={() =>
+                        openQuickCheckIn(
+                          'water',
+                          waterRef.current,
+                        )
+                      }
+                      style={styles.checkInItem}
+                    >
+                      <WaveCard
+                        type="water"
+                        percentage={waterProgress}
+                        label={t('today.water')}
+                        animationProgress={
+                          waveAnimationProgress
+                        }
+                        value={`${
+                          checkIn?.waterDailyTotalMl ?? 0
+                        }/${hydrationTarget} ml`}
+                        compact
+                        availableWidth={
+                          dashboardCardInnerWidth
+                        }
+                      />
+                    </Pressable>
+
+                    <Pressable
+                      ref={moodRef}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t(
+                        'today.mood',
+                      )}. ${moodSummary}`}
+                      onPress={() =>
+                        openQuickCheckIn(
+                          'mood',
+                          moodRef.current,
+                        )
+                      }
+                      style={styles.checkInItem}
+                    >
+                      <WaveCard
+                        type="mood"
+                        percentage={moodProgress}
+                        label={t('today.mood')}
+                        animationProgress={
+                          waveAnimationProgress
+                        }
+                        value={moodSummary}
+                        compact
+                        availableWidth={
+                          dashboardCardInnerWidth
+                        }
+                      />
+                    </Pressable>
+
+                    <Pressable
+                      ref={feelingRef}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t(
+                        'today.feeling',
+                      )}. ${feelingSummary}`}
+                      onPress={() =>
+                        openQuickCheckIn(
+                          'feeling',
+                          feelingRef.current,
+                        )
+                      }
+                      style={styles.checkInItem}
+                    >
+                      <WaveCard
+                        type="feeling"
+                        percentage={feelingProgress}
+                        label={t('today.feeling')}
+                        animationProgress={
+                          waveAnimationProgress
+                        }
+                        value={feelingSummary}
+                        compact
+                        availableWidth={
+                          dashboardCardInnerWidth
+                        }
+                      />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.checkInUtilityRail}>
+                    <Pressable
+                      ref={symptomRef}
+                      accessibilityRole="button"
+                      accessibilityLabel={symptomSummary}
+                      onPress={() =>
+                        openQuickCheckIn(
+                          'symptom',
+                          symptomRef.current,
+                        )
+                      }
+                      style={styles.checkInUtilityItem}
+                    >
+                      <View
+                        style={[
+                          styles.checkInUtilityIcon,
+                          warningSymptoms.length > 0 &&
+                            styles.checkInUtilityIconWarning,
+                        ]}
+                      >
+                        <FontAwesomeIcon
+                          icon={
+                            warningSymptoms.length > 0
+                              ? faTriangleExclamation
+                              : faCheck
+                          }
+                          size={12}
+                          color={
+                            warningSymptoms.length > 0
+                              ? '#B93838'
+                              : theme.colors.orange500
+                          }
+                        />
+                      </View>
+                      <View style={styles.checkInUtilityCopy}>
+                        <Text style={styles.checkInUtilityTitle}>
+                          {t('today.symptoms')}
+                        </Text>
+                        <Text
+                          numberOfLines={2}
+                          style={[
+                            styles.checkInUtilityValue,
+                            warningSymptoms.length > 0 &&
+                              styles.checkInUtilityWarning,
+                          ]}
+                        >
+                          {symptomUtilitySummary}
+                        </Text>
+                      </View>
+                      <FontAwesomeIcon
+                        icon={faChevronRight}
+                        size={10}
+                        color={theme.colors.neutral500}
+                        style={styles.checkInUtilityChevron}
+                      />
+                    </Pressable>
+
+                    <View style={styles.checkInUtilityDivider} />
+
+                    <Pressable
+                      ref={restRef}
+                      accessibilityRole="button"
+                      accessibilityLabel={restSummary}
+                      onPress={() =>
+                        openQuickCheckIn(
+                          'rest',
+                          restRef.current,
+                        )
+                      }
+                      style={styles.checkInUtilityItem}
+                    >
+                      <View
+                        style={[
+                          styles.checkInUtilityIcon,
+                          styles.checkInUtilityIconRest,
+                        ]}
+                      >
+                        <FontAwesomeIcon
+                          icon={
+                            quickRest?.completed
+                              ? faCheck
+                              : faBed
+                          }
+                          size={12}
+                          color="#70428F"
+                        />
+                      </View>
+                      <View style={styles.checkInUtilityCopy}>
+                        <Text style={styles.checkInUtilityTitle}>
+                          {t('today.rest')}
+                        </Text>
+                        <Text
+                          numberOfLines={2}
+                          style={styles.checkInUtilityValue}
+                        >
+                          {restSummary}
+                        </Text>
+                      </View>
+                      <FontAwesomeIcon
+                        icon={faChevronRight}
+                        size={10}
+                        color={theme.colors.neutral500}
+                        style={styles.checkInUtilityChevron}
+                      />
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    ref={snapshotRef}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      'today.mother_and_baby_status_accessibility',
+                    )}
+                    accessibilityHint={t(
+                      'today.opens_mother_baby_details',
+                    )}
+                    onPress={() =>
+                      openDetailSheet(
+                        'snapshot',
+                        snapshotRef.current,
+                      )
+                    }
+                    style={styles.careStatusRow}
+                  >
+                    <View style={styles.careStatusIcon}>
+                      <FontAwesomeIcon
+                        icon={
+                          motherAndBabyStatus === 'attention'
+                            ? faCircleExclamation
+                            : faShieldHeart
+                        }
+                        size={14}
+                        color={statusColor(
+                          motherAndBabyStatus,
+                        )}
+                      />
+                    </View>
+                    <View style={styles.careStatusCopy}>
+                      <Text style={styles.careStatusLabel}>
+                        {t('today.mother_and_baby_status')}
+                      </Text>
+                      <Text
+                        numberOfLines={1}
+                        style={styles.careStatusValue}
+                      >
+                        {statusLabel(motherAndBabyStatus)}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.statusDot,
+                        {
+                          backgroundColor:
+                            statusColor(motherAndBabyStatus),
+                        },
+                      ]}
+                    />
+                    <FontAwesomeIcon
+                      icon={faChevronRight}
+                      size={11}
+                      color={theme.colors.neutral500}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.dashboardSlide,
+                  dashboardCardStyle,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.weekCard,
+                    weekCardHeightStyle,
+                  ]}
+                >
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['#70428F', '#C87898', '#FF8A48']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.weekAccent}
+                  />
+                  <View
+                    pointerEvents="none"
+                    style={styles.weekGlow}
+                  />
+
+                  <View style={styles.weekHeader}>
+                    <View style={styles.weekHeaderIcon}>
+                      <FontAwesomeIcon
+                        icon={faBaby}
+                        size={17}
+                        color="#70428F"
+                      />
+                    </View>
+                    <View style={styles.weekHeaderCopy}>
+                      <Text style={styles.weekLabel}>
+                        {t('today.this_week')}
+                      </Text>
+                    </View>
+                    <View style={styles.weekBadge}>
+                      <Text style={styles.weekBadgeText}>
+                        {t('today.week_label', {
+                          week: currentWeek,
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text
+                    numberOfLines={3}
+                    style={styles.weekSummary}
+                  >
+                    {summary?.week_info?.text ||
+                      t('today.week_default_text')}
+                  </Text>
+
+                  <Text style={styles.systemsLabel}>
+                    {t('baby.development_systems')}
+                  </Text>
+                  <View style={styles.systemsList}>
+                    {growingSystems.map((system, index) => {
+                      const iconPath =
+                        system.iconPath ||
+                        'heartSystem.svg';
+                      const svg =
+                        SVG_ICONS[iconPath] ||
+                        SVG_ICONS['heartSystem.svg'];
+                      const percentage = Math.min(
+                        100,
+                        Math.max(
+                          0,
+                          system.percentage ?? 0,
+                        ),
+                      );
+                      return (
+                        <View
+                          key={`${system.index}-${iconPath}`}
+                          style={[
+                            styles.systemRow,
+                            index ===
+                              growingSystems.length - 1 &&
+                              styles.systemRowLast,
+                          ]}
+                        >
+                          <View style={styles.systemIcon}>
+                            <SystemProgressIcon
+                              svgXml={svg}
+                              width={25}
+                              height={25}
+                              percentage={percentage}
+                              uniqueId={`today-week-${currentWeek}-${system.index}-${iconPath}`}
+                            />
+                          </View>
+                          <View style={styles.systemCopy}>
+                            <Text
+                              numberOfLines={1}
+                              style={styles.systemName}
+                            >
+                              {getSystemLabel(iconPath)}
+                            </Text>
+                            <View
+                              style={
+                                styles.systemProgressRow
+                              }
+                            >
+                              <View
+                                style={
+                                  styles.systemProgressTrack
+                                }
+                              >
+                                <View
+                                  style={[
+                                    styles.systemProgressFill,
+                                    {
+                                      width: `${percentage}%`,
+                                    },
+                                  ]}
+                                />
+                              </View>
+                              <Text
+                                style={
+                                  styles.systemPercentage
+                                }
+                              >
+                                {percentage}%
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={
+                      onNavigateToWeeklySummary ??
+                      handleNavigateToBabyStatus
+                    }
+                    style={styles.weekAction}
+                  >
+                    <Text style={styles.weekActionText}>
+                      {t(
+                        onNavigateToWeeklySummary
+                          ? 'today.view_weekly_summary'
+                          : 'today.view_weekly_development',
+                      )}
+                    </Text>
+                    <FontAwesomeIcon
+                      icon={faChevronRight}
+                      size={12}
+                      color={theme.colors.orange700}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.carouselPagination}>
+              {[0, 1].map(page => (
+                <Pressable
+                  key={page}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${
+                    page === 0
+                      ? t('today.exposure')
+                      : t('today.this_week')
+                  } ${page + 1}/2`}
+                  accessibilityState={{
+                    selected: dashboardPage === page,
+                  }}
+                  onPress={() => showDashboardPage(page)}
+                  style={styles.pageIndicatorHit}
+                >
+                  <View
+                    style={[
+                      styles.pageIndicator,
+                      dashboardPage === page &&
+                        styles.pageIndicatorActive,
+                    ]}
+                  />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {dailyPlan ? (
+            <View
+              onLayout={event => {
+                planSectionY.current =
+                  event.nativeEvent.layout.y;
+                const focusKey =
+                  initialActionKey ??
+                  initialFocus ??
+                  null;
+                if (
+                  focusKey &&
+                  appliedFocusKey.current !== focusKey
+                ) {
+                  appliedFocusKey.current = focusKey;
+                  requestAnimationFrame(() => {
+                    pageScrollRef.current?.scrollTo({
+                      y: Math.max(
+                        0,
+                        planSectionY.current -
+                          spacing('sm'),
+                      ),
+                      animated: true,
+                    });
+                  });
+                }
+              }}
+            >
+              <DailyPlanView
+                experience={dailyPlan}
+                identity={identity}
+                onToggleAction={handleToggleAction}
+                onChangeActionState={handleChangeActionState}
+                dailyWinVisible={showDailyWin}
+                onCloseDailyWin={() => setShowDailyWin(false)}
+                streakDays={streakDays}
+                onOpenWeeklySummary={onNavigateToWeeklySummary}
+                highlightedActionKey={initialActionKey}
+                onHighlightedActionLayout={offsetY => {
+                  if (!initialActionKey) return;
+                  requestAnimationFrame(() => {
+                    pageScrollRef.current?.scrollTo({
+                      y: Math.max(
+                        0,
+                        planSectionY.current +
+                          offsetY -
+                          spacing('lg'),
+                      ),
+                      animated: true,
+                    });
+                  });
+                }}
+              />
+            </View>
+          ) : (
+            <View style={styles.preparingPlan}>
+              <Text style={styles.preparingText}>
+                {t('today.preparing_plan')}
+              </Text>
+            </View>
+          )}
+
+          <EveningWindDown
+            date={date}
+            identity={identity}
+            onChanged={() => {
+              const milestone = t(
+                `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
+              );
+              setStreakDays(
+                loadWeeklySummaryExperience({
+                  identity,
+                  pregnancyWeek: currentWeek,
+                  endDate: date,
+                  milestone,
+                  backendSummary: summary,
+                }).streakDays,
+              );
+            }}
+          />
+
+        </ScrollView>
+
+        <TodayQuickCheckInSheet
+          visible={quickCheckInKind !== null}
+          kind={quickCheckInKind}
+          experience={checkIn}
+          identity={identity}
+          date={date}
+          onClose={closeQuickCheckIn}
+          onSaved={refreshToday}
+          onOpenHistory={() => {
+            closeQuickCheckIn();
+            onNavigateToSymptomsHistory?.();
           }}
         />
-      </Modal>
-    </SafeAreaView>
-  );
-});
+
+        <BottomSheet
+          visible={detailSheet !== null}
+          onClose={closeDetailSheet}
+          showHandle
+        >
+          <View
+            accessibilityViewIsModal
+            accessibilityLabel={
+              detailSheet === 'snapshot'
+                ? t('today.mother_and_baby_status')
+                : t('today.risks_and_exposure')
+            }
+            style={styles.sheet}
+          >
+            {renderSheetHeader(
+              detailSheet === 'snapshot'
+                ? t('today.mother_and_baby_status')
+                : t('today.risks_and_exposure'),
+            )}
+            <ScrollView
+              style={styles.sheetScroll}
+              showsVerticalScrollIndicator
+              nestedScrollEnabled
+            >
+              {detailSheet === 'snapshot' ? (
+                <View
+                  style={[
+                    styles.recordedSymptoms,
+                    warningSymptoms.length > 0 &&
+                      styles.recordedSymptomsWarning,
+                  ]}
+                >
+                  <View style={styles.recordedSymptomsHeader}>
+                    <FontAwesomeIcon
+                      icon={
+                        warningSymptoms.length > 0
+                          ? faTriangleExclamation
+                          : faCheck
+                      }
+                      size={15}
+                      color={
+                        warningSymptoms.length > 0
+                          ? '#B93838'
+                          : theme.colors.orange500
+                      }
+                    />
+                    <Text style={styles.recordedSymptomsTitle}>
+                      {t('today.todays_reported_symptoms')}
+                    </Text>
+                  </View>
+                  {selectedMommySymptoms.length > 0 ? (
+                    selectedMommySymptoms.map(item => (
+                      <Text
+                        key={item.key}
+                        style={styles.recordedSymptomRow}
+                      >
+                        • {item.name}
+                      </Text>
+                    ))
+                  ) : (
+                    <Text style={styles.recordedSymptomRow}>
+                      {t('today.no_symptoms_reported')}
+                    </Text>
+                  )}
+                  {warningSymptoms.length > 0 ? (
+                    <Text style={styles.symptomWarningNote}>
+                      {t('feeling_checkin.warning_note')}
+                    </Text>
+                  ) : null}
+                  {onNavigateToSymptomsHistory ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setDetailSheet(null);
+                        setTimeout(
+                          () => onNavigateToSymptomsHistory(),
+                          180,
+                        );
+                      }}
+                      style={styles.historyButton}
+                    >
+                      <Text style={styles.historyButtonText}>
+                        {t('today.view_symptom_history')}
+                      </Text>
+                      <FontAwesomeIcon
+                        icon={faChevronRight}
+                        size={10}
+                        color={theme.colors.orange600}
+                      />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+              {detailSheet === 'snapshot' ? (
+                <>
+              <View style={styles.detailRow}>
+                <View style={styles.detailIcon}>
+                  <FontAwesomeIcon
+                    icon={faHeart}
+                    size={17}
+                    color={statusColor(motherStatus)}
+                  />
+                </View>
+                <View style={styles.detailCopy}>
+                  <Text style={styles.detailLabel}>
+                    {t('today.mother')}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    {t(
+                      isPresentationMotherBabyContext
+                        ? 'today.mother_context'
+                        : 'today.mother_risk_change',
+                    )}
+                  </Text>
+                </View>
+                {!isPresentationMotherBabyContext ? (
+                  <Text style={styles.detailValue}>
+                    {formatRiskDelta(
+                      summary?.risks_delta?.mom,
+                    )}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.detailRow}>
+                <View style={styles.detailIcon}>
+                  <FontAwesomeIcon
+                    icon={faBaby}
+                    size={18}
+                    color={statusColor(babyStatus)}
+                  />
+                </View>
+                <View style={styles.detailCopy}>
+                  <Text style={styles.detailLabel}>
+                    {t('today.baby')}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    {t(
+                      isPresentationMotherBabyContext
+                        ? 'today.baby_context'
+                        : 'today.baby_risk_change',
+                      { week: currentWeek },
+                    )}
+                  </Text>
+                </View>
+                {!isPresentationMotherBabyContext ? (
+                  <Text style={styles.detailValue}>
+                    {formatRiskDelta(
+                      summary?.risks_delta?.baby,
+                    )}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.detailRow}>
+                <View style={styles.detailIcon}>
+                  <FontAwesomeIcon
+                    icon={faCheck}
+                    size={15}
+                    color="#2D7B46"
+                  />
+                </View>
+                <View style={styles.detailCopy}>
+                  <Text style={styles.detailLabel}>
+                    {t('today.protection_progress_title')}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    {t('today.actions_completed_summary', {
+                      completed: doneTasks,
+                      total: totalTasks,
+                    })}
+                  </Text>
+                </View>
+                <Text style={styles.detailValue}>
+                  {protectionPct}%
+                </Text>
+              </View>
+                </>
+              ) : null}
+              {detailSheet === 'risks' ? (
+                <ExposureTrendView points={exposureTrend} />
+              ) : null}
+            </ScrollView>
+          </View>
+        </BottomSheet>
+
+        <TransitionLoader visible={isNavigatingToBaby} />
+
+        <Modal
+          visible={showBabyAds}
+          animationType="fade"
+          onRequestClose={() => {}}
+        >
+          <AdsScreen
+            onClose={() => {
+              setShowBabyAds(false);
+              onNavigateToBabyStatus?.();
+            }}
+          />
+        </Modal>
+      </SafeAreaView>
+    );
+  },
+);

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 're
 import { useTheme, spacing } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, WeekOption, IntroTitleBox } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
-import { fs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -18,7 +18,11 @@ export const IntroStep11: React.FC<IntroStep11Props> = ({ onNext, onBack }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { setPregnancyWeek, profile } = useUserStore();
-  const [selectedWeek, setSelectedWeekLocal] = useState<number | null>(profile.pregnancyWeek || null);
+  // Do not preselect the API value: some accounts receive a backend default
+  // even though the mother has never confirmed her pregnancy week.
+  const [selectedWeek, setSelectedWeekLocal] = useState<number | null>(
+    profile.pregnancyWeekConfirmed ? profile.pregnancyWeek : null,
+  );
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
 
   const styles = useMemo(() => StyleSheet.create({
@@ -37,7 +41,7 @@ export const IntroStep11: React.FC<IntroStep11Props> = ({ onNext, onBack }) => {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <BackButton onPress={onBack} />
-      <ProgressBar progress={0.786} />
+      <ProgressBar progress={0.428} />
         <View style={styles.contentWrapper}>
           <IntroTitleBox title={t('intro.step11_title')} onLayout={setTitleBoxCenterY} />
           <Text style={styles.questionText} allowFontScaling={false}>{t('intro.step11_desc')}</Text>

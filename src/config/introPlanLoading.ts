@@ -1,0 +1,1 @@
+export const INTRO_PLAN_LOADING_DURATION_MS = 13_000;

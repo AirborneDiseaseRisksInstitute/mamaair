@@ -5,9 +5,6 @@ import { Button } from './Button';
 import { ReminderTimePicker } from './ReminderTimePicker';
 import { useTranslation } from 'react-i18next';
 
-const toPickerHour = (h: number) => (h === 0 ? 24 : h);
-const fromPickerHour = (h: number) => (h === 24 ? 0 : h);
-const toPickerMinute = (m: number) => (m === 0 ? 1 : m);
 const formatTime = (h: number, m: number) =>
   `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 
@@ -174,24 +171,24 @@ export const NotificationTimeSettings: React.FC<NotificationTimeSettingsProps> =
         visible={fromPickerVisible}
         onClose={() => setFromPickerVisible(false)}
         onConfirm={(h, m) => {
-          setFromH(fromPickerHour(h));
+          setFromH(h);
           setFromM(m);
           setFromPickerVisible(false);
         }}
-        initialHour={toPickerHour(fromH)}
-        initialMinute={toPickerMinute(fromM)}
+        initialHour={fromH}
+        initialMinute={fromM}
         taskTitle={t('notifications.from')}
       />
       <ReminderTimePicker
         visible={toPickerVisible}
         onClose={() => setToPickerVisible(false)}
         onConfirm={(h, m) => {
-          setToH(fromPickerHour(h));
+          setToH(h);
           setToM(m);
           setToPickerVisible(false);
         }}
-        initialHour={toPickerHour(toH)}
-        initialMinute={toPickerMinute(toM)}
+        initialHour={toH}
+        initialMinute={toM}
         taskTitle={t('notifications.to')}
       />
     </>

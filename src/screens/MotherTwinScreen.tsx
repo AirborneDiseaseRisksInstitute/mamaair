@@ -22,109 +22,185 @@ import { useUserStore } from '../store/useUserStore';
 import { useTranslation } from 'react-i18next';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 import { formatLocalDate } from '../utils/dateUtils';
+import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
+import { loadWeeklySummaryExperience } from '../services/recommendationExperience/PresentationJourneyRepository';
+import {
+  SummaryService,
+  type SummaryResponse,
+} from '../services/api/SummaryService';
+import { DEV_LOCAL_SESSION } from '../config/dev';
+import type { DailyActionDomain } from '../types/recommendationExperience';
+import { getPregnancyWeekDates } from '../utils/pregnancyWeekDates';
+import {
+  buildDevelopmentSymptomClassTrend,
+  type SymptomClassTrendSeries,
+} from '../services/recommendationExperience/SymptomClassTrendRepository';
 
 const WEEK_OPTIONS = Array.from({ length: 40 }, (_, i) => i + 1);
 
-// Tabs for statistics
-const STAT_TABS = ['Nutrition', 'Protection', 'Activity'] as const;
-type StatTab = typeof STAT_TABS[number];
-
-// Pie chart data
-const PIE_DATA = [
-  { value: 50, color: '#4CAF50' }, // Green - nutrition
-  { value: 25, color: '#64B5F6' }, // Blue - Monday
-  { value: 25, color: '#FFB74D' }, // Orange - Tuesday
+const STAT_TABS: Array<{
+  id: DailyActionDomain;
+  translationKey:
+    | 'mother.tab_nutrition'
+    | 'mother.tab_protection'
+    | 'mother.tab_activity'
+    | 'mother.tab_wellbeing';
+  color: string;
+  backgroundColor: string;
+}> = [
+  {
+    id: 'diet',
+    translationKey: 'mother.tab_nutrition',
+    color: '#2E7D4A',
+    backgroundColor: '#E8F5E9',
+  },
+  {
+    id: 'behaviour',
+    translationKey: 'mother.tab_protection',
+    color: '#A83149',
+    backgroundColor: '#FEF2F2',
+  },
+  {
+    id: 'activity',
+    translationKey: 'mother.tab_activity',
+    color: '#946000',
+    backgroundColor: '#FFF7E6',
+  },
+  {
+    id: 'wellbeing',
+    translationKey: 'mother.tab_wellbeing',
+    color: '#70428F',
+    backgroundColor: '#F6F0FA',
+  },
 ];
+type StatTab = DailyActionDomain;
 
-// Days data
-const DAYS_DATA = [
-  { day: 'Monday', color: '#64B5F6', progress: '1/3', completed: true },
-  { day: 'Tuesday', color: '#FFB74D', progress: '2/5', completed: true },
-];
+const EMPTY_PIE_DATA = [{ value: 100, color: '#E8E2DD' }];
 
 // Symptom class colors
 // Class 1: Acute & Emergency (Red), Class 2: Systemic (Gray), Class 3: Fetal Activity (Orange), Class 4: Lifestyle (Blue)
 const SYMPTOM_CLASSES = [
-  { id: 'class1', label: 'Emergency', color: '#E53935' },
-  { id: 'class2', label: 'Systemic', color: '#757575' },
-  { id: 'class3', label: 'Fetal', color: '#F9AA01' },
-  { id: 'class4', label: 'Lifestyle', color: '#1E88E5' },
+  { id: 'class1', translationKey: 'mother.emergency', color: '#E53935' },
+  { id: 'class2', translationKey: 'mother.systemic', color: '#757575' },
+  { id: 'class3', translationKey: 'mother.fetal', color: '#F9AA01' },
+  { id: 'class4', translationKey: 'mother.lifestyle', color: '#1E88E5' },
 ];
-
-const WEEK_DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const EMPTY_WEEK_DATA = Array(7).fill({ value: 0 });
 
-const fmt = (d: Date) => formatLocalDate(d);
-
-// Returns the 7 dates (Mon–Sun) for a given pregnancy week number
-function getPregnancyWeekDates(
-  profileWeek: number | null | undefined,
-  weekSetDate: string | null | undefined,
-  targetWeek: number,
-): string[] {
-  if (profileWeek && weekSetDate) {
-    const setDate = new Date(weekSetDate);
-    const pregnancyStart = new Date(setDate);
-    pregnancyStart.setDate(setDate.getDate() - (profileWeek - 1) * 7);
-    const weekStart = new Date(pregnancyStart);
-    weekStart.setDate(pregnancyStart.getDate() + (targetWeek - 1) * 7);
-    return Array(7).fill(null).map((_, i) => {
-      const d = new Date(weekStart);
-      d.setDate(weekStart.getDate() + i);
-      return fmt(d);
-    });
-  }
-  // Fallback: current calendar week
-  const now = new Date();
-  const diffToMonday = now.getDay() === 0 ? -6 : 1 - now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMonday);
-  return Array(7).fill(null).map((_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return fmt(d);
-  });
-}
-
-function formatWeekRange(dates: string[]): string {
+function formatWeekRange(dates: string[], locale: string): string {
   if (dates.length < 7) return '';
   const start = new Date(dates[0]);
   const end = new Date(dates[6]);
   const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
-  return `${start.toLocaleDateString('en-GB', opts)} – ${end.toLocaleDateString('en-GB', opts)}`;
+  return `${start.toLocaleDateString(locale, opts)} – ${end.toLocaleDateString(locale, opts)}`;
+}
+
+function formatWeekday(date: string, locale: string): string {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(locale, {
+    weekday: 'short',
+  });
 }
 
 interface MotherTwinScreenProps {
   onBack?: () => void;
+  onOpenWeeklyReport?: () => void;
 }
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-function formatPregnancyStartDate(week: number | null, weekSetDate: string | null): string {
-  if (!week || !weekSetDate) return 'Unknown';
+function formatPregnancyStartDate(week: number | null, weekSetDate: string | null, locale: string, unknown: string): string {
+  if (!week || !weekSetDate) return unknown;
   const d = new Date(weekSetDate);
   d.setDate(d.getDate() - (week - 1) * 7);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) => {
+export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
+  onBack,
+  onOpenWeeklyReport,
+}) => {
   const theme = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage === 'fr'
+    ? 'fr-FR'
+    : i18n.resolvedLanguage === 'sw'
+      ? 'sw-KE'
+      : 'en-GB';
   const { profile } = useUserStore();
-  const progress = 36; // 36% — no API source yet, needs product decision
   const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1;
-  const [activeTab, setActiveTab] = useState<StatTab>('Nutrition');
-  const [activeSymptomClass, setActiveSymptomClass] = useState<string | null>(null);
+  const actionCompletions = useRecommendationExperienceStore(
+    state => state.actionCompletions,
+  );
+  const checkIns = useRecommendationExperienceStore(
+    state => state.checkIns,
+  );
+  const restTimers = useRecommendationExperienceStore(
+    state => state.restTimers,
+  );
+  const dailyMoments = useRecommendationExperienceStore(
+    state => state.dailyMoments,
+  );
+  const identity = useMemo(
+    () => ({
+      backendUserId: profile.backendUserId,
+      email: profile.email,
+    }),
+    [profile.backendUserId, profile.email],
+  );
+  const [backendSummary, setBackendSummary] =
+    useState<SummaryResponse | null>(null);
+  useEffect(() => {
+    if (DEV_LOCAL_SESSION) return;
+    let mounted = true;
+    SummaryService.getSummary()
+      .then(value => {
+        if (mounted) setBackendSummary(value);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  const journeySummary = useMemo(
+    () =>
+      loadWeeklySummaryExperience({
+        identity,
+        pregnancyWeek: currentWeek,
+        endDate: formatLocalDate(new Date()),
+        milestone: t(
+          `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
+        ),
+        backendSummary,
+        localData: {
+          actionCompletions,
+          checkIns,
+          dailyMoments,
+          restTimers,
+        },
+      }),
+    [
+      actionCompletions,
+      backendSummary,
+      checkIns,
+      dailyMoments,
+      restTimers,
+      currentWeek,
+      identity,
+      t,
+    ],
+  );
+  const progress = Math.round(
+    (journeySummary.activeDays / 7) * 100,
+  );
+  const [activeTab, setActiveTab] = useState<StatTab>('diet');
   const [statsWeek, setStatsWeek] = useState(currentWeek);
   const [statsWeekSheetVisible, setStatsWeekSheetVisible] = useState(false);
   const [isLoadingChart, setIsLoadingChart] = useState(false);
-  const [symptomChartData, setSymptomChartData] = useState<{
-    class1: { value: number }[];
-    class2: { value: number }[];
-    class3: { value: number }[];
-    class4: { value: number }[];
-  }>({
+  const [symptomChartUnavailable, setSymptomChartUnavailable] =
+    useState(false);
+  const [symptomChartData, setSymptomChartData] =
+    useState<SymptomClassTrendSeries>({
     class1: [...EMPTY_WEEK_DATA],
     class2: [...EMPTY_WEEK_DATA],
     class3: [...EMPTY_WEEK_DATA],
@@ -132,15 +208,85 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
   });
 
   const weekDates = useMemo(
-    () => getPregnancyWeekDates(profile.pregnancyWeek, profile.pregnancyWeekSetDate, statsWeek),
-    [statsWeek, profile.pregnancyWeek, profile.pregnancyWeekSetDate],
+    () =>
+      getPregnancyWeekDates(
+        profile.pregnancyWeek ?? currentWeek,
+        profile.pregnancyWeekSetDate,
+        statsWeek,
+      ),
+    [
+      currentWeek,
+      statsWeek,
+      profile.pregnancyWeek,
+      profile.pregnancyWeekSetDate,
+    ],
   );
 
-  const weekRangeLabel = useMemo(() => formatWeekRange(weekDates), [weekDates]);
+  const symptomTrackerWeekDates = useMemo(
+    () =>
+      getPregnancyWeekDates(
+        profile.pregnancyWeek ?? currentWeek,
+        profile.pregnancyWeekSetDate,
+        currentWeek,
+      ),
+    [currentWeek, profile.pregnancyWeek, profile.pregnancyWeekSetDate],
+  );
+
+  const weekRangeLabel = useMemo(
+    () => formatWeekRange(weekDates, locale),
+    [locale, weekDates],
+  );
+  const statsJourneySummary = useMemo(
+    () =>
+      loadWeeklySummaryExperience({
+        identity,
+        pregnancyWeek: statsWeek,
+        endDate: weekDates[6] ?? formatLocalDate(new Date()),
+        milestone: t(
+          `home.week_desc_w${String(statsWeek).padStart(2, '0')}`,
+        ),
+        backendSummary,
+        localData: {
+          actionCompletions,
+          checkIns,
+          dailyMoments,
+          restTimers,
+        },
+      }),
+    [
+      actionCompletions,
+      backendSummary,
+      checkIns,
+      dailyMoments,
+      identity,
+      restTimers,
+      statsWeek,
+      t,
+      weekDates,
+    ],
+  );
+  const activeTabConfig =
+    STAT_TABS.find(tab => tab.id === activeTab) ?? STAT_TABS[0];
+  const selectedDomainDays =
+    statsJourneySummary.domainParticipation[activeTab];
 
   useEffect(() => {
     let cancelled = false;
+    if (DEV_LOCAL_SESSION) {
+      setIsLoadingChart(false);
+      setSymptomChartUnavailable(false);
+      setSymptomChartData(
+        buildDevelopmentSymptomClassTrend(
+          symptomTrackerWeekDates,
+          checkIns,
+        ),
+      );
+      return () => {
+        cancelled = true;
+      };
+    }
     setIsLoadingChart(true);
+    setSymptomChartUnavailable(false);
     setSymptomChartData({
       class1: [...EMPTY_WEEK_DATA],
       class2: [...EMPTY_WEEK_DATA],
@@ -149,7 +295,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
     });
 
     Promise.all(
-      weekDates.map((date) =>
+      symptomTrackerWeekDates.map((date) =>
         SymptomsService.getMommyStatisticsClasses({ start_date: date, end_date: date })
           .catch(() => null),
       ),
@@ -170,10 +316,42 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       });
 
       setSymptomChartData({ class1: c1, class2: c2, class3: c3, class4: c4 });
+      setSymptomChartUnavailable(results.every(result => result === null));
     }).finally(() => { if (!cancelled) setIsLoadingChart(false); });
 
     return () => { cancelled = true; };
-  }, [weekDates]);
+  }, [checkIns, symptomTrackerWeekDates]);
+  const hasSymptomChartData = useMemo(
+    () =>
+      SYMPTOM_CLASSES.some(cls =>
+        symptomChartData[
+          cls.id as keyof typeof symptomChartData
+        ].some(point => point.value > 0),
+      ),
+    [symptomChartData],
+  );
+  const symptomRecordedDays = useMemo(() => {
+    const localDays = symptomTrackerWeekDates.filter(
+      date => (checkIns[date]?.mommySymptomKeys.length ?? 0) > 0,
+    ).length;
+    const backendDays = symptomTrackerWeekDates.filter((_, index) =>
+      SYMPTOM_CLASSES.some(
+        cls =>
+          symptomChartData[
+            cls.id as keyof typeof symptomChartData
+          ][index]?.value > 0,
+      ),
+    ).length;
+    return Math.max(localDays, backendDays);
+  }, [checkIns, symptomChartData, symptomTrackerWeekDates]);
+  const symptomTrendText =
+    symptomRecordedDays > 0
+      ? t('mother.symptom_trend_recorded', {
+          count: symptomRecordedDays,
+        })
+      : statsJourneySummary.dataMode === 'careContext'
+      ? t('mother.symptom_trend_context')
+      : t('mother.symptom_trend_none');
   const maxContentHeight = SCREEN_HEIGHT * 0.3;
   const size = Math.min(140, maxContentHeight * 0.8); // Smaller circular progress
   const strokeWidth = 8;
@@ -209,6 +387,9 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       flex: 1,
       paddingHorizontal: spacing('md'),
       paddingTop: spacing('sm'),
+    },
+    scrollContent: {
+      paddingBottom: 150,
     },
     sectionTitle: {
       fontSize: responsiveUtils.getFixedFontSize(20),
@@ -252,6 +433,13 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       fontSize: 14,
       fontFamily: theme.typography.fontFamily.bold,
       color: '#FFFFFF',
+    },
+    careRhythmLabel: {
+      marginTop: spacing('sm'),
+      fontSize: 12,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
     },
     infoCard: {
       width:'80%',
@@ -374,6 +562,50 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       fontFamily: theme.typography.fontFamily.regular,
       color: theme.colors.textPrimary,
     },
+    weeklySignalsCard: {
+      backgroundColor: '#FFF8F2',
+      borderRadius: 16,
+      padding: spacing('md'),
+      marginHorizontal: spacing('md'),
+      marginBottom: spacing('md'),
+      borderWidth: 1,
+      borderColor: theme.colors.orange100,
+    },
+    weeklySignalsTitle: {
+      fontSize: 15,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.textPrimary,
+      marginBottom: spacing('sm'),
+    },
+    weeklySignalsContext: {
+      fontSize: 12,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: 17,
+      marginBottom: spacing('md'),
+    },
+    weeklySignalsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing('sm'),
+    },
+    weeklySignalItem: {
+      width: '48%',
+      borderRadius: 12,
+      backgroundColor: '#FFFFFF',
+      padding: spacing('sm'),
+    },
+    weeklySignalValue: {
+      fontSize: 16,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.orange600,
+    },
+    weeklySignalLabel: {
+      marginTop: 2,
+      fontSize: 11,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+    },
     // Statistics Card Styles
     statsCard: {
       backgroundColor: '#fff',
@@ -418,6 +650,13 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       fontFamily: theme.typography.fontFamily.regular,
       color: theme.colors.textSecondary,
     },
+    statsContextNote: {
+      fontSize: 13,
+      lineHeight: 19,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+      marginBottom: spacing('md'),
+    },
     statsWeekDropdown: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -435,11 +674,14 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
     },
     statsTabs: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: spacing('sm'),
       marginBottom: spacing('md'),
     },
     statsTab: {
-      paddingHorizontal: spacing('md'),
+      width: '48%',
+      alignItems: 'center',
+      paddingHorizontal: spacing('sm'),
       paddingVertical: spacing('sm'),
       borderRadius: 20,
       borderWidth: 1,
@@ -494,6 +736,23 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: spacing('md'),
+      position: 'relative',
+    },
+    statsChartCenter: {
+      position: 'absolute',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    statsChartCenterValue: {
+      fontSize: 24,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.textPrimary,
+    },
+    statsChartCenterLabel: {
+      marginTop: 1,
+      fontSize: 11,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
     },
     statsLegend: {
       flexDirection: 'row',
@@ -581,6 +840,22 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       lineHeight: 20,
       marginBottom: spacing('md'),
     },
+    symptomsEmptyState: {
+      minHeight: 130,
+      borderRadius: 12,
+      backgroundColor: theme.colors.neutral100,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: spacing('lg'),
+      marginBottom: spacing('sm'),
+    },
+    symptomsEmptyText: {
+      fontSize: 12,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textSecondary,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
     symptomsChartContainer: {
       marginBottom: spacing('sm'),
       overflow: 'hidden',
@@ -631,7 +906,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
     symptomsLegendLabelActive: {
       fontFamily: theme.typography.fontFamily.bold,
     },
-  }), [theme]);
+  }), [size, theme]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -644,7 +919,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
       <ScrollView 
         style={styles.content}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: spacing('md') }}
+        contentContainerStyle={styles.scrollContent}
       >
         
         <View style={styles.progressContainer}>
@@ -695,8 +970,19 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
 
           {/* Percentage Badge */}
           <View style={styles.percentageBadge}>
-            <Text style={styles.percentageText} allowFontScaling={false}>{progress}%</Text>
+            <Text style={styles.percentageText} allowFontScaling={false}>
+              {t('profile.active_days_badge', {
+                days: journeySummary.activeDays,
+              })}
+            </Text>
           </View>
+          <Text style={styles.careRhythmLabel}>
+            {t(
+              journeySummary.dataMode === 'careContext'
+                ? 'mother.care_context_label'
+                : 'mother.care_rhythm_label',
+            )}
+          </Text>
         </View>
 
         {/* Info Card */}
@@ -710,7 +996,13 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
               />
             </View>
             <Text style={styles.infoText} allowFontScaling={false}>
-              Start Date: {formatPregnancyStartDate(profile.pregnancyWeek, profile.pregnancyWeekSetDate)}
+              {t('mother.start_date')}
+              {formatPregnancyStartDate(
+                profile.pregnancyWeek,
+                profile.pregnancyWeekSetDate,
+                locale,
+                t('mother.not_set'),
+              )}
             </Text>
           </View>
 
@@ -718,7 +1010,11 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
             <View style={styles.infoIcon}>
               <View style={styles.infoIconCircle} />
             </View>
-            <Text style={styles.infoText} allowFontScaling={false}>{t('mother.tracking', { progress })}</Text>
+            <Text style={styles.infoText} allowFontScaling={false}>
+              {t('mother.pregnancy_journey_week', {
+                week: currentWeek,
+              })}
+            </Text>
           </View>
         </View>
 
@@ -737,34 +1033,80 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
               <View style={styles.badgeContentRight}>
                 {/* Row 1: Title and Amount */}
                 <View style={styles.badgeTitleRow}>
-                  <Text style={styles.badgeCardTitle} allowFontScaling={false}>{t('mother.your_badges')}</Text>
-                  <View style={styles.badgeAmountContainer}>
-                    <Text style={styles.badgeAmountText} allowFontScaling={false}>2$</Text>
-                  </View>
+                  <Text style={styles.badgeCardTitle} allowFontScaling={false}>{t('mother.this_week')}</Text>
+                  {journeySummary.primaryTotal > 0 ? (
+                    <View style={styles.badgeAmountContainer}>
+                      <Text style={styles.badgeAmountText} allowFontScaling={false}>
+                        {journeySummary.primaryCompleted}/{journeySummary.primaryTotal}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
 
-                {/* Row 2: Buttons */}
+                {/* The full privacy-safe share flow lives in Weekly Summary. */}
                 <View style={styles.badgeButtonsContainer}>
                   <TouchableOpacity 
                     style={styles.badgeButton}
                     activeOpacity={0.7}
+                    disabled={!onOpenWeeklyReport}
+                    onPress={onOpenWeeklyReport}
                   >
-                    <FontAwesomeIcon 
-                      icon={faLink as any} 
-                      size={16} 
+                    <FontAwesomeIcon
+                      icon={faLink}
+                      size={16}
                       color={theme.colors.textPrimary}
                       style={styles.badgeButtonIcon}
                     />
-                    <Text style={styles.badgeButtonText} allowFontScaling={false}>{t('mother.copy_link')}</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={styles.badgeButton}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.badgeButtonText} allowFontScaling={false}>{t('mother.share_on')}</Text>
+                    <Text style={styles.badgeButtonText} allowFontScaling={false}>
+                      {t('mother.weekly_report')}
+                    </Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.weeklySignalsCard}>
+            <Text style={styles.weeklySignalsTitle}>
+              {t('mother.weekly_care_snapshot')}
+            </Text>
+            {journeySummary.dataMode === 'careContext' ? (
+              <Text style={styles.weeklySignalsContext}>
+                {t('mother.care_context_explanation')}
+              </Text>
+            ) : null}
+            <View style={styles.weeklySignalsGrid}>
+              <View style={styles.weeklySignalItem}>
+                <Text style={styles.weeklySignalValue}>
+                  {journeySummary.activeDays}/7
+                </Text>
+                <Text style={styles.weeklySignalLabel}>
+                  {t('mother.active_care_days')}
+                </Text>
+              </View>
+              <View style={styles.weeklySignalItem}>
+                <Text style={styles.weeklySignalValue}>
+                  {journeySummary.hydrationDays}/7
+                </Text>
+                <Text style={styles.weeklySignalLabel}>
+                  {t('mother.hydration_days')}
+                </Text>
+              </View>
+              <View style={styles.weeklySignalItem}>
+                <Text style={styles.weeklySignalValue}>
+                  {journeySummary.restSessions}
+                </Text>
+                <Text style={styles.weeklySignalLabel}>
+                  {t('mother.rest_sessions')}
+                </Text>
+              </View>
+              <View style={styles.weeklySignalItem}>
+                <Text style={styles.weeklySignalValue}>
+                  {journeySummary.sleepNights}/7
+                </Text>
+                <Text style={styles.weeklySignalLabel}>
+                  {t('mother.sleep_checkins')}
+                </Text>
               </View>
             </View>
           </View>
@@ -810,93 +1152,125 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
               </TouchableOpacity>
             </View>
 
+            {statsJourneySummary.dataMode === 'careContext' ? (
+              <Text style={styles.statsContextNote} allowFontScaling={false}>
+                {t('mother.stats_care_context_note')}
+              </Text>
+            ) : null}
+
             {/* Tabs */}
             <View style={styles.statsTabs}>
               {STAT_TABS.map((tab) => (
                 <TouchableOpacity
-                  key={tab}
+                  key={tab.id}
                   style={[
                     styles.statsTab,
-                    activeTab === tab && styles.statsTabActive,
+                    activeTab === tab.id && styles.statsTabActive,
                   ]}
-                  onPress={() => setActiveTab(tab)}
+                  onPress={() => setActiveTab(tab.id)}
                   activeOpacity={0.7}
                 >
                   <Text style={[
                     styles.statsTabText,
-                    activeTab === tab && styles.statsTabTextActive,
+                    activeTab === tab.id && styles.statsTabTextActive,
                   ]} allowFontScaling={false}>
-                    {tab === 'Nutrition' ? t('mother.tab_nutrition') : tab === 'Protection' ? t('mother.tab_protection') : t('mother.tab_activity')}
+                    {t(tab.translationKey)}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {/* Chart Container */}
-            <View style={styles.statsChartContainer}>
+            <View
+              style={[
+                styles.statsChartContainer,
+                {
+                  backgroundColor:
+                    activeTabConfig.backgroundColor,
+                },
+              ]}
+            >
               {/* Chart Header */}
               <View style={styles.statsChartHeader}>
-                <View style={styles.statsChartIcon}>
+                <View
+                  style={[
+                    styles.statsChartIcon,
+                    { backgroundColor: activeTabConfig.color },
+                  ]}
+                >
                   <View style={styles.statsChartIconInner} />
                 </View>
-                <Text style={styles.statsChartTitle} allowFontScaling={false}>{t('today.diet')}</Text>
-                {isLoadingChart && (
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.colors.orange500}
-                    style={{ marginLeft: 'auto' }}
-                  />
-                )}
+                <Text style={styles.statsChartTitle} allowFontScaling={false}>
+                  {t(activeTabConfig.translationKey)}
+                </Text>
               </View>
 
               {/* Pie Chart */}
               <View style={styles.statsChartWrapper}>
                 <PieChart
-                  data={(() => {
-                    const totals = SYMPTOM_CLASSES.map(cls => ({
-                      color: cls.color,
-                      value: symptomChartData[cls.id as keyof typeof symptomChartData]
-                        .reduce((s: number, d: { value: number }) => s + d.value, 0),
-                    }));
-                    const sum = totals.reduce((s, d) => s + d.value, 0);
-                    return sum > 0
-                      ? totals.map(d => ({ ...d, value: Math.round((d.value / sum) * 100) }))
-                      : PIE_DATA;
-                  })()}
+                  data={
+                    selectedDomainDays > 0
+                      ? [
+                          {
+                            value: selectedDomainDays,
+                            color: activeTabConfig.color,
+                          },
+                          {
+                            value: 7 - selectedDomainDays,
+                            color: '#E8E2DD',
+                          },
+                        ]
+                      : EMPTY_PIE_DATA
+                  }
                   radius={80}
-                  donut={false}
+                  donut
+                  innerRadius={54}
                   showText={false}
                   focusOnPress={false}
                 />
+                <View style={styles.statsChartCenter}>
+                  <Text style={styles.statsChartCenterValue}>
+                    {selectedDomainDays}/7
+                  </Text>
+                  <Text style={styles.statsChartCenterLabel}>
+                    {t('mother.days')}
+                  </Text>
+                </View>
               </View>
-
-              {/* Legend */}
-              <View style={styles.statsLegend}>
-                {SYMPTOM_CLASSES.map(cls => (
-                  <View key={cls.id} style={[styles.statsLegend, { marginRight: spacing('sm') }]}>
-                    <View style={[styles.statsLegendDot, { backgroundColor: cls.color }]} />
-                    <Text style={[styles.statsLegendText, { color: cls.color }]} allowFontScaling={false}>
-                      {cls.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
+              <Text
+                style={[
+                  styles.statsLegendText,
+                  { color: activeTabConfig.color, textAlign: 'center' },
+                ]}
+              >
+                {t(
+                  statsJourneySummary.dataMode === 'careContext'
+                    ? 'mother.domain_context_summary'
+                    : 'mother.domain_days_summary',
+                  {
+                  count: selectedDomainDays,
+                  },
+                )}
+              </Text>
             </View>
 
             {/* Days Progress */}
-            {DAYS_DATA.map((day, index) => (
+            {statsJourneySummary.days.map((day, index) => {
+              const completed = day.domains[activeTab];
+              return (
               <View 
-                key={day.day}
+                key={day.date}
                 style={[
                   styles.statsDayRow,
-                  index === DAYS_DATA.length - 1 && styles.statsDayRowLast,
+                  index === statsJourneySummary.days.length - 1 &&
+                    styles.statsDayRowLast,
                 ]}
               >
-                <View style={[styles.statsDayDot, { backgroundColor: day.color }]} />
-                <Text style={styles.statsDayName} allowFontScaling={false}>{day.day}</Text>
-                <Text style={styles.statsDayProgress} allowFontScaling={false}>{day.progress}</Text>
-                {day.completed && (
-                  <View style={styles.statsDayCheck}>
+                <View style={[styles.statsDayDot, { backgroundColor: completed ? activeTabConfig.color : theme.colors.neutral300 }]} />
+                <Text style={styles.statsDayName} allowFontScaling={false}>{formatWeekday(day.date, locale)}</Text>
+                <Text style={styles.statsDayProgress} allowFontScaling={false}>{completed ? '1/1' : '0/1'}</Text>
+                {completed && (
+                  <View style={[styles.statsDayCheck, { backgroundColor: activeTabConfig.color }]}>
                     <FontAwesomeIcon 
                       icon={faCheck as any} 
                       size={14} 
@@ -905,7 +1279,8 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                   </View>
                 )}
               </View>
-            ))}
+              );
+            })}
           </View>
 
           {/* Symptoms Tracker Card */}
@@ -918,7 +1293,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 color={theme.colors.textPrimary}
                 style={styles.symptomsHeaderIcon}
               />
-              <Text style={styles.symptomsHeaderTitle} allowFontScaling={false}>{t('mother.symptoms_tracker')}</Text>
+              <Text style={styles.symptomsHeaderTitle} allowFontScaling={false}>{t('mother.feelings_tracker')}</Text>
               {isLoadingChart && (
                 <ActivityIndicator
                   size="small"
@@ -929,13 +1304,15 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
             </View>
 
             <Text style={styles.symptomsDescription} allowFontScaling={false}>
-              {weekRangeLabel}
+              {formatWeekRange(symptomTrackerWeekDates, locale)}
+            </Text>
+            <Text style={styles.symptomsDescription}>
+              {symptomTrendText}
             </Text>
 
-            {/* Area Chart — 4 classes, current week day by day
-                Render order: bottom→top = Lifestyle→Systemic→Fetal→Emergency
-                so the most critical class (red) is always visible on top */}
-            <View style={styles.symptomsChartContainer}>
+            {/* Four symptom groups, current week, day by day. */}
+            {hasSymptomChartData ? (
+              <View style={styles.symptomsChartContainer}>
               <LineChart
                 data={symptomChartData.class4}
                 data2={symptomChartData.class2}
@@ -944,7 +1321,6 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 width={Dimensions.get('window').width - 80}
                 height={180}
                 curved
-                areaChart
                 hideDataPoints
                 hideYAxisText
                 hideAxesAndRules
@@ -952,51 +1328,47 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
                 color2="#757575"
                 color3="#F9AA01"
                 color4="#E53935"
-                startFillColor1="#1E88E550"
-                startFillColor2="#75757540"
-                startFillColor3="#F9AA0150"
-                startFillColor4="#E5393560"
-                endFillColor1="#1E88E515"
-                endFillColor2="#75757515"
-                endFillColor3="#F9AA0115"
-                endFillColor4="#E5393520"
                 initialSpacing={0}
                 endSpacing={0}
                 thickness={2}
               />
-            </View>
+              </View>
+            ) : (
+              <View style={styles.symptomsEmptyState}>
+                {isLoadingChart ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.orange500}
+                  />
+                ) : (
+                  <Text style={styles.symptomsEmptyText}>
+                    {t(
+                      symptomChartUnavailable
+                        ? 'mother.symptom_classes_need_sync'
+                        : 'mother.symptom_classes_empty',
+                    )}
+                  </Text>
+                )}
+              </View>
+            )}
 
             {/* X-axis day labels */}
             <View style={styles.symptomsXAxisRow}>
-              {WEEK_DAYS_SHORT.map((d) => (
-                <Text key={d} style={styles.symptomsXAxisLabel} allowFontScaling={false}>{d}</Text>
+              {symptomTrackerWeekDates.map(date => (
+                <Text key={date} style={styles.symptomsXAxisLabel} allowFontScaling={false}>{formatWeekday(date, locale)}</Text>
               ))}
             </View>
 
             {/* Class Legend */}
             <View style={styles.symptomsLegend}>
-              {SYMPTOM_CLASSES.map((cls) => {
-                const isActive = activeSymptomClass === cls.id;
-                return (
-                  <TouchableOpacity
-                    key={cls.id}
-                    style={[
-                      styles.symptomsLegendItem,
-                      isActive && [styles.symptomsLegendItemActive, { borderColor: cls.color }],
-                    ]}
-                    onPress={() => setActiveSymptomClass(isActive ? null : cls.id)}
-                    activeOpacity={0.7}
-                  >
+              {SYMPTOM_CLASSES.map(cls => (
+                  <View key={cls.id} style={styles.symptomsLegendItem}>
                     <View style={[styles.symptomsLegendDot, { backgroundColor: cls.color }]} />
-                    <Text style={[
-                      styles.symptomsLegendLabel,
-                      isActive && [styles.symptomsLegendLabelActive, { color: cls.color }],
-                    ]} allowFontScaling={false}>
-                      {cls.label}
+                    <Text style={styles.symptomsLegendLabel} allowFontScaling={false}>
+                      {t(cls.translationKey)}
                     </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                  </View>
+              ))}
             </View>
           </View>
         </View>
@@ -1015,7 +1387,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
           {WEEK_OPTIONS.map((week) => (
             <BottomSheetOption
               key={week}
-              label={`Week ${week}`}
+              label={t('today.week_label', { week })}
               selected={statsWeek === week}
               onPress={() => {
                 setStatsWeek(week);
@@ -1029,4 +1401,3 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({ onBack }) =>
     </SafeAreaView>
   );
 };
-

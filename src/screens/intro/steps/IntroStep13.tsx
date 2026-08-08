@@ -88,8 +88,8 @@ export const IntroStep13: React.FC<IntroStep13Props> = ({ onNext, onBack, onSkip
       </FixedButtonContainer>
       <BottomSheet visible={isPhotoSheetVisible} onClose={() => setPhotoSheetVisible(false)} title={t('profile.select_photo')}>
         <View style={{ padding: spacing('md'), paddingBottom: spacing('xl') * 2 }}>
-          <BottomSheetOption label="Take Photo" selected={false} onPress={handleLaunchCamera} />
-          <BottomSheetOption label="Choose from Library" selected={false} onPress={handleLaunchLibrary} />
+          <BottomSheetOption label={t('profile.take_photo')} selected={false} onPress={handleLaunchCamera} />
+          <BottomSheetOption label={t('profile.choose_from_library')} selected={false} onPress={handleLaunchLibrary} />
         </View>
       </BottomSheet>
     </SafeAreaView>

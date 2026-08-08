@@ -7,7 +7,8 @@ import {
   ScrollView,
   Modal,
 } from 'react-native';
-import { Calendar, DateData } from 'react-native-calendars';
+import { Calendar, DateData, LocaleConfig } from 'react-native-calendars';
+import { useTranslation } from 'react-i18next';
 import { BottomSheet } from './BottomSheet';
 import { useTheme, spacing, radius } from '../../theme';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
@@ -28,9 +29,15 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   onClose,
   onConfirm,
   initialDate,
-  title = 'Select date',
+  title,
 }) => {
   const theme = useTheme();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage === 'fr'
+    ? 'fr-FR'
+    : i18n.resolvedLanguage === 'sw'
+      ? 'sw-KE'
+      : 'en-US';
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     return initialDate ? new Date(initialDate) : new Date();
   });
@@ -172,16 +179,39 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     onClose();
   };
 
-  const formatDate = (date: Date): string => {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
-    const day = date.getDate();
-    const month = months[date.getMonth()];
-    const year = date.getFullYear();
-    return `${day} ${month} ${year}`;
-  };
+  const formatDate = (date: Date): string =>
+    date.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+  useEffect(() => {
+    const monthDates = Array.from(
+      { length: 12 },
+      (_, month) => new Date(2024, month, 1),
+    );
+    const dayDates = Array.from(
+      { length: 7 },
+      (_, day) => new Date(2024, 0, 7 + day),
+    );
+    LocaleConfig.locales[locale] = {
+      monthNames: monthDates.map(date =>
+        date.toLocaleDateString(locale, { month: 'long' }),
+      ),
+      monthNamesShort: monthDates.map(date =>
+        date.toLocaleDateString(locale, { month: 'short' }),
+      ),
+      dayNames: dayDates.map(date =>
+        date.toLocaleDateString(locale, { weekday: 'long' }),
+      ),
+      dayNamesShort: dayDates.map(date =>
+        date.toLocaleDateString(locale, { weekday: 'short' }),
+      ),
+      today: t('symptoms.today'),
+    };
+    LocaleConfig.defaultLocale = locale;
+  }, [locale, t]);
 
   const customTheme = {
     backgroundColor: theme.colors.background,
@@ -231,7 +261,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       <View style={styles.container}>
         <View style={styles.titleContainer}>
           <Text style={[styles.title, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            {title}
+            {title ?? t('common.select_date')}
           </Text>
         </View>
 
@@ -264,7 +294,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               activeOpacity={0.7}
             >
               <Text style={[styles.monthYearText, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-                {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                {currentMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}
               </Text>
               <Text style={[styles.monthYearArrow, { color: theme.colors.textSecondary }]} allowFontScaling={false}>
                 ▼
@@ -312,7 +342,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         <View style={styles.actionsContainer}>
           <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} activeOpacity={0.7}>
             <Text style={[styles.cancelButtonText, { color: theme.colors.textSecondary }]} allowFontScaling={false}>
-              Cancel
+              {t('common.cancel')}
             </Text>
           </TouchableOpacity>
 
@@ -340,7 +370,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                     },
                   ]}
                  allowFontScaling={false}>
-                  Ok
+                  {t('common.ok')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -477,15 +507,20 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
   onClose,
 }) => {
   const theme = useTheme();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage === 'fr'
+    ? 'fr-FR'
+    : i18n.resolvedLanguage === 'sw'
+      ? 'sw-KE'
+      : 'en-US';
   const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth());
 
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 100 }, (_, i) => currentYear - 50 + i);
-  const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ];
+  const months = Array.from({ length: 12 }, (_, month) =>
+    new Date(2024, month, 1).toLocaleDateString(locale, { month: 'long' }),
+  );
 
   useEffect(() => {
     if (visible) {
@@ -508,13 +543,13 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
         >
           <View style={pickerStyles.header}>
             <Text style={[pickerStyles.headerTitle, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-              Select Month & Year
+              {t('common.select_month_year')}
             </Text>
           </View>
 
           <View style={pickerStyles.content}>
             <View style={pickerStyles.pickerColumn}>
-              <Text style={[pickerStyles.label, { color: theme.colors.textSecondary }]} allowFontScaling={false}>Month</Text>
+              <Text style={[pickerStyles.label, { color: theme.colors.textSecondary }]} allowFontScaling={false}>{t('common.month')}</Text>
               <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
                 {months.map((month, index) => (
                   <TouchableOpacity
@@ -535,7 +570,7 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
             </View>
 
             <View style={pickerStyles.pickerColumn}>
-              <Text style={[pickerStyles.label, { color: theme.colors.textSecondary }]} allowFontScaling={false}>Year</Text>
+              <Text style={[pickerStyles.label, { color: theme.colors.textSecondary }]} allowFontScaling={false}>{t('common.year')}</Text>
               <ScrollView style={pickerStyles.scrollView} showsVerticalScrollIndicator={false}>
                 {years.map((year) => (
                   <TouchableOpacity
@@ -558,7 +593,7 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
 
           <View style={pickerStyles.actions}>
             <TouchableOpacity style={pickerStyles.cancelButton} onPress={onClose} activeOpacity={0.7}>
-              <Text style={[pickerStyles.cancelText, { color: theme.colors.textSecondary }]} allowFontScaling={false}>Cancel</Text>
+              <Text style={[pickerStyles.cancelText, { color: theme.colors.textSecondary }]} allowFontScaling={false}>{t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[pickerStyles.confirmButton, { backgroundColor: theme.colors.orange500 }]}
@@ -566,7 +601,7 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
               activeOpacity={0.8}
             >
               <Text style={[pickerStyles.confirmText, { color: '#FFFFFF', fontFamily: theme.typography.fontFamily.extraBold }]} allowFontScaling={false}>
-                Confirm
+                {t('common.confirm')}
               </Text>
             </TouchableOpacity>
           </View>

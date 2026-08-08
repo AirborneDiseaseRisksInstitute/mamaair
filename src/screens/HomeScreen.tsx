@@ -1,4 +1,10 @@
-import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
+import React, {
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -10,27 +16,56 @@ import {
   TouchableOpacity,
   Modal,
   Image,
+  AppState,
 } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
+  useReducedMotion,
   withRepeat,
   withTiming,
   Easing,
 } from 'react-native-reanimated';
+import { useIsFocused } from '@react-navigation/native';
 import { SvgXml } from 'react-native-svg';
 import Svg, { Defs, LinearGradient, Stop, Path } from 'react-native-svg';
 import { useTheme, spacing } from '../theme';
 import { useUserStore } from '../store/useUserStore';
 import { SUN_SVG, CLOUD_SVG } from '../utils/svgIcons';
-import { WeekCycleView, MainHeader, FloatingActionButton, AccessLocationBottomSheet, TransitionLoader } from '../components/ui';
+import {
+  WeekCycleView,
+  MainHeader,
+  AccessLocationBottomSheet,
+  TransitionLoader,
+} from '../components/ui';
 import { locationTracker } from '../services/tracking/LocationTracker';
-import { SummaryService, SummaryResponse } from '../services/api/SummaryService';
+import {
+  SummaryService,
+  SummaryResponse,
+} from '../services/api/SummaryService';
 import { ProfileService } from '../services/api/ProfileService';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 import { formatLocalDate } from '../utils/dateUtils';
+import { countCompletedActionsByDomain } from '../utils/dailyTaskProgress';
+import {
+  resolveHomeActiveWeek,
+  resolveHomeDayState,
+} from '../utils/homeDayState';
 import { AdsScreen } from './AdsScreen';
 import { useTranslation } from 'react-i18next';
+import { DEV_LOCAL_SESSION } from '../config/dev';
+import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
+import { selectWeekPathDay } from '../services/recommendationExperience/PresentationJourneyRepository';
+import { selectPresentationDay } from '../services/recommendationExperience/PresentationDataProvider';
+import { ExposureService } from '../services/api/ExposureService';
+import type { AirExposure } from '../services/api/ExposureService';
+import { AirQualityPulseToast } from '../components/home/AirQualityPulseToast';
+import {
+  isAirExposureFresh,
+  resolveAirQualityLevel,
+} from '../utils/airQualitySummary';
+import { ms } from '../utils/responsive';
 
 const SUN_SIZE = 52;
 const CLOUD_SIZE = 32;
@@ -39,9 +74,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_PADDING = 16 * 2;
 const CARD_WIDTH = SCREEN_WIDTH - CARD_PADDING;
 const CARD_HEIGHT = CARD_WIDTH * 0.55;
-const ICON_SIZE = CARD_WIDTH * 0.20; // icon circle
+const ICON_SIZE = CARD_WIDTH * 0.2; // icon circle
 const NOTCH_DEPTH = ICON_SIZE * 0.7; // notch depth - creates gap
-
 
 const HEADER_MARGIN_TOP = ICON_SIZE / 2;
 const HEADER_MARGIN_BOTTOM = spacing('lg');
@@ -50,12 +84,16 @@ const HEADER_BUTTON_MARGIN_BOTTOM = 32;
 const WEEK_ITEM_MARGIN_BOTTOM = spacing('lg');
 // Extra scroll offset so the active week card sits a bit higher (circle + days clearly in view).
 const WEEK_CARD_TEXT_SECTION_HEIGHT = 390;
+// Keep the final week's copy clear of the global symptoms FAB.
+const HOME_LIST_BOTTOM_CLEARANCE =
+  WEEK_CARD_TEXT_SECTION_HEIGHT / 2 + ms(64) + spacing('xl') + spacing('lg');
 
 interface HomeScreenProps {
   onNavigateToToday?: () => void;
   onNavigateToProfile?: () => void;
   onNavigateToBabyStatus?: () => void;
   onNavigateToPlanBirthday?: () => void;
+  onNavigateToHistoricalWeek?: (pregnancyWeek: number, endDate: string) => void;
 }
 
 interface WeekData {
@@ -64,7 +102,11 @@ interface WeekData {
   description: string;
   isApiText?: boolean;
   centerImage?: any;
-  circleIcons?: Array<{ index: number; iconPath?: string; percentage?: number }>;
+  circleIcons?: Array<{
+    index: number;
+    iconPath?: string;
+    percentage?: number;
+  }>;
   weekDays: Array<{
     day: string;
     icons: Array<'heart' | 'basket' | 'running'>;
@@ -80,12 +122,28 @@ export const WEEKS_DATA: WeekData[] = [
   {
     id: '1',
     title: '1st Week',
-    description: 'The seed of life is now part of you, growing, dividing, and quietly preparing for everything to come.',
+    description:
+      'The seed of life is now part of you, growing, dividing, and quietly preparing for everything to come.',
     weekDays: [
-      { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
       { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-      { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-      { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
       { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
       { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
       { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
@@ -94,16 +152,32 @@ export const WEEKS_DATA: WeekData[] = [
   {
     id: '2',
     title: '2nd Week',
-    description: 'Your body begins to open and align, quietly preparing the ground for what\'s about to arrive.',
+    description:
+      "Your body begins to open and align, quietly preparing the ground for what's about to arrive.",
     centerImage: require('../assets/weeks/week2.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -111,19 +185,34 @@ export const WEEKS_DATA: WeekData[] = [
     title: '3rd Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 5 },
-      { index: 1, iconPath: 'brainSystem.svg', percentage: 5 }
-    
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 5 },
     ],
-    description: 'A spark of life awakens, the first signs of the nervous system appear.',
+    description:
+      'A spark of life awakens, the first signs of the nervous system appear.',
     centerImage: require('../assets/weeks/week3.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -131,18 +220,34 @@ export const WEEKS_DATA: WeekData[] = [
     title: '4th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 10 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 10 }    
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 10 },
     ],
-    description: 'The heart awakens and beats for the first time, life finds its rhythm.',
+    description:
+      'The heart awakens and beats for the first time, life finds its rhythm.',
     centerImage: require('../assets/weeks/week4.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -151,18 +256,34 @@ export const WEEKS_DATA: WeekData[] = [
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 15 },
       { index: 1, iconPath: 'brainSystem.svg', percentage: 15 },
-      { index: 2, iconPath: 'boneSystem.svg', percentage: 5 }
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 5 },
     ],
-    description: 'The heart grows stronger as the nervous system gently expands, life quietly strengthens within.',
+    description:
+      'The heart grows stronger as the nervous system gently expands, life quietly strengthens within.',
     centerImage: require('../assets/weeks/week5.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -172,19 +293,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 20 },
       { index: 1, iconPath: 'brainSystem.svg', percentage: 20 },
       { index: 2, iconPath: 'boneSystem.svg', percentage: 10 },
-      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 5 }
-    
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 5 },
     ],
-    description: 'New senses begin to awaken, the first gentle sparks of touch and awareness emerge within.',
+    description:
+      'New senses begin to awaken, the first gentle sparks of touch and awareness emerge within.',
     centerImage: require('../assets/weeks/week6.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -194,20 +330,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 25 },
       { index: 1, iconPath: 'brainSystem.svg', percentage: 25 },
       { index: 2, iconPath: 'boneSystem.svg', percentage: 15 },
-      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 10 }
-      
-    
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 10 },
     ],
-    description: 'Awareness deepens, tiny signals of sound and light begin to reach the growing life within.',
+    description:
+      'Awareness deepens, tiny signals of sound and light begin to reach the growing life within.',
     centerImage: require('../assets/weeks/week7.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -215,22 +365,37 @@ export const WEEKS_DATA: WeekData[] = [
     title: '8th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 30 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 30 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 20 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 15 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 5 }   
-
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 30 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 20 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 15 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 5 },
     ],
-    description: 'Connections grow stronger, the tiny being starts to sense and respond, quietly learning the rhythm of life.',
+    description:
+      'Connections grow stronger, the tiny being starts to sense and respond, quietly learning the rhythm of life.',
     centerImage: require('../assets/weeks/week8.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -241,20 +406,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 1, iconPath: 'brainSystem.svg', percentage: 33 },
       { index: 2, iconPath: 'boneSystem.svg', percentage: 23 },
       { index: 3, iconPath: 'digestiveSystem.svg', percentage: 18 },
-      { index: 4, iconPath: 'urinary.svg', percentage: 10 } 
-     
-
+      { index: 4, iconPath: 'urinary.svg', percentage: 10 },
     ],
-    description: 'Deep inside, life begins to nourish itself, the first pathways for digestion quietly take shape.',
+    description:
+      'Deep inside, life begins to nourish itself, the first pathways for digestion quietly take shape.',
     centerImage: require('../assets/weeks/week9.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -262,23 +441,37 @@ export const WEEKS_DATA: WeekData[] = [
     title: '10th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 35 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 36 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 26 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 22 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 15 }
-     
-
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 36 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 26 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 22 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 15 },
     ],
-    description: 'Deep inside, life begins to nourish itself, the first pathways for digestion quietly take shape.',
+    description:
+      'Deep inside, life begins to nourish itself, the first pathways for digestion quietly take shape.',
     centerImage: require('../assets/weeks/week9.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -286,24 +479,38 @@ export const WEEKS_DATA: WeekData[] = [
     title: '11th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 37 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 39 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 29 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 26 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 20 },
-  { index: 5, iconPath: 'integumentarySystem.svg', percentage: 10 }
-     
-
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 39 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 29 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 26 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 20 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 10 },
     ],
-    description: 'Movements grow more coordinated, each tiny motion guided by the expanding web of nerves and muscles.',
+    description:
+      'Movements grow more coordinated, each tiny motion guided by the expanding web of nerves and muscles.',
     centerImage: require('../assets/weeks/week9.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -315,19 +522,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 2, iconPath: 'boneSystem.svg', percentage: 32 },
       { index: 3, iconPath: 'digestiveSystem.svg', percentage: 29 },
       { index: 4, iconPath: 'urinary.svg', percentage: 23 },
-      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 15 }
-     
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 15 },
     ],
-    description: 'The soft form begins to strengthen, the first delicate bones take shape, giving structure to life within.',
+    description:
+      'The soft form begins to strengthen, the first delicate bones take shape, giving structure to life within.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -340,19 +562,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 3, iconPath: 'digestiveSystem.svg', percentage: 31 },
       { index: 4, iconPath: 'urinary.svg', percentage: 26 },
       { index: 5, iconPath: 'integumentarySystem.svg', percentage: 20 },
-      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 10 }
-     
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 10 },
     ],
-    description: 'Strength and balance awaken, tiny muscles begin to move, guided by the body\'s first inner signals of harmony.',
+    description:
+      "Strength and balance awaken, tiny muscles begin to move, guided by the body's first inner signals of harmony.",
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -360,24 +597,39 @@ export const WEEKS_DATA: WeekData[] = [
     title: '14th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 39 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 47 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 36 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 33 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 28 },
-  { index: 5, iconPath: 'integumentarySystem.svg', percentage: 25 },
-  { index: 6, iconPath: 'endocrineSystem.svg', percentage: 15 }
-     
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 47 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 36 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 33 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 28 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 25 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 15 },
     ],
-    description: 'Movements grow smoother, the tiny body starts to stretch and flex with gentle strength.',
+    description:
+      'Movements grow smoother, the tiny body starts to stretch and flex with gentle strength.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -390,19 +642,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 3, iconPath: 'digestiveSystem.svg', percentage: 34 },
       { index: 4, iconPath: 'urinary.svg', percentage: 29 },
       { index: 5, iconPath: 'integumentarySystem.svg', percentage: 30 },
-      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 20 }
-     
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 20 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -410,25 +677,40 @@ export const WEEKS_DATA: WeekData[] = [
     title: '16th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 40 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 50 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 35 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 35 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 30 },
-  { index: 5, iconPath: 'integumentarySystem.svg', percentage: 35 },
-  { index: 6, iconPath: 'endocrineSystem.svg', percentage: 30 },
-  { index: 7, iconPath: 'immuneSystem.svg', percentage: 25 }
-     
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 50 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 35 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 35 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 30 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 35 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 30 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 25 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -436,25 +718,40 @@ export const WEEKS_DATA: WeekData[] = [
     title: '17th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 45 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 40 },
-  { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
-  { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-  { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }
-     
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 40 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -462,25 +759,40 @@ export const WEEKS_DATA: WeekData[] = [
     title: '18th Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 45 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 40 },
-  { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
-  { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-  { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }
-     
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 40 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -494,19 +806,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 4, iconPath: 'urinary.svg', percentage: 40 },
       { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
       { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }
-     
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -520,19 +847,34 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 4, iconPath: 'urinary.svg', percentage: 40 },
       { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
       { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }     
-     
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -540,26 +882,40 @@ export const WEEKS_DATA: WeekData[] = [
     title: '21st Week',
     circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 45 },
-  { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
-  { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
-  { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
-  { index: 4, iconPath: 'urinary.svg', percentage: 40 },
-  { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
-  { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-  { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }    
-  
-     
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 40 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
@@ -573,526 +929,811 @@ export const WEEKS_DATA: WeekData[] = [
       { index: 4, iconPath: 'urinary.svg', percentage: 40 },
       { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
       { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }    
-  
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '23',
     title: '23rd Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 45 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 40 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 45 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 40 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
-    
+
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '24',
     title: '24th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 45 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 40 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 }    
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 45 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 60 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 45 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 45 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 40 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 45 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 40 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 35 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '25',
     title: '25th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 55 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 70 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 60 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 60 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 55 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 60 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 55 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 50 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 30 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 55 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 70 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 60 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 60 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 55 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 60 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 55 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 50 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 30 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '26',
     title: '26th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 55 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 70 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 60 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 60 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 55 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 60 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 55 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 50 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 30 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 55 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 70 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 60 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 60 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 55 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 60 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 55 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 50 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 30 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '27',
     title: '27th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 55 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 70 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 60 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 60 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 55 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 60 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 55 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 50 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 30 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 55 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 70 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 60 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 60 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 55 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 60 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 55 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 50 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 30 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '28',
     title: '28th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 65 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 40 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 65 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 40 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '29',
     title: '29th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 65 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 40 }      
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 65 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 40 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '30',
     title: '30th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 65 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 40 }    
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 65 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 40 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '31',
     title: '31st Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 65 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 40 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 65 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 78 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 70 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 70 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 65 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 70 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 65 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 60 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 50 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 40 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '32',
     title: '32nd Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 75 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 }      
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 75 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '33',
     title: '33rd Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 75 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 }    
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 75 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '34',
     title: '34th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 75 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 75 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '35',
     title: '35th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 75 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 }     
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 75 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '36',
     title: '36th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 75 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 }    
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 75 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '37',
     title: '37th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 75 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 }    
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 75 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '38',
     title: '38th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 75 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 }    
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 75 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 85 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 80 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 80 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 75 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 80 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 75 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 70 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 70 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 65 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 50 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '39',
     title: '39th Week',
-       circleIcons: [
+    circleIcons: [
       { index: 0, iconPath: 'heartSystem.svg', percentage: 100 },
       { index: 1, iconPath: 'brainSystem.svg', percentage: 100 },
       { index: 2, iconPath: 'boneSystem.svg', percentage: 95 },
       { index: 3, iconPath: 'digestiveSystem.svg', percentage: 90 },
-      { index: 4, iconPath: 'urinary.svg', percentage: 89 },      
-      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 85 }, 
-      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 87 }, 
-      { index: 7, iconPath: 'immuneSystem.svg', percentage: 90 },    
-      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 91 },      
-      { index: 9, iconPath: 'senseSystem.svg', percentage: 97 },  
-      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 90 },      
-  
+      { index: 4, iconPath: 'urinary.svg', percentage: 89 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 85 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 87 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 90 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 91 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 97 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 90 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
   {
     id: '40',
     title: '40th Week',
-       circleIcons: [
-        { index: 0, iconPath: 'heartSystem.svg', percentage: 100 },
-        { index: 1, iconPath: 'brainSystem.svg', percentage: 100 },
-        { index: 2, iconPath: 'boneSystem.svg', percentage: 100 },
-        { index: 3, iconPath: 'digestiveSystem.svg', percentage: 100 },
-        { index: 4, iconPath: 'urinary.svg', percentage: 100 },
-        { index: 5, iconPath: 'integumentarySystem.svg', percentage: 100 },
-        { index: 6, iconPath: 'endocrineSystem.svg', percentage: 100 },
-        { index: 7, iconPath: 'immuneSystem.svg', percentage: 100 },
-        { index: 8, iconPath: 'respiratorySystem.svg', percentage: 100 },
-        { index: 9, iconPath: 'senseSystem.svg', percentage: 100 },
-        { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 100 }      
-  
+    circleIcons: [
+      { index: 0, iconPath: 'heartSystem.svg', percentage: 100 },
+      { index: 1, iconPath: 'brainSystem.svg', percentage: 100 },
+      { index: 2, iconPath: 'boneSystem.svg', percentage: 100 },
+      { index: 3, iconPath: 'digestiveSystem.svg', percentage: 100 },
+      { index: 4, iconPath: 'urinary.svg', percentage: 100 },
+      { index: 5, iconPath: 'integumentarySystem.svg', percentage: 100 },
+      { index: 6, iconPath: 'endocrineSystem.svg', percentage: 100 },
+      { index: 7, iconPath: 'immuneSystem.svg', percentage: 100 },
+      { index: 8, iconPath: 'respiratorySystem.svg', percentage: 100 },
+      { index: 9, iconPath: 'senseSystem.svg', percentage: 100 },
+      { index: 10, iconPath: 'reproductiveSystem.svg', percentage: 100 },
     ],
-    description: 'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
+    description:
+      'The senses sharpen and movements gain rhythm, life begins to explore its own space.',
     centerImage: require('../assets/weeks/week10.png'),
     weekDays: [
-              { day: 'Mon', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket', 'running'] },
-              { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
-              { day: 'Wed', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['basket'] },
-              { day: 'Thu', icons: ['heart', 'basket', 'running'], isActive: false, activeIcons: ['heart', 'basket'] },
-              { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
-              { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
-              { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
+      {
+        day: 'Mon',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket', 'running'],
+      },
+      { day: 'Tue', icons: ['heart', 'basket', 'running'], isStartDay: false },
+      {
+        day: 'Wed',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['basket'],
+      },
+      {
+        day: 'Thu',
+        icons: ['heart', 'basket', 'running'],
+        isActive: false,
+        activeIcons: ['heart', 'basket'],
+      },
+      { day: 'Fri', icons: ['heart', 'basket', 'running'], isMissed: false },
+      { day: 'Sat', icons: ['heart', 'basket', 'running'], isActive: false },
+      { day: 'Sun', icons: ['heart', 'basket', 'running'], isActive: false },
     ],
   },
 ];
@@ -1106,34 +1747,61 @@ const CloudSVG = React.memo(({ size }: { size: number }) => (
   <SvgXml xml={CLOUD_SVG} width={size} height={size} />
 ));
 
-function HomeTopDecorations() {
+function HomeTopDecorations({ enabled }: { enabled: boolean }) {
   const sunRotation = useSharedValue(0);
   const cloud1TranslateX = useSharedValue(0);
   const cloud2TranslateX = useSharedValue(0);
   const cloud3TranslateX = useSharedValue(0);
 
   useEffect(() => {
+    cancelAnimation(sunRotation);
+    cancelAnimation(cloud1TranslateX);
+    cancelAnimation(cloud2TranslateX);
+    cancelAnimation(cloud3TranslateX);
+
+    sunRotation.value = 0;
+    cloud1TranslateX.value = 0;
+    cloud2TranslateX.value = 0;
+    cloud3TranslateX.value = 0;
+
+    if (!enabled) {
+      return;
+    }
+
     sunRotation.value = withRepeat(
       withTiming(360, { duration: 20000, easing: Easing.linear }),
       -1,
-      true
+      false,
     );
     cloud1TranslateX.value = withRepeat(
-      withTiming(1, { duration: 8000, easing: Easing.linear }),
+      withTiming(1, { duration: 8000, easing: Easing.inOut(Easing.ease) }),
       -1,
-      true
+      true,
     );
     cloud2TranslateX.value = withRepeat(
-      withTiming(1, { duration: 12000, easing: Easing.linear }),
+      withTiming(1, { duration: 12000, easing: Easing.inOut(Easing.ease) }),
       -1,
-      true
+      true,
     );
     cloud3TranslateX.value = withRepeat(
-      withTiming(1, { duration: 10000, easing: Easing.linear }),
+      withTiming(1, { duration: 10000, easing: Easing.inOut(Easing.ease) }),
       -1,
-      true
+      true,
     );
-  }, [sunRotation, cloud1TranslateX, cloud2TranslateX, cloud3TranslateX]);
+
+    return () => {
+      cancelAnimation(sunRotation);
+      cancelAnimation(cloud1TranslateX);
+      cancelAnimation(cloud2TranslateX);
+      cancelAnimation(cloud3TranslateX);
+    };
+  }, [
+    enabled,
+    sunRotation,
+    cloud1TranslateX,
+    cloud2TranslateX,
+    cloud3TranslateX,
+  ]);
 
   const sunAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${sunRotation.value}deg` }],
@@ -1153,7 +1821,7 @@ function HomeTopDecorations() {
 
   return (
     <View style={topDecoStyles.container} pointerEvents="none">
-      <Animated.View 
+      <Animated.View
         style={[topDecoStyles.sunContainer, sunAnimatedStyle]}
         shouldRasterizeIOS={true}
         renderToHardwareTextureAndroid={true}
@@ -1205,11 +1873,37 @@ const topDecoStyles = StyleSheet.create({
   },
 });
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNavigateToProfile, onNavigateToBabyStatus, onNavigateToPlanBirthday }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({
+  onNavigateToToday,
+  onNavigateToProfile,
+  onNavigateToBabyStatus,
+  onNavigateToPlanBirthday,
+  onNavigateToHistoricalWeek,
+}) => {
   const theme = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale =
+    i18n.resolvedLanguage === 'fr'
+      ? 'fr-FR'
+      : i18n.resolvedLanguage === 'sw'
+      ? 'sw-KE'
+      : 'en-US';
+  const isFocused = useIsFocused();
+  const reduceMotion = useReducedMotion();
   const flatListRef = useRef<FlatList>(null);
-  
+  const [isAppActive, setIsAppActive] = useState(
+    AppState.currentState === 'active',
+  );
+  const shouldAnimateHome = isFocused && isAppActive && !reduceMotion;
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextState => {
+      setIsAppActive(nextState === 'active');
+    });
+
+    return () => subscription.remove();
+  }, []);
+
   // Active week state - can be loaded from storage (MMKV) on mount
   // Example with MMKV:
   // import { MMKV } from 'react-native-mmkv';
@@ -1219,9 +1913,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   //   return saved && saved >= 1 && saved <= 40 ? saved : 1;
   // });
   const { profile } = useUserStore();
-  const [activeWeek, setActiveWeek] = useState<number>(
-    getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1,
+  const profileActiveWeek = getCurrentPregnancyWeek(
+    profile.pregnancyWeek,
+    profile.pregnancyWeekSetDate,
   );
+  const [apiActiveWeek, setApiActiveWeek] = useState<number | null>(null);
+  const activeWeek = resolveHomeActiveWeek({
+    profileWeek: profileActiveWeek,
+    profileWeekConfirmed: profile.pregnancyWeekConfirmed,
+    apiWeek: apiActiveWeek,
+  });
   const [weeksData, setWeeksData] = useState<WeekData[]>(WEEKS_DATA);
   const [summaryData, setSummaryData] = useState<SummaryResponse | null>(null);
   const [isLayoutReady, setIsLayoutReady] = useState(false);
@@ -1230,32 +1931,74 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
   const [showTodayAds, setShowTodayAds] = useState(false);
   const [isNavigatingToToday, setIsNavigatingToToday] = useState(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
+  const [airExposure, setAirExposure] = useState<AirExposure | null>(null);
+  const [dismissedAirPulseKey, setDismissedAirPulseKey] = useState<
+    string | null
+  >(null);
   const [birthdayCardHeight, setBirthdayCardHeight] = useState(CARD_HEIGHT);
   const totalWeeks = weeksData.length;
+  const actionCompletions = useRecommendationExperienceStore(
+    state => state.actionCompletions,
+  );
+  const checkIns = useRecommendationExperienceStore(state => state.checkIns);
+  const todayDateKey = formatLocalDate(new Date());
+  const todayTaskCounts = useMemo(
+    () => countCompletedActionsByDomain(actionCompletions[todayDateKey] ?? {}),
+    [actionCompletions, todayDateKey],
+  );
+  const airPulseKey = useMemo(() => {
+    if (!airExposure) return null;
+    const observedAt = new Date(airExposure.timestamp);
+    if (Number.isNaN(observedAt.getTime())) return null;
+
+    // Show at most once per air-quality level per measurement day. A changed
+    // level gets a new key and therefore surfaces a new message immediately.
+    return `${formatLocalDate(observedAt)}:${resolveAirQualityLevel(
+      airExposure,
+    )}`;
+  }, [airExposure]);
 
   // Fetch API Data
   useEffect(() => {
+    if (DEV_LOCAL_SESSION) {
+      return undefined;
+    }
+
     let mounted = true;
     const fetchData = async () => {
       try {
         const [summary, userProfile] = await Promise.all([
           SummaryService.getSummary(),
-          ProfileService.getProfile()
+          ProfileService.getProfile(),
         ]);
-        
+
         if (mounted) {
           setSummaryData(summary);
-          
+          if (userProfile?.id !== undefined && userProfile?.id !== null) {
+            useUserStore.getState().setProfile({
+              backendUserId: String(userProfile.id),
+            });
+          }
+
           // Update active week
-          const apiWeek = summary.week_info?.week || userProfile.current_pregnancy_week || activeWeek;
-          setActiveWeek(Math.max(1, Math.min(40, apiWeek)));
+          const apiWeek =
+            userProfile.current_pregnancy_week ||
+            summary.week_info?.week ||
+            profileActiveWeek ||
+            1;
+          setApiActiveWeek(Math.max(1, Math.min(40, apiWeek)));
 
           // Update Weeks Data with API content
           const updatedWeeksData = [...WEEKS_DATA];
           const weekIndex = apiWeek - 1;
 
           // Update description for current week
-          if (updatedWeeksData[weekIndex] && summary.week_info?.text) {
+          if (
+            updatedWeeksData[weekIndex] &&
+            summary.week_info?.text &&
+            (summary.week_info.week === undefined ||
+              summary.week_info.week === apiWeek)
+          ) {
             updatedWeeksData[weekIndex] = {
               ...updatedWeeksData[weekIndex],
               description: summary.week_info.text,
@@ -1271,43 +2014,100 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
               if (!updatedWeeksData[wIdx]) continue;
 
               const weekStart = new Date(startDate);
-              weekStart.setDate(startDate.getDate() + (wIdx * 7));
+              weekStart.setDate(startDate.getDate() + wIdx * 7);
 
-              const updatedWeekDays = updatedWeeksData[wIdx].weekDays.map((dayItem, dIndex) => {
-                const dayDate = new Date(weekStart);
-                dayDate.setDate(weekStart.getDate() + dIndex);
-                const dateStr = formatLocalDate(dayDate);
-                const dayName = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
+              const updatedWeekDays = updatedWeeksData[wIdx].weekDays.map(
+                (dayItem, dIndex) => {
+                  const dayDate = new Date(weekStart);
+                  dayDate.setDate(weekStart.getDate() + dIndex);
+                  const dateStr = formatLocalDate(dayDate);
+                  const dayName = dayDate.toLocaleDateString(locale, {
+                    weekday: 'short',
+                  });
 
-                const historyItem = summary.exposure_history?.items?.find(
-                  (item: any) => item.date === dateStr
-                );
-                const hasHistory = !!historyItem;
+                  const historyItem = summary.exposure_history?.items?.find(
+                    (item: any) => item.date === dateStr,
+                  );
+                  const hasHistory = !!historyItem;
 
-                return {
-                  ...dayItem,
-                  day: dayName,
-                  isActive: hasHistory ? true : (dayItem.isActive || false),
-                  activeIcons: hasHistory ? (['running'] as ('heart' | 'basket' | 'running')[]) : dayItem.activeIcons,
-                };
-              });
+                  return {
+                    ...dayItem,
+                    day: dayName,
+                    isActive: hasHistory ? true : dayItem.isActive || false,
+                    activeIcons: hasHistory
+                      ? (['running'] as ('heart' | 'basket' | 'running')[])
+                      : dayItem.activeIcons,
+                  };
+                },
+              );
 
               updatedWeeksData[wIdx] = {
                 ...updatedWeeksData[wIdx],
-                weekDays: updatedWeekDays
+                weekDays: updatedWeekDays,
               };
             }
           }
           setWeeksData(updatedWeeksData);
         }
       } catch (e) {
-        console.error("Failed to fetch home data", e);
+        console.error('Failed to fetch home data', e);
       }
     };
     fetchData();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isFocused || !isAppActive) {
+      return undefined;
+    }
+
+    let mounted = true;
+
+    const loadAirExposure = async () => {
+      if (DEV_LOCAL_SESSION) {
+        const environment = selectPresentationDay(
+          activeWeek,
+          formatLocalDate(new Date()),
+        ).environment;
+
+        if (mounted) {
+          setAirExposure({
+            timestamp: new Date().toISOString(),
+            pm25: environment.pm25,
+            temperature: environment.temperature,
+            humidity: environment.humidity,
+            uvi: environment.uvi,
+            uvi_level: environment.uviLevel,
+            indoor_pm25: environment.indoorPm25,
+            indoor_temperature: environment.indoorTemperature,
+          });
+        }
+        return;
+      }
+
+      try {
+        const exposure = await ExposureService.getAirExposure();
+        if (mounted) {
+          setAirExposure(isAirExposureFresh(exposure) ? exposure : null);
+        }
+      } catch (error) {
+        if (mounted) {
+          setAirExposure(null);
+        }
+        console.error('Failed to fetch Home air exposure', error);
+      }
+    };
+
+    loadAirExposure();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeWeek, isAppActive, isFocused]);
 
   // Get today's day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
   const getTodayDayOfWeek = useCallback((): number => {
@@ -1317,226 +2117,284 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
     return dayIndex === 0 ? 6 : dayIndex - 1;
   }, []);
 
-  const styles = useMemo(() => StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: '#fff',
-    },
-    content: {
-      flex: 1,
-      paddingHorizontal: spacing('md'),
-      paddingTop: spacing('lg'),
-    },
-    birthdayCardWrapper: {
-      marginTop: HEADER_MARGIN_TOP,
-      marginBottom: HEADER_MARGIN_BOTTOM,
-      alignItems: 'center',
-    },
-    birthdayCardContainer: {
-      width: CARD_WIDTH,
-      minHeight: CARD_HEIGHT,
-      marginTop: HEADER_CARD_MARGIN_TOP,
-    },
-    iconCircleContainer: {
-      position: 'absolute',
-      top: -ICON_SIZE / 1.5,
-      left: (CARD_WIDTH - ICON_SIZE) / 2,
-      width: ICON_SIZE,
-      height: ICON_SIZE,
-      borderRadius: ICON_SIZE / 2,
-      backgroundColor: '#FF9A88',
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 20,
-      elevation: 8,
-    },
-    cardOverlay: {
-      alignItems: 'center',
-      paddingTop: NOTCH_DEPTH + 20,
-      paddingBottom: spacing('xl'),
-      paddingHorizontal: spacing('lg'),
-    },
-    textContainer: {
-      alignItems: 'center',
-      marginBottom: spacing('md'),
-    },
-    title: {
-      fontSize: CARD_WIDTH * 0.06,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: '#FFFFFF',
-      textAlign: 'center',
-      marginBottom: spacing('xs'),
-    },
-    subtitle: {
-      fontSize: CARD_WIDTH * 0.04,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: '#FFFFFF',
-      textAlign: 'center',
-      lineHeight: CARD_WIDTH * 0.055,
-      opacity: 0.95,
-    },
-    planButton: {
-      backgroundColor: '#FFFFFF',
-      borderRadius: 30,
-      paddingVertical: 12,
-      paddingHorizontal: 28,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      elevation: 3,
-    },
-    planButtonText: {
-      color: theme.colors.orange500,
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.bold,
-      textAlign: 'center',
-    },
-    weekItem: {
-      marginBottom: 0,
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      flexDirection: 'column-reverse',
-    },
-    emptyStateBanner: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing('sm'),
-      backgroundColor: '#FFF8F0',
-      borderWidth: 1,
-      borderColor: '#FFD9B3',
-      borderRadius: 12,
-      padding: spacing('md'),
-      marginHorizontal: spacing('md'),
-      marginTop: spacing('md'),
-    },
-    emptyStateBannerIcon: {
-      fontSize: 24,
-    },
-    emptyStateBannerTitle: {
-      fontSize: 14,
-      fontFamily: theme.typography.fontFamily.bold,
-      color: theme.colors.textPrimary,
-      marginBottom: 4,
-    },
-    emptyStateBannerSubtitle: {
-      fontSize: 13,
-      fontFamily: theme.typography.fontFamily.regular,
-      color: theme.colors.neutral500,
-      lineHeight: 18,
-    },
-    fixedBackground: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: SCREEN_HEIGHT / 1.5,
-      zIndex: 0,
-      opacity: 0.25,
-      alignItems: 'flex-start',
-      justifyContent: 'flex-end',
-    },
-  }), [theme]);
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: '#fff',
+        },
+        content: {
+          flex: 1,
+          paddingHorizontal: spacing('md'),
+          paddingTop: spacing('lg'),
+        },
+        birthdayCardWrapper: {
+          marginTop: HEADER_MARGIN_TOP,
+          marginBottom: HEADER_MARGIN_BOTTOM,
+          alignItems: 'center',
+        },
+        birthdayCardContainer: {
+          width: CARD_WIDTH,
+          minHeight: CARD_HEIGHT,
+          marginTop: HEADER_CARD_MARGIN_TOP,
+        },
+        iconCircleContainer: {
+          position: 'absolute',
+          top: -ICON_SIZE / 1.5,
+          left: (CARD_WIDTH - ICON_SIZE) / 2,
+          width: ICON_SIZE,
+          height: ICON_SIZE,
+          borderRadius: ICON_SIZE / 2,
+          backgroundColor: '#FF9A88',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 20,
+          elevation: 8,
+        },
+        cardOverlay: {
+          alignItems: 'center',
+          paddingTop: NOTCH_DEPTH + 20,
+          paddingBottom: spacing('xl'),
+          paddingHorizontal: spacing('lg'),
+        },
+        textContainer: {
+          alignItems: 'center',
+          marginBottom: spacing('md'),
+        },
+        title: {
+          fontSize: CARD_WIDTH * 0.06,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: '#FFFFFF',
+          textAlign: 'center',
+          marginBottom: spacing('xs'),
+        },
+        subtitle: {
+          fontSize: CARD_WIDTH * 0.04,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: '#FFFFFF',
+          textAlign: 'center',
+          lineHeight: CARD_WIDTH * 0.055,
+          opacity: 0.95,
+        },
+        planButton: {
+          backgroundColor: '#FFFFFF',
+          borderRadius: 30,
+          paddingVertical: 12,
+          paddingHorizontal: 28,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+        },
+        planButtonText: {
+          color: theme.colors.orange500,
+          fontSize: 14,
+          fontFamily: theme.typography.fontFamily.bold,
+          textAlign: 'center',
+        },
+        weekItem: {
+          marginBottom: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexDirection: 'column-reverse',
+        },
+        emptyStateBanner: {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: spacing('sm'),
+          backgroundColor: '#FFF8F0',
+          borderWidth: 1,
+          borderColor: '#FFD9B3',
+          borderRadius: 12,
+          padding: spacing('md'),
+          marginHorizontal: spacing('md'),
+          marginTop: spacing('md'),
+        },
+        emptyStateBannerIcon: {
+          fontSize: 24,
+        },
+        emptyStateBannerTitle: {
+          fontSize: 14,
+          fontFamily: theme.typography.fontFamily.bold,
+          color: theme.colors.textPrimary,
+          marginBottom: 4,
+        },
+        emptyStateBannerSubtitle: {
+          fontSize: 13,
+          fontFamily: theme.typography.fontFamily.regular,
+          color: theme.colors.neutral500,
+          lineHeight: 18,
+        },
+        fixedBackground: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: SCREEN_HEIGHT / 1.5,
+          zIndex: 0,
+          opacity: 0.25,
+          alignItems: 'flex-start',
+          justifyContent: 'flex-end',
+        },
+      }),
+    [theme],
+  );
 
   // Memoize the header component
-  const handleHeaderLayout = useCallback((event: any) => {
-    const height = event?.nativeEvent?.layout?.height ?? 0;
-    if (height > 0 && height !== headerHeight) {
-      setHeaderHeight(height);
-    }
-  }, [headerHeight]);
+  const handleHeaderLayout = useCallback(
+    (event: any) => {
+      const height = event?.nativeEvent?.layout?.height ?? 0;
+      if (height > 0 && height !== headerHeight) {
+        setHeaderHeight(height);
+      }
+    },
+    [headerHeight],
+  );
 
-  const handleWeekItemLayout = useCallback((event: any) => {
-    const height = event?.nativeEvent?.layout?.height ?? 0;
-    if (height > 0 && height !== weekItemHeight) {
-      setWeekItemHeight(height);
-    }
-  }, [weekItemHeight]);
+  const handleWeekItemLayout = useCallback(
+    (event: any) => {
+      const height = event?.nativeEvent?.layout?.height ?? 0;
+      if (height > 0 && height !== weekItemHeight) {
+        setWeekItemHeight(height);
+      }
+    },
+    [weekItemHeight],
+  );
 
-  const renderHeader = useCallback(() => (
-    <View onLayout={handleHeaderLayout}>
-      {!summaryData && (
-        <TouchableOpacity
-          style={styles.emptyStateBanner}
-          onPress={() => setShowLocationSheet(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.emptyStateBannerIcon} allowFontScaling={false}>📍</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.emptyStateBannerTitle} allowFontScaling={false}>
-              {t('home.location_banner_title')}
+  const renderHeader = useCallback(
+    () => (
+      <View onLayout={handleHeaderLayout}>
+        {!summaryData && (
+          <TouchableOpacity
+            style={styles.emptyStateBanner}
+            onPress={() => setShowLocationSheet(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.emptyStateBannerIcon} allowFontScaling={false}>
+              📍
             </Text>
-            <Text style={styles.emptyStateBannerSubtitle} allowFontScaling={false}>
-              {t('home.location_banner_subtitle')}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      )}
-    <View style={styles.birthdayCardWrapper}>
-      <View
-        style={styles.birthdayCardContainer}
-        onLayout={(e) => {
-          const h = e.nativeEvent.layout.height;
-          if (h > 0 && h !== birthdayCardHeight) setBirthdayCardHeight(h);
-        }}
-      >
-        {/* SVG Background with curved notch — height tracks actual card height */}
-        <Svg width={CARD_WIDTH} height={birthdayCardHeight} style={{ position: 'absolute', top: 0, left: 0 }}>
-          <Defs>
-            <LinearGradient id="cardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor="#FFB86A" />
-              <Stop offset="50%" stopColor="#FF9045" />
-              <Stop offset="100%" stopColor="#FF6D5C" />
-            </LinearGradient>
-          </Defs>
-          <Path
-            d={`
+            <View style={{ flex: 1 }}>
+              <Text
+                style={styles.emptyStateBannerTitle}
+                allowFontScaling={false}
+              >
+                {t('home.location_banner_title')}
+              </Text>
+              <Text
+                style={styles.emptyStateBannerSubtitle}
+                allowFontScaling={false}
+              >
+                {t('home.location_banner_subtitle')}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        <View style={styles.birthdayCardWrapper}>
+          <View
+            style={styles.birthdayCardContainer}
+            onLayout={e => {
+              const h = e.nativeEvent.layout.height;
+              if (h > 0 && h !== birthdayCardHeight) setBirthdayCardHeight(h);
+            }}
+          >
+            {/* SVG Background with curved notch — height tracks actual card height */}
+            <Svg
+              width={CARD_WIDTH}
+              height={birthdayCardHeight}
+              style={{ position: 'absolute', top: 0, left: 0 }}
+            >
+              <Defs>
+                <LinearGradient
+                  id="cardGradient"
+                  x1="0%"
+                  y1="0%"
+                  x2="100%"
+                  y2="100%"
+                >
+                  <Stop offset="0%" stopColor="#FFB86A" />
+                  <Stop offset="50%" stopColor="#FF9045" />
+                  <Stop offset="100%" stopColor="#FF6D5C" />
+                </LinearGradient>
+              </Defs>
+              <Path
+                d={`
               M 20 0
               L ${CARD_WIDTH * 0.3} 0
-              C ${CARD_WIDTH * 0.35} 0, ${CARD_WIDTH * 0.38} ${NOTCH_DEPTH * 0.1}, ${CARD_WIDTH * 0.42} ${NOTCH_DEPTH * 0.5}
-              C ${CARD_WIDTH * 0.45} ${NOTCH_DEPTH * 0.9}, ${CARD_WIDTH * 0.55} ${NOTCH_DEPTH * 0.9}, ${CARD_WIDTH * 0.58} ${NOTCH_DEPTH * 0.5}
-              C ${CARD_WIDTH * 0.62} ${NOTCH_DEPTH * 0.1}, ${CARD_WIDTH * 0.65} 0, ${CARD_WIDTH * 0.7} 0
+              C ${CARD_WIDTH * 0.35} 0, ${CARD_WIDTH * 0.38} ${
+                  NOTCH_DEPTH * 0.1
+                }, ${CARD_WIDTH * 0.42} ${NOTCH_DEPTH * 0.5}
+              C ${CARD_WIDTH * 0.45} ${NOTCH_DEPTH * 0.9}, ${
+                  CARD_WIDTH * 0.55
+                } ${NOTCH_DEPTH * 0.9}, ${CARD_WIDTH * 0.58} ${
+                  NOTCH_DEPTH * 0.5
+                }
+              C ${CARD_WIDTH * 0.62} ${NOTCH_DEPTH * 0.1}, ${
+                  CARD_WIDTH * 0.65
+                } 0, ${CARD_WIDTH * 0.7} 0
               L ${CARD_WIDTH - 20} 0
               Q ${CARD_WIDTH} 0, ${CARD_WIDTH} 20
               L ${CARD_WIDTH} ${birthdayCardHeight - 20}
-              Q ${CARD_WIDTH} ${birthdayCardHeight}, ${CARD_WIDTH - 20} ${birthdayCardHeight}
+              Q ${CARD_WIDTH} ${birthdayCardHeight}, ${
+                  CARD_WIDTH - 20
+                } ${birthdayCardHeight}
               L 20 ${birthdayCardHeight}
               Q 0 ${birthdayCardHeight}, 0 ${birthdayCardHeight - 20}
               L 0 20
               Q 0 0, 20 0
               Z
             `}
-            fill="url(#cardGradient)"
-          />
-        </Svg>
+                fill="url(#cardGradient)"
+              />
+            </Svg>
 
-        {/* Icon inside circle */}
-        <View style={styles.iconCircleContainer}>
-          <Image
-            source={require('../assets/icons/birthdayIcon.png')}
-            style={{ width: ICON_SIZE * 0.55, height: ICON_SIZE * 0.65 }}
-            resizeMode="contain"
-          />
-        </View>
+            {/* Icon inside circle */}
+            <View style={styles.iconCircleContainer}>
+              <Image
+                source={require('../assets/icons/birthdayIcon.png')}
+                style={{ width: ICON_SIZE * 0.55, height: ICON_SIZE * 0.65 }}
+                resizeMode="contain"
+              />
+            </View>
 
-        {/* Card Content — normal flow so card expands with content */}
-        <View style={styles.cardOverlay}>
-          <View style={styles.textContainer}>
-            <Text style={styles.title} allowFontScaling={false}>{t('home.pick_birthday_title')}</Text>
-            <Text style={styles.subtitle} allowFontScaling={false}>
-              {t('home.pick_birthday_subtitle')}
-            </Text>
+            {/* Card Content — normal flow so card expands with content */}
+            <View style={styles.cardOverlay}>
+              <View style={styles.textContainer}>
+                <Text style={styles.title} allowFontScaling={false}>
+                  {t('home.pick_birthday_title')}
+                </Text>
+                <Text style={styles.subtitle} allowFontScaling={false}>
+                  {t('home.pick_birthday_subtitle')}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.planButton}
+                onPress={onNavigateToPlanBirthday}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.planButtonText} allowFontScaling={false}>
+                  {t('home.plan_birthday')}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-
-          <TouchableOpacity style={styles.planButton} onPress={onNavigateToPlanBirthday} activeOpacity={0.7}>
-            <Text style={styles.planButtonText} allowFontScaling={false}>{t('home.plan_birthday')}</Text>
-          </TouchableOpacity>
         </View>
       </View>
-    </View>
-    </View>
-  ), [styles, handleHeaderLayout, onNavigateToPlanBirthday, summaryData, t, setShowLocationSheet, birthdayCardHeight, setBirthdayCardHeight]);
+    ),
+    [
+      styles,
+      handleHeaderLayout,
+      onNavigateToPlanBirthday,
+      summaryData,
+      t,
+      setShowLocationSheet,
+      birthdayCardHeight,
+      setBirthdayCardHeight,
+    ],
+  );
 
   const handleNavigateToToday = useCallback(() => {
     if (showTodayAds || isNavigatingToToday) return;
@@ -1556,66 +2414,176 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
     return `home.week_desc_w${String(normalizedWeek).padStart(2, '0')}`;
   }, []);
 
-  const renderWeekItem: ListRenderItem<WeekData> = useCallback(({ item, index }) => {
-    // Calculate if this item is the active week
-    // In reversed array: index = totalWeeks - weekNumber
-    // So: weekNumber = totalWeeks - index
-    const weekNumber = totalWeeks - index;
-    const isActiveWeek = weekNumber === activeWeek;
+  const renderWeekItem: ListRenderItem<WeekData> = useCallback(
+    ({ item, index }) => {
+      // Calculate if this item is the active week
+      // In reversed array: index = totalWeeks - weekNumber
+      // So: weekNumber = totalWeeks - index
+      const weekNumber = totalWeeks - index;
+      const isActiveWeek = weekNumber === activeWeek;
 
-    // Compute today's day index once
-    const todayDayIndex = getTodayDayOfWeek();
+      // Compute today's day index once
+      const todayDayIndex = getTodayDayOfWeek();
 
-    // For all weeks, derive isStartDay and isMissed based on
-    // activeWeek + today's day:
-    // - All days in weeks before activeWeek => missed
-    // - In activeWeek: days before today => missed, today => start
-    // - Future weeks keep their original missed state
-    const DAY_KEYS = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'] as const;
-    const updatedWeekDays = item.weekDays.map((dayData, dayIndex) => {
-      const isBeforeToday =
-        weekNumber < activeWeek ||
-        (weekNumber === activeWeek && dayIndex < todayDayIndex);
+      // For all weeks, derive isStartDay and isMissed based on
+      // activeWeek + today's day:
+      // - All days in weeks before activeWeek => missed
+      // - In activeWeek: days before today => missed, today => start
+      // - Future weeks keep their original missed state
+      const DAY_KEYS = [
+        'day_mon',
+        'day_tue',
+        'day_wed',
+        'day_thu',
+        'day_fri',
+        'day_sat',
+        'day_sun',
+      ] as const;
+      const today = new Date();
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - todayDayIndex);
+      const updatedWeekDays = item.weekDays.map((dayData, dayIndex) => {
+        const dayDate = new Date(monday);
+        dayDate.setDate(
+          monday.getDate() + dayIndex + (weekNumber - activeWeek) * 7,
+        );
+        const dateKey = formatLocalDate(dayDate);
+        const localRecords = actionCompletions[dateKey] ?? {};
+        const pathDay = selectWeekPathDay({
+          pregnancyWeek: weekNumber,
+          date: dateKey,
+          checkIn: checkIns[dateKey],
+          actionRecords: localRecords,
+          backendActive: dayData.isActive === true,
+          usePresentation: false,
+        });
+        const localDomains = pathDay.domains;
+        const localActive = pathDay.active;
+        const localActiveIcons: Array<'heart' | 'basket' | 'running'> = [
+          ...(localDomains.some(
+            domain => domain === 'behaviour' || domain === 'wellbeing',
+          )
+            ? (['heart'] as const)
+            : []),
+          ...(localDomains.includes('diet') ? (['basket'] as const) : []),
+          ...(localDomains.includes('activity') ? (['running'] as const) : []),
+        ];
+        const {
+          isActive: isDayActive,
+          isStartDay,
+          isMissed,
+        } = resolveHomeDayState({
+          weekNumber,
+          activeWeek,
+          dayIndex,
+          todayDayIndex,
+          hasRecordedActivity: localActive,
+        });
 
-      const isStartDay = weekNumber === activeWeek && dayIndex === todayDayIndex;
+        return {
+          ...dayData,
+          day: t(`common.${DAY_KEYS[dayIndex]}`),
+          isActive: isDayActive,
+          activeIcons:
+            localActiveIcons.length > 0
+              ? localActiveIcons
+              : dayData.activeIcons,
+          isStartDay,
+          isMissed,
+        };
+      });
 
-      // If active (completed), it's not missed. Only missed if before today AND not active.
-      const isMissed = dayData.isActive ? false : (isBeforeToday ? true : (dayData.isMissed || false));
+      // Calculate if this week should be reversed (alternating pattern)
+      // In reversed array: week 40 is at index 0 (no reverse), week 39 is at index 1 (reverse), etc.
+      const shouldReverse = index % 2 === 1;
+      const completedCareDays = updatedWeekDays.filter(
+        day => day.isActive,
+      ).length;
+      const progressPercent =
+        weekNumber <= activeWeek && completedCareDays > 0
+          ? Math.round((completedCareDays / 7) * 100)
+          : isActiveWeek
+          ? 0
+          : undefined;
+      const weekState: 'current' | 'review' | 'future' | 'complete' =
+        weekNumber === 40 && activeWeek >= 40
+          ? 'complete'
+          : isActiveWeek
+          ? 'current'
+          : weekNumber < activeWeek
+          ? 'review'
+          : 'future';
+      const trimester = weekNumber <= 13 ? 1 : weekNumber <= 27 ? 2 : 3;
+      const chapterLabel =
+        isActiveWeek ||
+        weekNumber === 1 ||
+        weekNumber === 14 ||
+        weekNumber === 28
+          ? t('home.trimester_label', { number: trimester })
+          : undefined;
 
-      return {
-        ...dayData,
-        day: t(`common.${DAY_KEYS[dayIndex]}`),
-        isStartDay,
-        isMissed,
-      };
-    });
-    
-    // Calculate if this week should be reversed (alternating pattern)
-    // In reversed array: week 40 is at index 0 (no reverse), week 39 is at index 1 (reverse), etc.
-    const shouldReverse = index % 2 === 1;
-    
-    return (
-      <View style={styles.weekItem} onLayout={index === 0 ? handleWeekItemLayout : undefined}>
-        <WeekCycleView
-          title={t('home.week_label', { week: weekNumber })}
-          description={t(getWeekDescKey(weekNumber))}
-          centerImage={item.centerImage}
-          circleIcons={item.circleIcons}
-          weekDays={updatedWeekDays}
-          onStartPress={handleNavigateToToday}
-          onImagePress={isActiveWeek ? onNavigateToBabyStatus : undefined}
-          isActive={isActiveWeek}
-          reversed={shouldReverse}
-        />
-      </View>
-    );
-  }, [styles.weekItem, handleNavigateToToday, onNavigateToBabyStatus, handleWeekItemLayout, activeWeek, totalWeeks, getTodayDayOfWeek, t, getWeekDescKey]);
+      return (
+        <View
+          style={styles.weekItem}
+          onLayout={index === 0 ? handleWeekItemLayout : undefined}
+        >
+          <WeekCycleView
+            title={t('home.week_label', { week: weekNumber })}
+            description={t(getWeekDescKey(weekNumber))}
+            centerImage={item.centerImage}
+            circleIcons={item.circleIcons}
+            weekDays={updatedWeekDays}
+            onStartPress={handleNavigateToToday}
+            onImagePress={
+              isActiveWeek
+                ? onNavigateToBabyStatus
+                : weekNumber < activeWeek && onNavigateToHistoricalWeek
+                ? () => {
+                    const endDate = new Date();
+                    endDate.setDate(
+                      endDate.getDate() - (activeWeek - weekNumber) * 7,
+                    );
+                    onNavigateToHistoricalWeek(
+                      weekNumber,
+                      formatLocalDate(endDate),
+                    );
+                  }
+                : undefined
+            }
+            isActive={isActiveWeek && shouldAnimateHome}
+            weekState={weekState}
+            chapterLabel={chapterLabel}
+            progressPercent={progressPercent}
+            reversed={shouldReverse}
+          />
+        </View>
+      );
+    },
+    [
+      actionCompletions,
+      checkIns,
+      styles.weekItem,
+      handleNavigateToToday,
+      onNavigateToBabyStatus,
+      onNavigateToHistoricalWeek,
+      handleWeekItemLayout,
+      activeWeek,
+      totalWeeks,
+      getTodayDayOfWeek,
+      t,
+      getWeekDescKey,
+      shouldAnimateHome,
+    ],
+  );
 
   // Memoize key extractor
   const keyExtractor = useCallback((item: WeekData) => item.id, []);
 
   // Reverse weeks data for display (column-reverse effect)
-  const reversedWeeksData = useMemo(() => [...weeksData].reverse(), [weeksData]);
+  const reversedWeeksData = useMemo(
+    () => [...weeksData].reverse(),
+    [weeksData],
+  );
 
   // Calculate index for active week in reversed array
   // If activeWeek = 1, index should be 39 (40 - 1) in reversed array
@@ -1626,24 +2594,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
 
   // Get item layout for accurate scrolling
   // Note: Heights are approximate and may need adjustment based on actual measurements
-  const getItemLayout = useCallback((data: any, index: number) => {
-    const headerExtra =
-      HEADER_MARGIN_TOP +
-      HEADER_MARGIN_BOTTOM +
-      HEADER_CARD_MARGIN_TOP +
-      HEADER_BUTTON_MARGIN_BOTTOM;
-    const headerLength = headerHeight + headerExtra;
-    const itemLength = weekItemHeight + WEEK_ITEM_MARGIN_BOTTOM;
-    return {
-      length: itemLength,
-      offset: headerLength + itemLength * index,
-      index,
-    };
-  }, [headerHeight, weekItemHeight]);
+  const getItemLayout = useCallback(
+    (data: any, index: number) => {
+      const headerExtra =
+        HEADER_MARGIN_TOP +
+        HEADER_MARGIN_BOTTOM +
+        HEADER_CARD_MARGIN_TOP +
+        HEADER_BUTTON_MARGIN_BOTTOM;
+      const headerLength = headerHeight + headerExtra;
+      const itemLength = weekItemHeight + WEEK_ITEM_MARGIN_BOTTOM;
+      return {
+        length: itemLength,
+        offset: headerLength + itemLength * index,
+        index,
+      };
+    },
+    [headerHeight, weekItemHeight],
+  );
 
   // Scroll to active week when layout is ready
   useEffect(() => {
-    if (isLayoutReady && flatListRef.current && activeWeek >= 1 && activeWeek <= totalWeeks) {
+    if (
+      isLayoutReady &&
+      flatListRef.current &&
+      activeWeek >= 1 &&
+      activeWeek <= totalWeeks
+    ) {
       const attemptScroll = (attempt: number = 1) => {
         const delay = attempt * 300;
         setTimeout(() => {
@@ -1652,11 +2628,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
               index: activeWeekIndex,
               animated: attempt === 1,
               viewPosition: 0,
-              viewOffset: WEEK_CARD_TEXT_SECTION_HEIGHT,
+              // Keep the current week's title and badge in the primary view.
+              // Positive viewOffset was placing the following week on screen.
+              viewOffset: -WEEK_CARD_TEXT_SECTION_HEIGHT,
             });
           } catch {
             const layout = getItemLayout(null, activeWeekIndex);
-            const offsetCorrected = layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
+            const offsetCorrected =
+              layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
             flatListRef.current?.scrollToOffset({
               offset: offsetCorrected,
               animated: attempt === 1,
@@ -1669,21 +2648,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
       };
       attemptScroll(1);
     }
-  }, [isLayoutReady, activeWeekIndex, activeWeek, getItemLayout, reversedWeeksData, totalWeeks]);
+  }, [
+    isLayoutReady,
+    activeWeekIndex,
+    activeWeek,
+    getItemLayout,
+    reversedWeeksData,
+    totalWeeks,
+  ]);
 
   // Handle scroll to index errors with better retry logic
-  const handleScrollToIndexFailed = useCallback((info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
-    const layout = getItemLayout(null, info.index);
-    const offsetCorrected = layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
-    setTimeout(() => {
-      if (flatListRef.current) {
-        flatListRef.current.scrollToOffset({
-          offset: offsetCorrected,
-          animated: true,
-        });
-      }
-    }, 200);
-  }, [getItemLayout]);
+  const handleScrollToIndexFailed = useCallback(
+    (info: {
+      index: number;
+      highestMeasuredFrameIndex: number;
+      averageItemLength: number;
+    }) => {
+      const layout = getItemLayout(null, info.index);
+      const offsetCorrected = layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
+      setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToOffset({
+            offset: offsetCorrected,
+            animated: true,
+          });
+        }
+      }, 200);
+    },
+    [getItemLayout],
+  );
 
   // Handle layout ready - wait for both content size and layout
   const handleContentSizeChange = useCallback(() => {
@@ -1719,13 +2712,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
           resizeMode="contain"
         />
       </View>
-      <HomeTopDecorations />
-      <MainHeader 
+      <HomeTopDecorations enabled={shouldAnimateHome} />
+      <MainHeader
         weekNumber={t('home.week_label', { week: activeWeek })}
         icons={[
-          { type: 'food', count: 0 },
-          { type: 'exercise', count: 0 },
-          { type: 'heart', count: 0 },
+          { type: 'food', count: todayTaskCounts.diet },
+          { type: 'exercise', count: todayTaskCounts.activity },
+          { type: 'heart', count: todayTaskCounts.behaviour },
+          { type: 'mental', count: todayTaskCounts.wellbeing },
         ]}
         onProfilePress={onNavigateToProfile}
       />
@@ -1737,7 +2731,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
         renderItem={renderWeekItem}
         keyExtractor={keyExtractor}
         ListHeaderComponent={renderHeader}
-        contentContainerStyle={{ paddingBottom: spacing('xl') }}
+        contentContainerStyle={{
+          paddingBottom: HOME_LIST_BOTTOM_CLEARANCE,
+        }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
         maxToRenderPerBatch={3}
@@ -1750,9 +2746,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToToday, onNav
         updateCellsBatchingPeriod={50}
       />
 
-
-      {/* FAB */}
-      <FloatingActionButton />
+      {airExposure && airPulseKey && airPulseKey !== dismissedAirPulseKey ? (
+        <AirQualityPulseToast
+          airExposure={airExposure}
+          animate={!reduceMotion}
+          onDismiss={() => setDismissedAirPulseKey(airPulseKey)}
+        />
+      ) : null}
 
       <AccessLocationBottomSheet
         visible={showLocationSheet}

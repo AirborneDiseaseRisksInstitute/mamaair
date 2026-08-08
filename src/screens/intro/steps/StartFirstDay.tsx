@@ -5,8 +5,9 @@ import { useTheme, spacing, radius } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo } from '../../../components/ui';
 import { CONGRATS_SVG } from '../../../utils/svgIcons';
 import { useUserStore } from '../../../store/useUserStore';
-import { s, vs, ms, fs, FIXED_BUTTON_AREA_HEIGHT } from '../../../utils/responsive';
+import { s, vs, ms, FIXED_BUTTON_AREA_HEIGHT } from '../../../utils/responsive';
 import { useTranslation } from 'react-i18next';
+import { DEV_LOCAL_SESSION } from '../../../config/dev';
 
 interface StartFirstDayProps { onNext?: () => void; }
 
@@ -14,7 +15,7 @@ export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
-  const { profile } = useUserStore();
+  const { profile, setAgreementAccepted } = useUserStore();
 
   const buttonText = useMemo(() => {
     const week = profile.pregnancyWeek;
@@ -39,11 +40,14 @@ export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
   }), [theme]);
 
   const handleNext = useCallback(() => {
+    if (DEV_LOCAL_SESSION) {
+      setAgreementAccepted(true);
+    }
     setIsLoading(true);
     requestAnimationFrame(() => {
       setTimeout(() => { onNext?.(); setTimeout(() => setIsLoading(false), 100); }, 100);
     });
-  }, [onNext]);
+  }, [onNext, setAgreementAccepted]);
 
   return (
     <SafeAreaView style={styles.container}>

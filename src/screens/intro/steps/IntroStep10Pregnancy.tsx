@@ -45,7 +45,7 @@ export const IntroStep10Pregnancy: React.FC<IntroStep10PregnancyProps> = ({ onNe
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <BackButton onPress={onBack} />
-        <ProgressBar progress={0.75} />
+        <ProgressBar progress={0.786} />
         <View style={styles.contentWrapper}>
           <IntroTitleBox title={t('intro.step10pregnancy_title')} onLayout={setTitleBoxCenterY} />
           <Text style={styles.questionText} allowFontScaling={false}>{t('intro.step10pregnancy_desc')}</Text>

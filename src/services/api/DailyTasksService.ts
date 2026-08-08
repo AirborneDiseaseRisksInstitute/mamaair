@@ -3,7 +3,7 @@ import api from './client';
 export interface DailyTask {
   code: string;
   title: string;
-  category: 'diet' | 'activity' | 'behavior';
+  category?: 'diet' | 'activity' | 'behavior' | 'behaviour' | 'wellbeing';
   sort_order: number;
 }
 

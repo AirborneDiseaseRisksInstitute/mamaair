@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faCalendar } from '@fortawesome/free-solid-svg-icons';
+import { faBrain, faCalendar } from '@fortawesome/free-solid-svg-icons';
 import { SvgXml } from 'react-native-svg';
 import { useTheme, spacing } from '../../theme';
 import { DIET_SVG, RUNNING_SVG, BEHAVIOUR_SVG } from '../../utils/svgIcons';
@@ -16,7 +16,7 @@ import { responsiveUtils } from '../../utils/responsiveUtils';
 import { getCurrentPregnancyWeek } from '../../utils/pregnancyUtils';
 
 interface HeaderIcon {
-  type: 'food' | 'exercise' | 'heart';
+  type: 'food' | 'exercise' | 'heart' | 'mental';
   count: number;
 }
 
@@ -32,6 +32,7 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
     { type: 'food', count: 0 },
     { type: 'exercise', count: 0 },
     { type: 'heart', count: 0 },
+    { type: 'mental', count: 0 },
   ],
   onProfilePress,
 }) => {
@@ -59,6 +60,13 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
       svg: BEHAVIOUR_SVG,
       wrapperStyle: { backgroundColor: '#FFE5E5' },
       badgeColor: '#F44336',
+      size: 14,
+    },
+    mental: {
+      icon: faBrain,
+      iconColor: '#70428F',
+      wrapperStyle: { backgroundColor: '#F2E8F7' },
+      badgeColor: '#70428F',
       size: 14,
     },
   };
@@ -94,12 +102,12 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
     iconsContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing('md'),
+      gap: spacing('sm'),
     },
     iconWrapper: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: 30,
+      height: 30,
+      borderRadius: 15,
       justifyContent: 'center',
       alignItems: 'center',
       position: 'relative',
@@ -121,13 +129,12 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
       fontFamily: theme.typography.fontFamily.bold,
     },
     profileContainer: {
-      marginLeft: spacing('md'),
-      marginRight: 16,
+      marginLeft: spacing('xs'),
     },
     profileImage: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: 38,
+      height: 38,
+      borderRadius: 19,
       resizeMode: 'cover',
     },
   }), [theme]);
@@ -149,28 +156,39 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
       </View>
 
       <View style={styles.iconsContainer}>
-        {icons.map((item, index) => {
+        {icons.map(item => {
           const config = iconConfig[item.type];
           return (
             <View 
-              key={index} 
+              key={item.type}
               style={[styles.iconWrapper, config.wrapperStyle]}
             >
-              <SvgXml 
-                xml={config.svg} 
-                width={config.size} 
-                height={config.size}
-              />
-              {item.count > 0 && (
-                <View style={[styles.badge, { backgroundColor: config.badgeColor }]}>
-                  <Text
-                    style={styles.badgeText}
-                    allowFontScaling={false}
-                  >
-                    {item.count}
-                  </Text>
-                </View>
+              {'svg' in config ? (
+                <SvgXml
+                  xml={config.svg}
+                  width={config.size}
+                  height={config.size}
+                />
+              ) : (
+                <FontAwesomeIcon
+                  icon={config.icon as any}
+                  size={config.size}
+                  color={config.iconColor}
+                />
               )}
+              <View
+                style={[
+                  styles.badge,
+                  { backgroundColor: config.badgeColor },
+                ]}
+              >
+                <Text
+                  style={styles.badgeText}
+                  allowFontScaling={false}
+                >
+                  {item.count}
+                </Text>
+              </View>
             </View>
           );
         })}
@@ -188,4 +206,3 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
     </View>
   );
 };
-

@@ -9,7 +9,7 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
-import { Calendar, DateData } from 'react-native-calendars';
+import { Calendar, DateData, LocaleConfig } from 'react-native-calendars';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faChevronLeft, faChevronRight, faEdit } from '@fortawesome/free-solid-svg-icons';
 import { IconProp } from '@fortawesome/fontawesome-svg-core';
@@ -20,6 +20,7 @@ import { responsiveUtils } from '../utils/responsiveUtils';
 import { Image } from 'react-native';
 import { useUserStore } from '../store/useUserStore';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
+import { useTranslation } from 'react-i18next';
 
 interface PlanBirthdayScreenProps {
   onBack?: () => void;
@@ -28,6 +29,12 @@ interface PlanBirthdayScreenProps {
 
 export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, onConfirm }) => {
   const theme = useTheme();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage === 'fr'
+    ? 'fr-FR'
+    : i18n.resolvedLanguage === 'sw'
+      ? 'sw-KE'
+      : 'en-US';
   const { profile } = useUserStore();
 
   const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1;
@@ -100,17 +107,39 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
     setCurrentMonth(newMonth);
   };
 
-  const formatSelectedDate = (date: Date): string => {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
-    const day = date.getDate();
-    const suffix = day === 1 || day === 21 || day === 31 ? 'st'
-      : day === 2 || day === 22 ? 'nd'
-      : day === 3 || day === 23 ? 'rd' : 'th';
-    return `${months[date.getMonth()]} ${day}${suffix} , ${date.getFullYear()}`;
-  };
+  const formatSelectedDate = (date: Date): string =>
+    date.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+  React.useEffect(() => {
+    const monthDates = Array.from(
+      { length: 12 },
+      (_, month) => new Date(2024, month, 1),
+    );
+    const dayDates = Array.from(
+      { length: 7 },
+      (_, day) => new Date(2024, 0, 7 + day),
+    );
+    LocaleConfig.locales[locale] = {
+      monthNames: monthDates.map(date =>
+        date.toLocaleDateString(locale, { month: 'long' }),
+      ),
+      monthNamesShort: monthDates.map(date =>
+        date.toLocaleDateString(locale, { month: 'short' }),
+      ),
+      dayNames: dayDates.map(date =>
+        date.toLocaleDateString(locale, { weekday: 'long' }),
+      ),
+      dayNamesShort: dayDates.map(date =>
+        date.toLocaleDateString(locale, { weekday: 'short' }),
+      ),
+      today: t('symptoms.today'),
+    };
+    LocaleConfig.defaultLocale = locale;
+  }, [locale, t]);
 
   const customTheme = {
     backgroundColor: theme.colors.background,
@@ -360,7 +389,7 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
       <BackButton onPress={onBack} />
       
       <View style={styles.header}>
-        <Text style={styles.headerTitle} allowFontScaling={false}>Date of birthday</Text>
+        <Text style={styles.headerTitle} allowFontScaling={false}>{t('date_picker.birthday_title')}</Text>
       </View>
 
       {isConfirmed ? (
@@ -380,7 +409,7 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
                     style={styles.birthdayImage}
                   />
                 </View>
-                <Text style={styles.confirmedCardTitle} allowFontScaling={false}>Selected Date</Text>
+                <Text style={styles.confirmedCardTitle} allowFontScaling={false}>{t('date_picker.selected_date')}</Text>
               </View>
               <TouchableOpacity
                 style={styles.editIconCircle}
@@ -413,7 +442,7 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
               {/* Custom header with month/year and arrows */}
               <View style={styles.customHeader}>
                 <Text style={styles.monthYearText} allowFontScaling={false}>
-                  {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  {currentMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}
                 </Text>
                 <View style={styles.arrowsContainer}>
                   <TouchableOpacity
@@ -461,7 +490,7 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
 
             {/* Selected Date Display */}
             <View style={styles.selectedDateSection}>
-              <Text style={styles.selectedDateLabel} allowFontScaling={false}>Selected Date</Text>
+              <Text style={styles.selectedDateLabel} allowFontScaling={false}>{t('date_picker.selected_date')}</Text>
               <View style={styles.selectedDateBox}>
                 <Text style={styles.selectedDateText} allowFontScaling={false}>{formatSelectedDate(selectedDate)}</Text>
               </View>
@@ -469,7 +498,7 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
           </View>
 
           <Text style={styles.footerText} allowFontScaling={false}>
-            This precious moment marks the beginning of{'\n'}a beautiful journey 💕
+            {t('date_picker.birthday_message')}
           </Text>
         </ScrollView>
       )}
@@ -477,7 +506,7 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
       {!isConfirmed && (
         <FixedButtonContainer>
           <Button
-            title="Confirm Birth Date"
+            title={t('date_picker.confirm_birth_date')}
             onPress={() => {
               setIsLoading(true);
               // Call onConfirm callback
@@ -497,7 +526,7 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.colors.orange500} />
-            <Text style={styles.loadingText} allowFontScaling={false}>Loading...</Text>
+            <Text style={styles.loadingText} allowFontScaling={false}>{t('common.loading')}</Text>
           </View>
         </View>
       </Modal>

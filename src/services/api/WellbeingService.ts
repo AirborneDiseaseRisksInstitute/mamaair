@@ -20,6 +20,17 @@ export interface WellbeingLog {
   feeling_ids: number[];
 }
 
+const parseWellbeingLog = (data: any, fallbackDate: string): WellbeingLog => ({
+  date: data?.date ?? fallbackDate,
+  water_amount: data?.water_amount ?? 0,
+  mood_ids: (data?.moods || []).map((m: any) =>
+    typeof m === 'number' ? m : m.id,
+  ),
+  feeling_ids: (data?.feelings || []).map((f: any) =>
+    typeof f === 'number' ? f : f.id,
+  ),
+});
+
 export const WellbeingService = {
   getCatalog: async (): Promise<WellbeingCatalog> => {
     const response = await api.get('/wellbeing/');
@@ -33,17 +44,15 @@ export const WellbeingService = {
 
   getLog: async (date: string): Promise<WellbeingLog | null> => {
     try {
-      const response = await api.get('/wellbeing/log/', { params: { date } });
-      const data = response.data;
-      return {
-        date: data.date,
-        water_amount: data.water_amount ?? 0,
-        mood_ids: (data.moods || []).map((m: any) => (typeof m === 'number' ? m : m.id)),
-        feeling_ids: (data.feelings || []).map((f: any) => (typeof f === 'number' ? f : f.id)),
-      };
+      return await WellbeingService.getLogStrict(date);
     } catch {
       return null;
     }
+  },
+
+  getLogStrict: async (date: string): Promise<WellbeingLog> => {
+    const response = await api.get('/wellbeing/log/', { params: { date } });
+    return parseWellbeingLog(response.data, date);
   },
 
   saveLog: async (data: WellbeingLog): Promise<void> => {

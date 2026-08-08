@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { storage } from '../../store/useAuthStore';
 import { resetToAuthLoading } from '../../App/navigationRef';
+import { DEV_LOCAL_SESSION } from '../../config/dev';
 
 const BASE_URL = 'https://api.mamaair.work/api';
 
@@ -31,7 +32,7 @@ const api = axios.create({
 
 api.interceptors.request.use(config => {
   const token = storage.getString('auth_token');
-  if (token) {
+  if (!DEV_LOCAL_SESSION && token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -50,6 +51,12 @@ api.interceptors.response.use(
   response => response,
   async error => {
     const original = error.config;
+
+    // An unauthenticated local DEV session expects protected endpoints to
+    // reject. Never turn those expected 401s into an auth navigation loop.
+    if (DEV_LOCAL_SESSION && error.response?.status === 401) {
+      return Promise.reject(error);
+    }
 
     // Only handle 401s, and never retry a refresh call or an already-retried request
     if (
