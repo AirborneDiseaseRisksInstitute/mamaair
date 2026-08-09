@@ -30,8 +30,6 @@ The app is there to help people feel more informed and supported along the way. 
 | 27 May 2026 | v3.0 | 30 | Internal test | Stable tracking, local storage, daily tasks, notifications, and guidance updates. |
 | 08 Aug 2026 | **v3.2** | **31** | **Latest test APK** | Current internal Android test build. |
 
-> We no longer have access to the GitHub account that held the earlier build records, so the 2025 entries have been reconstructed and clearly marked as estimates. These APKs are shared for internal testing only; they are not Play Store releases.
-
 ## Development setup
 
 Want to run MamaAir locally? You will need Node.js 20+, Java 17, Android Studio with the Android SDK, and—if you are working on iOS—Xcode and CocoaPods.
