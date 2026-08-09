@@ -20,6 +20,10 @@ Pregnancy comes with a lot to keep track of. MamaAir brings the everyday pieces 
 
 The app is there to help people feel more informed and supported along the way. It is not a substitute for medical advice, diagnosis, or care from a qualified professional.
 
+## Related public dataset
+
+For a closer look at MamaAir's research data work, visit the [MamaAir Kenya Public Dataset](https://github.com/MamaAir/mamaair-kenya-public-dataset). It contains privacy-preserving, synthetic 40-week maternal health journeys that combine maternal indicators with climate and air-quality context for research and AI validation.
+
 ## Android APK build history
 
 | Date | APK version | Build | Status | Notes |
