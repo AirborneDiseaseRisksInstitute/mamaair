@@ -5,7 +5,7 @@
 <h1 align="center">MamaAir</h1>
 
 <p align="center">
-  A pregnancy companion for everyday wellbeing, environmental awareness, and a clearer week-by-week journey.
+  A little extra support for every week of pregnancy.
 </p>
 
 <p align="center">
@@ -16,9 +16,9 @@
 
 ## About MamaAir
 
-MamaAir is a React Native mobile application that helps expectant mothers follow their pregnancy journey with personalised daily check-ins, activity plans, wellbeing trends, environmental context, and mother/baby progress views.
+Pregnancy comes with a lot to keep track of. MamaAir brings the everyday pieces together in one calm, simple place: daily check-ins, helpful activity ideas, wellbeing trends, environmental context, and week-by-week views for both mother and baby.
 
-It is designed to present supportive, easy-to-understand information. It does not replace professional medical advice, diagnosis, or care.
+The app is there to help people feel more informed and supported along the way. It is not a substitute for medical advice, diagnosis, or care from a qualified professional.
 
 ## Android APK build history
 
@@ -30,18 +30,18 @@ It is designed to present supportive, easy-to-understand information. It does no
 | 27 May 2026 | v3.0 | 30 | Internal test | Stable tracking, local storage, daily tasks, notifications, and guidance updates. |
 | 08 Aug 2026 | **v3.2** | **31** | **Latest test APK** | Current internal Android test build. |
 
-> The 2025 entries are a reconstruction because the former GitHub account was replaced and its build history is not available here. APKs in this table are internal testing builds, not Play Store releases.
+> We no longer have access to the GitHub account that held the earlier build records, so the 2025 entries have been reconstructed and clearly marked as estimates. These APKs are shared for internal testing only; they are not Play Store releases.
 
 ## Development setup
 
-**Requirements:** Node.js 20+, Java 17, Android Studio/SDK for Android, and Xcode/CocoaPods for iOS.
+Want to run MamaAir locally? You will need Node.js 20+, Java 17, Android Studio with the Android SDK, and—if you are working on iOS—Xcode and CocoaPods.
 
 ```bash
 npm install
 npm start
 ```
 
-In a second terminal, run one of the following:
+Then open a second terminal and choose the platform you need:
 
 ```bash
 npm run android
@@ -49,9 +49,11 @@ npm run android
 npm run ios
 ```
 
-For iOS native dependencies, run `bundle exec pod install` from the `ios` directory when needed.
+For iOS native dependencies, run `bundle exec pod install` inside the `ios` directory when needed.
 
 ## Quality checks
+
+Before sharing a change, run:
 
 ```bash
 npm test -- --runInBand
