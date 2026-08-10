@@ -1,11 +1,19 @@
 package com.mamaair
 
+import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    // React Native Screens owns the navigation stack. Restoring Android's
+    // saved fragments can recreate stale ScreenStackFragments and crash when
+    // the activity is relaunched after a configuration or process change.
+    super.onCreate(null)
+  }
 
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
