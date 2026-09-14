@@ -15,8 +15,13 @@ export const getDeviceTimezone = (): string => {
  */
 export const getTimezoneList = (): string[] => {
   try {
-    if (typeof Intl.supportedValuesOf === 'function') {
-      return Intl.supportedValuesOf('timeZone').sort();
+    const supportedValuesOf = (
+      Intl as typeof Intl & {
+        supportedValuesOf?: (key: 'timeZone') => string[];
+      }
+    ).supportedValuesOf;
+    if (typeof supportedValuesOf === 'function') {
+      return supportedValuesOf('timeZone').sort();
     }
   } catch {
     // Fallback

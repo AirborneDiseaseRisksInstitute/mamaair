@@ -30,9 +30,25 @@ const api = axios.create({
   transformResponse: [safeJsonTransform],
 });
 
+const AUTH_ENDPOINT_PREFIXES = [
+  '/auth/token/',
+  '/auth/token/refresh/',
+  '/auth/register/',
+  '/auth/email/register/',
+  '/auth/email/resend/',
+  '/auth/email/verify/',
+  '/auth/password-reset/confirm/',
+  '/auth/password-reset/request/',
+  '/auth/google/',
+  '/auth/firebase/',
+];
+
+const isAuthEndpoint = (url?: string) =>
+  Boolean(url && AUTH_ENDPOINT_PREFIXES.some(prefix => url.includes(prefix)));
+
 api.interceptors.request.use(config => {
   const token = storage.getString('auth_token');
-  if (!DEV_LOCAL_SESSION && token) {
+  if (!DEV_LOCAL_SESSION && token && !isAuthEndpoint(config.url)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -52,17 +68,27 @@ api.interceptors.response.use(
   async error => {
     const original = error.config;
 
+    if (!original) {
+      return Promise.reject(error);
+    }
+
     // An unauthenticated local DEV session expects protected endpoints to
     // reject. Never turn those expected 401s into an auth navigation loop.
     if (DEV_LOCAL_SESSION && error.response?.status === 401) {
       return Promise.reject(error);
     }
 
-    // Only handle 401s, and never retry a refresh call or an already-retried request
+    // Auth endpoints should surface their own validation errors to the caller.
+    // Retrying/redirecting here hides the real Google/login failure behind an
+    // AuthLoading reset loop.
+    if (isAuthEndpoint(original?.url)) {
+      return Promise.reject(error);
+    }
+
+    // Only handle 401s, and never retry an already-retried request
     if (
       error.response?.status !== 401 ||
-      original._retry ||
-      original.url?.includes('/auth/token/refresh/')
+      original._retry
     ) {
       return Promise.reject(error);
     }

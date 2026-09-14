@@ -33,3 +33,4 @@ export { AccessLocationBottomSheet } from './AccessLocationBottomSheet';
 export { NotificationTimeSettings } from './NotificationTimeSettings';
 export { TransitionLoader } from './TransitionLoader';
 export { LanguagePickerSheet } from './LanguagePickerSheet';
+export { VerificationCodeInput } from './VerificationCodeInput';

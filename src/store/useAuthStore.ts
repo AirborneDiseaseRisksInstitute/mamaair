@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createMMKV } from 'react-native-mmkv';
 import { useUserStore } from './useUserStore';
 import { AuthService } from '../services/api/AuthService';
+import { markInitialLanguagePromptSeen } from '../utils/initialLanguagePrompt';
 
 export const storage = createMMKV();
 
@@ -31,6 +32,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token: accessToken, refreshToken });
   },
   logout: () => {
+    // This preference belongs to the app installation, not the user session.
+    // It also migrates existing installations that predate the install flag.
+    markInitialLanguagePromptSeen();
     const refresh = storage.getString('auth_refresh_token');
     if (refresh) {
       // fire-and-forget: blacklist token on server, don't block local logout

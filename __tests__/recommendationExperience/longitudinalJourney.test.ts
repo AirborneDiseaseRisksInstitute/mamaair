@@ -2,13 +2,9 @@ import {
   isWeeklyCheckpointAvailable,
   resolveLongitudinalJourneyStep,
 } from '../../src/services/recommendationExperience/LongitudinalJourneyRepository';
-import type {
-  DailyPlanExperience,
-} from '../../src/types/recommendationExperience';
+import type { DailyPlanExperience } from '../../src/types/recommendationExperience';
 
-const plan = (
-  completedKeys: string[] = [],
-): DailyPlanExperience => ({
+const plan = (completedKeys: string[] = []): DailyPlanExperience => ({
   date: '2026-07-26',
   backendCompletedTaskCodes: [],
   additionalActions: {
@@ -16,7 +12,13 @@ const plan = (
     activity: [],
     behaviour: [],
     wellbeing: [],
+    service: [],
   },
+  supportActions: [],
+  medicalAttention: [],
+  importantGuidanceRecommendations: [],
+  guidanceRecommendations: [],
+  optionalSupportRecommendations: [],
   primaryActions: [
     {
       key: 'diet',
@@ -25,9 +27,7 @@ const plan = (
       purpose: 'Stay hydrated',
       priority: 1,
       source: 'localFallback',
-      state: completedKeys.includes('diet')
-        ? 'completed'
-        : 'pending',
+      state: completedKeys.includes('diet') ? 'completed' : 'pending',
       completed: completedKeys.includes('diet'),
     },
     {
@@ -37,9 +37,7 @@ const plan = (
       purpose: 'Pause',
       priority: 2,
       source: 'localFallback',
-      state: completedKeys.includes('activity')
-        ? 'completed'
-        : 'pending',
+      state: completedKeys.includes('activity') ? 'completed' : 'pending',
       completed: completedKeys.includes('activity'),
     },
   ],
@@ -101,4 +99,3 @@ describe('longitudinal journey resolver', () => {
     expect(isWeeklyCheckpointAvailable('2026-07-25')).toBe(false);
   });
 });
-

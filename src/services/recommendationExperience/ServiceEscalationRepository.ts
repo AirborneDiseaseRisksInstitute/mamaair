@@ -8,9 +8,7 @@ import type {
   SummaryResponse,
 } from '../api/SummaryService';
 
-const urgencyFromBackend = (
-  value: string,
-): ServiceEscalationUrgency | null => {
+const urgencyFromBackend = (value: string): ServiceEscalationUrgency | null => {
   const normalized = value.trim().toLowerCase();
   if (normalized === 'routine' || normalized === 'low') {
     return 'routine';
@@ -21,10 +19,7 @@ const urgencyFromBackend = (
   if (normalized === 'urgent' || normalized === 'high') {
     return 'urgent';
   }
-  if (
-    normalized === 'emergency' ||
-    normalized === 'critical'
-  ) {
+  if (normalized === 'emergency' || normalized === 'critical') {
     return 'emergency';
   }
   return null;
@@ -45,8 +40,7 @@ export const getServiceEscalationSignals = (
   summary: SummaryResponse | null,
 ): ServiceEscalationSignal[] => {
   if (
-    resolveRecommendationCapabilityStatus('serviceEscalation') !==
-    'available'
+    resolveRecommendationCapabilityStatus('serviceEscalation') !== 'available'
   ) {
     return [];
   }
@@ -54,22 +48,19 @@ export const getServiceEscalationSignals = (
   return (summary?.recommendations ?? [])
     .filter(isServiceRecommendation)
     .map(recommendation => {
-      const urgency = urgencyFromBackend(
-        recommendation.severity,
-      );
+      const urgency = urgencyFromBackend(recommendation.severity);
       if (!urgency) return null;
       return {
         sourceId: recommendation.id,
         urgency,
         title: recommendation.title,
         guidance:
-          recommendation.message || recommendation.alert,
+          recommendation.message ||
+          recommendation.alert ||
+          recommendation.title,
         acknowledgementRequired:
           urgency === 'urgent' || urgency === 'emergency',
       } satisfies ServiceEscalationSignal;
     })
-    .filter(
-      (signal): signal is ServiceEscalationSignal =>
-        signal !== null,
-    );
+    .filter((signal): signal is ServiceEscalationSignal => signal !== null);
 };

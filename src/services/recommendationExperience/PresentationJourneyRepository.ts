@@ -6,8 +6,13 @@ import type {
   FetalSystemProgress,
   PresentationDayRecord,
   RecommendationExperienceIdentity,
+  WeeklyActionSummaryDomain,
+  WeeklyDomainActionSummary,
+  WeeklyRiskSummary,
+  WeeklySummaryDay,
   WeeklySummaryExperience,
   WeeklySummaryNextWeek,
+  WeeklySymptomLevelSummary,
 } from '../../types/recommendationExperience';
 import type { AirExposure } from '../api/ExposureService';
 import type { SummaryResponse } from '../api/SummaryService';
@@ -15,17 +20,21 @@ import {
   PRESENTATION_DATA_VERSION,
   selectPresentationDay,
   selectPresentationWeekRecords,
-  selectPresentationWeekSummary,
   toPresentationDayRecord,
   type PresentationDay,
 } from './PresentationDataProvider';
 
-const DOMAIN_ORDER: DailyActionDomain[] = [
+const DOMAIN_ORDER: WeeklyActionSummaryDomain[] = [
   'diet',
   'activity',
   'behaviour',
   'wellbeing',
 ];
+
+const WEEKLY_ACTION_DOMAINS: WeeklyActionSummaryDomain[] = DOMAIN_ORDER;
+
+const isEveningWindDownMoment = (moment: { key: string }): boolean =>
+  moment.key.startsWith('evening-');
 
 const dateAtMidnight = (value: string): Date => new Date(`${value}T00:00:00`);
 
@@ -33,6 +42,18 @@ const labelForDate = (value: string): string =>
   dateAtMidnight(value).toLocaleDateString('en-US', {
     weekday: 'short',
   });
+
+const weekDatesEnding = (endDate: string): string[] => {
+  const end = dateAtMidnight(endDate);
+  return Array.from({ length: 7 }, (_, index) => {
+    const current = new Date(end);
+    current.setDate(end.getDate() - (6 - index));
+    const year = current.getFullYear();
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const day = String(current.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+};
 
 export const ensurePresentationWeek = (
   identity: RecommendationExperienceIdentity,
@@ -61,15 +82,14 @@ export const ensurePresentationWeek = (
 
 export const completeTodayCheckIn = (
   experience: FeelingCheckInExperience,
-  day: PresentationDayRecord,
+  _day: PresentationDayRecord,
 ): FeelingCheckInExperience => {
   if (experience.recordState === 'recorded') return experience;
 
-  return {
-    ...experience,
-    waterDailyTotalMl: day.hydrationMl,
-    waterGoalMl: experience.waterGoalMl ?? day.hydrationGoalMl,
-  };
+  // Presentation hydration was investor-demo-only. Keep the fallback path
+  // available, but do not surface invented water totals/goals in the real
+  // Today flow unless a backend hydration model provides them.
+  return experience;
 };
 
 const validNumber = (value: unknown): value is number =>
@@ -81,31 +101,26 @@ const validPositiveNumber = (value: unknown): value is number =>
 const validText = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0;
 
-const numberOr = (value: unknown, missingValue: number): number =>
-  validNumber(value) ? value : missingValue;
+const validObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const mergeAirExposure = (
   date: string,
   value: AirExposure | null,
-  day: PresentationDay,
-): AirExposure => ({
-  ...(value ?? {}),
-  timestamp: validText(value?.timestamp)
-    ? value.timestamp
-    : `${date}T12:00:00.000Z`,
-  pm25: numberOr(value?.pm25, day.environment.pm25),
-  temperature: numberOr(value?.temperature, day.environment.temperature),
-  humidity: numberOr(value?.humidity, day.environment.humidity),
-  uvi: numberOr(value?.uvi, day.environment.uvi),
-  uvi_level: validText(value?.uvi_level)
-    ? value.uvi_level
-    : day.environment.uviLevel,
-  indoor_pm25: numberOr(value?.indoor_pm25, day.environment.indoorPm25),
-  indoor_temperature: numberOr(
-    value?.indoor_temperature,
-    day.environment.indoorTemperature,
-  ),
-});
+  _day: PresentationDay,
+): AirExposure | null => {
+  if (!value) return null;
+
+  // Presentation environment values were investor-demo-only. Preserve the
+  // function and timestamp normalization, but do not fill missing pollutant,
+  // weather, UV or indoor readings from scenario data in the real Today flow.
+  return {
+    ...value,
+    timestamp: validText(value.timestamp)
+      ? value.timestamp
+      : `${date}T12:00:00.000Z`,
+  };
+};
 
 export const completeTodayPresentation = ({
   identity,
@@ -125,7 +140,7 @@ export const completeTodayPresentation = ({
   checkIn: FeelingCheckInExperience;
 }): {
   summary: SummaryResponse;
-  airExposure: AirExposure;
+  airExposure: AirExposure | null;
   lifestyle: any;
   checkIn: FeelingCheckInExperience;
   sourceFlags: {
@@ -137,9 +152,9 @@ export const completeTodayPresentation = ({
   const presentationToday = selectPresentationDay(pregnancyWeek, date);
   const hasMotherBabyData = Boolean(
     validNumber(summary?.mom_exposure?.exposure_level) ||
-      validText(summary?.mom_exposure?.risks) ||
+      validObject(summary?.mom_exposure?.risks) ||
       validNumber(summary?.baby_exposure?.exposure_level) ||
-      validText(summary?.baby_exposure?.risks) ||
+      validObject(summary?.baby_exposure?.risks) ||
       validNumber(summary?.risks_delta?.mom) ||
       validNumber(summary?.risks_delta?.baby),
   );
@@ -161,11 +176,14 @@ export const completeTodayPresentation = ({
     airExposure: mergeAirExposure(date, airExposure, presentationToday),
     lifestyle: {
       ...(lifestyle ?? {}),
+      // Demo hydration targets are no longer shown as real user health data.
+      // Restore the presentation fallback only with an approved backend-backed
+      // hydration target model.
       hydration_target_ml_per_day: validPositiveNumber(
         lifestyle?.hydration_target_ml_per_day,
       )
         ? lifestyle.hydration_target_ml_per_day
-        : today.hydrationGoalMl,
+        : undefined,
     },
     checkIn: completeTodayCheckIn(checkIn, today),
     sourceFlags: {
@@ -242,6 +260,7 @@ const actualDomainParticipation = (
     activity: false,
     behaviour: false,
     wellbeing: false,
+    service: false,
   };
   Object.entries(actionRecords).forEach(([key, record]) => {
     if (!record.completed && record.state !== 'completed') return;
@@ -251,6 +270,258 @@ const actualDomainParticipation = (
     if (domain) result[domain] = true;
   });
   return result;
+};
+
+const emptyActionSummary = (): Record<
+  WeeklyActionSummaryDomain,
+  WeeklyDomainActionSummary
+> => ({
+  diet: { domain: 'diet', recommended: 0, completed: 0 },
+  activity: { domain: 'activity', recommended: 0, completed: 0 },
+  behaviour: { domain: 'behaviour', recommended: 0, completed: 0 },
+  wellbeing: { domain: 'wellbeing', recommended: 0, completed: 0 },
+});
+
+const weeklyActionSummary = (
+  days: WeeklySummaryDay[],
+  actionCompletions: Record<
+    string,
+    Record<string, DailyActionCompletionRecord>
+  >,
+): Record<WeeklyActionSummaryDomain, WeeklyDomainActionSummary> => {
+  const summary = emptyActionSummary();
+  const weekDates = new Set(days.map(day => day.date));
+
+  Object.entries(actionCompletions).forEach(([date, records]) => {
+    if (!weekDates.has(date)) return;
+    Object.values(records).forEach(record => {
+      const domain = record.domain;
+      if (
+        !domain ||
+        !WEEKLY_ACTION_DOMAINS.includes(domain as WeeklyActionSummaryDomain)
+      ) {
+        return;
+      }
+      if (record.kind === 'support') return;
+
+      const weeklyDomain = domain as WeeklyActionSummaryDomain;
+      summary[weeklyDomain].recommended += 1;
+      if (record.completed || record.state === 'completed') {
+        summary[weeklyDomain].completed += 1;
+      }
+    });
+  });
+
+  return summary;
+};
+
+const completedActionImpact = (
+  days: WeeklySummaryDay[],
+  actionCompletions: Record<
+    string,
+    Record<string, DailyActionCompletionRecord>
+  >,
+): number => {
+  const weekDates = new Set(days.map(day => day.date));
+  const value = Object.entries(actionCompletions).reduce(
+    (sum, [date, records]) => {
+      if (!weekDates.has(date)) return sum;
+      return (
+        sum +
+        Object.values(records)
+          .filter(record => record.completed || record.state === 'completed')
+          .reduce(
+            (recordSum, record) =>
+              recordSum +
+              (validNumber(record.riskImpactValue)
+                ? record.riskImpactValue
+                : 0),
+            0,
+          )
+      );
+    },
+    0,
+  );
+  return Math.round(value * 100) / 100;
+};
+
+type SymptomLevel = 1 | 2 | 3 | 4;
+
+interface SymptomClassStatisticsItem {
+  symptom_class?: number | string;
+  class?: number | string;
+  level?: number | string;
+  quantity?: number;
+  count?: number;
+  total?: number;
+}
+
+const symptomLevel = (
+  value: number | string | undefined,
+): SymptomLevel | null => {
+  const level =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+      ? Number(value)
+      : NaN;
+  return level === 1 || level === 2 || level === 3 || level === 4
+    ? (level as SymptomLevel)
+    : null;
+};
+
+const statisticCount = (item: SymptomClassStatisticsItem): number => {
+  const value = item.quantity ?? item.count ?? item.total ?? 0;
+  return validNumber(value) ? value : 0;
+};
+
+const addClassStatistics = (
+  counts: Record<SymptomLevel, number>,
+  value: unknown,
+): void => {
+  const items = Array.isArray(value)
+    ? value
+    : validObject(value) && Array.isArray(value.classes)
+    ? value.classes
+    : [];
+
+  items.forEach(item => {
+    if (!validObject(item)) return;
+    const level = symptomLevel(
+      (item.symptom_class ?? item.class ?? item.level) as
+        | number
+        | string
+        | undefined,
+    );
+    if (!level) return;
+    counts[level] += statisticCount(item);
+  });
+};
+
+const symptomLevelSummary = (
+  backendSummary: SummaryResponse | null,
+): WeeklySymptomLevelSummary[] => {
+  const raw = backendSummary as
+    | (SummaryResponse & Record<string, unknown>)
+    | null;
+  const mommyCounts: Record<SymptomLevel, number> = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+  };
+  const babyCounts: Record<SymptomLevel, number> = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+  };
+
+  if (raw) {
+    addClassStatistics(mommyCounts, raw.mommy_symptom_classes);
+    addClassStatistics(mommyCounts, raw.mommy_symptom_statistics_classes);
+    addClassStatistics(babyCounts, raw.baby_symptom_classes);
+    addClassStatistics(babyCounts, raw.baby_symptom_statistics_classes);
+
+    if (validObject(raw.symptom_classes)) {
+      addClassStatistics(mommyCounts, raw.symptom_classes.mommy);
+      addClassStatistics(mommyCounts, raw.symptom_classes.mother);
+      addClassStatistics(babyCounts, raw.symptom_classes.baby);
+    }
+
+    if (validObject(raw.symptom_statistics)) {
+      addClassStatistics(mommyCounts, raw.symptom_statistics.mommy);
+      addClassStatistics(mommyCounts, raw.symptom_statistics.mother);
+      addClassStatistics(babyCounts, raw.symptom_statistics.baby);
+    }
+  }
+
+  return ([1, 2, 3, 4] as const)
+    .map(level => ({
+      level,
+      mommyCount: mommyCounts[level],
+      babyCount: babyCounts[level],
+      total: mommyCounts[level] + babyCounts[level],
+    }))
+    .filter(item => item.total > 0);
+};
+
+const formatSymptomTrend = (levels: WeeklySymptomLevelSummary[]): string =>
+  levels.map(item => `Level ${item.level}: ${item.total}`).join(' · ');
+
+const riskNames = (
+  risks: Record<string, unknown> | undefined,
+  prefix: string,
+): string[] =>
+  Object.entries(risks ?? {})
+    .filter(([, value]) => {
+      if (value === null || value === undefined || value === false)
+        return false;
+      if (typeof value === 'number') return value !== 0;
+      return true;
+    })
+    .map(([key]) => `${prefix}: ${key.replace(/[_-]+/g, ' ')}`);
+
+const weeklyRiskSummary = (
+  backendSummary: SummaryResponse | null,
+  impact: number,
+): WeeklyRiskSummary | null => {
+  const identifiedRisks = [
+    ...riskNames(backendSummary?.mom_exposure?.risks, 'Mother'),
+    ...riskNames(backendSummary?.baby_exposure?.risks, 'Baby'),
+  ];
+  const motherRiskDelta = validNumber(backendSummary?.risks_delta?.mom)
+    ? backendSummary?.risks_delta?.mom
+    : undefined;
+  const babyRiskDelta = validNumber(backendSummary?.risks_delta?.baby)
+    ? backendSummary?.risks_delta?.baby
+    : undefined;
+
+  if (
+    identifiedRisks.length === 0 &&
+    motherRiskDelta === undefined &&
+    babyRiskDelta === undefined &&
+    impact === 0
+  ) {
+    return null;
+  }
+
+  return {
+    identifiedRisks,
+    completedActionImpact: impact,
+    motherRiskDelta,
+    babyRiskDelta,
+  };
+};
+
+const formatSignedPercent = (value: number): string =>
+  `${value > 0 ? '+' : ''}${value}%`;
+
+const formatRiskSummaryText = (summary: WeeklyRiskSummary | null): string => {
+  if (!summary) return '';
+  const parts: string[] = [];
+  if (summary.identifiedRisks.length > 0) {
+    parts.push(`Identified risks: ${summary.identifiedRisks.join(', ')}.`);
+  }
+  const deltas = [
+    summary.motherRiskDelta !== undefined
+      ? `mother ${formatSignedPercent(summary.motherRiskDelta)}`
+      : null,
+    summary.babyRiskDelta !== undefined
+      ? `baby ${formatSignedPercent(summary.babyRiskDelta)}`
+      : null,
+  ].filter((item): item is string => item !== null);
+  if (deltas.length > 0) {
+    parts.push(`Risk change: ${deltas.join(', ')}.`);
+  }
+  if (summary.completedActionImpact !== 0) {
+    parts.push(
+      `Completed action impact: ${formatSignedPercent(
+        summary.completedActionImpact,
+      )}.`,
+    );
+  }
+  return parts.join(' ');
 };
 
 export const loadWeeklySummaryExperience = ({
@@ -275,41 +546,46 @@ export const loadWeeklySummaryExperience = ({
     'checkIns' | 'actionCompletions' | 'restTimers' | 'dailyMoments'
   >;
 }): WeeklySummaryExperience => {
-  const presentationSummary = selectPresentationWeekSummary(pregnancyWeek);
-  const presentationDays = ensurePresentationWeek(
-    identity,
-    pregnancyWeek,
-    endDate,
-  );
+  /*
+   * The presentation week dataset is still available for the older demo path,
+   * but Weekly Summary must now be built only from real backend/local data.
+   *
+   * const presentationSummary = selectPresentationWeekSummary(pregnancyWeek);
+   * const presentationDays = ensurePresentationWeek(
+   *   identity,
+   *   pregnancyWeek,
+   *   endDate,
+   * );
+   */
+  useRecommendationExperienceStore.getState().ensureOwner(identity);
+  const weekDates = weekDatesEnding(endDate);
   const store = localData ?? useRecommendationExperienceStore.getState();
-  const weekDates = new Set(presentationDays.map(day => day.date));
+  const weekDateSet = new Set(weekDates);
   const hasBackendWeekData = Boolean(
-    backendSummary?.daily_checkins?.some(date => weekDates.has(date)) ||
+    backendSummary?.daily_checkins?.some(date => weekDateSet.has(date)) ||
       backendSummary?.task_completions?.some(item =>
-        weekDates.has(item.date),
+        weekDateSet.has(item.date),
       ),
   );
-  const hasLocalWeekData = presentationDays.some(day => {
-    const date = day.date;
+  const hasLocalWeekData = weekDates.some(date => {
     return (
       store.checkIns[date] !== undefined ||
       Object.keys(store.actionCompletions[date] ?? {}).length > 0 ||
       Object.keys(store.restTimers[date] ?? {}).length > 0 ||
-      Object.keys(store.dailyMoments[date] ?? {}).length > 0
+      Object.values(store.dailyMoments[date] ?? {}).some(
+        moment => !isEveningWindDownMoment(moment),
+      )
     );
   });
   const dataMode: WeeklySummaryExperience['dataMode'] =
-    hasBackendWeekData || hasLocalWeekData
-      ? 'recorded'
-      : 'careContext';
-  const usePresentationContext = dataMode === 'careContext';
+    hasBackendWeekData || hasLocalWeekData ? 'recorded' : 'careContext';
 
-  const days = presentationDays.map(day => {
+  const days = weekDates.map(date => {
     const backendCheckIn = Boolean(
-      backendSummary?.daily_checkins?.includes(day.date),
+      backendSummary?.daily_checkins?.includes(date),
     );
     const backendTaskDay = backendSummary?.task_completions?.find(
-      item => item.date === day.date,
+      item => item.date === date,
     );
     const backendCompletedTasks = (backendTaskDay?.tasks ?? []).filter(
       task => typeof task === 'string' && task.trim().length > 0,
@@ -323,8 +599,8 @@ export const loadWeeklySummaryExperience = ({
       }),
       {} as Record<DailyActionDomain, boolean>,
     );
-    const checkIn = store.checkIns[day.date];
-    const records = store.actionCompletions[day.date] ?? {};
+    const checkIn = store.checkIns[date];
+    const records = store.actionCompletions[date] ?? {};
     const hasPrimaryRecords = Object.values(records).some(
       record => record.kind === 'primary',
     );
@@ -347,32 +623,35 @@ export const loadWeeklySummaryExperience = ({
       Object.values(records).some(
         record => record.completed || record.state === 'completed',
       );
-    const timerSessions = Object.values(
-      store.restTimers[day.date] ?? {},
-    ).filter(
+    const timerSessions = Object.values(store.restTimers[date] ?? {}).filter(
       timer => timer.status === 'ready' || timer.status === 'completed',
     ).length;
     const hasTimerRecords =
-      Object.keys(store.restTimers[day.date] ?? {}).length > 0;
-    const moments = Object.values(store.dailyMoments[day.date] ?? {});
-    const restMoments = moments.filter(
+      Object.keys(store.restTimers[date] ?? {}).length > 0;
+    const moments = Object.values(store.dailyMoments[date] ?? {});
+    const progressMoments = moments.filter(
+      moment => !isEveningWindDownMoment(moment),
+    );
+    const restMoments = progressMoments.filter(
       moment =>
         moment.completed &&
         (moment.kind === 'rest' || moment.kind === 'stretch'),
     ).length;
-    const hasRestMomentRecords = moments.some(
+    const hasRestMomentRecords = progressMoments.some(
       moment => moment.kind === 'rest' || moment.kind === 'stretch',
     );
-    const sleepLogged = moments.some(
+    const sleepLogged = progressMoments.some(
       moment => moment.completed && moment.kind === 'sleep',
     );
-    const hasSleepRecords = moments.some(moment => moment.kind === 'sleep');
+    const hasSleepRecords = progressMoments.some(
+      moment => moment.kind === 'sleep',
+    );
     const hasPersistedDayData =
       Boolean(checkIn) ||
       Object.keys(records).length > 0 ||
       hasTimerRecords ||
-      moments.length > 0;
-    const hasCompletedMoment = moments.some(moment => moment.completed);
+      progressMoments.length > 0;
+    const hasCompletedMoment = progressMoments.some(moment => moment.completed);
     const completedPrimaryRecords = Object.values(records).filter(
       record => record.kind === 'primary',
     );
@@ -381,79 +660,53 @@ export const loadWeeklySummaryExperience = ({
       activity: false,
       behaviour: false,
       wellbeing: false,
+      service: false,
     };
 
     return {
-      date: day.date,
-      label: labelForDate(day.date),
+      date,
+      label: labelForDate(date),
       active:
         backendCheckIn ||
         backendCompletedTasks.length > 0 ||
         (hasPersistedDayData
           ? hasActualActivity || timerSessions > 0 || hasCompletedMoment
-          : usePresentationContext
-          ? day.active
           : false),
       primaryCompleted:
         backendTaskDay !== undefined
           ? backendCompletedTasks.length
           : hasPrimaryRecords
           ? actualCompleted
-          : usePresentationContext
-          ? day.primaryCompleted
           : 0,
       primaryTotal:
         backendTaskDay !== undefined
-          ? Math.max(
-              backendCompletedTasks.length,
-              completedPrimaryRecords.length,
-            )
+          ? completedPrimaryRecords.length
           : hasPrimaryRecords
           ? completedPrimaryRecords.length
-          : usePresentationContext
-          ? day.primaryTotal
           : 0,
-      extraCompleted: hasExtraRecords
-        ? actualExtraCompleted
-        : usePresentationContext
-        ? day.extraCompleted
-        : 0,
-      hydrationMl:
-        checkIn?.waterDailyTotalMl ??
-        (usePresentationContext ? day.hydrationMl : 0),
-      hydrationGoalMl: day.hydrationGoalMl,
+      extraCompleted: hasExtraRecords ? actualExtraCompleted : 0,
+      hydrationMl: checkIn?.waterDailyTotalMl ?? 0,
+      hydrationGoalMl: 0,
       restSessions:
         hasTimerRecords || hasRestMomentRecords
           ? timerSessions + restMoments
-          : usePresentationContext
-          ? day.restSessions
           : 0,
-      sleepLogged: hasSleepRecords
-        ? sleepLogged
-        : usePresentationContext
-        ? day.sleepLogged ?? false
-        : false,
+      sleepLogged: hasSleepRecords ? sleepLogged : false,
       moodLabel: checkIn
         ? checkIn.moodKeys.length
           ? 'Mood recorded'
           : 'No mood update'
-        : usePresentationContext
-        ? day.moodLabel
         : 'No mood update',
       feelingLabel: checkIn
         ? checkIn.feelingKeys.length
           ? 'Feeling recorded'
           : 'No feeling update'
-        : usePresentationContext
-        ? day.feelingLabel
         : 'No feeling update',
       symptomLabel: checkIn
         ? checkIn.mommySymptomKeys.length
-          ? 'Symptoms recorded'
-          : 'No symptoms reported'
-        : usePresentationContext
-        ? day.symptomLabel
-        : 'No symptom update',
+          ? 'Physical changes logged'
+          : 'No physical changes reported'
+        : 'No feeling update',
       domains: DOMAIN_ORDER.reduce(
         (acc, domain) => ({
           ...acc,
@@ -462,8 +715,6 @@ export const loadWeeklySummaryExperience = ({
               ? backendDomains[domain]
               : hasPrimaryRecords
               ? actualDomains[domain]
-              : usePresentationContext
-              ? day.domains[domain]
               : emptyDomains[domain],
         }),
         {} as Record<DailyActionDomain, boolean>,
@@ -483,20 +734,14 @@ export const loadWeeklySummaryExperience = ({
     }),
     {} as Record<DailyActionDomain, number>,
   );
-  const actualCheckIns = days
-    .map(day => store.checkIns[day.date])
-    .filter(checkIn => Boolean(checkIn));
-  const actualSymptomDays = actualCheckIns.filter(
-    checkIn => checkIn.mommySymptomKeys.length > 0,
-  ).length;
-  const symptomTrend =
-    actualCheckIns.length === 0
-      ? 'No symptom trend was recorded this week.'
-      : actualSymptomDays === 0
-      ? 'No new symptoms were recorded in your check-ins this week.'
-      : `Symptoms were recorded on ${actualSymptomDays} ${
-          actualSymptomDays === 1 ? 'day' : 'days'
-        } this week.`;
+  const actionSummary = weeklyActionSummary(days, store.actionCompletions);
+  const symptomLevels = symptomLevelSummary(backendSummary);
+  const symptomTrend = formatSymptomTrend(symptomLevels);
+  const riskSummary = weeklyRiskSummary(
+    backendSummary,
+    completedActionImpact(days, store.actionCompletions),
+  );
+  const riskSummaryText = formatRiskSummaryText(riskSummary);
 
   let streakDays = 0;
   for (let index = days.length - 1; index >= 0; index -= 1) {
@@ -513,9 +758,7 @@ export const loadWeeklySummaryExperience = ({
     startDate: days[0].date,
     endDate: days[days.length - 1].date,
     days,
-    activeDays: usePresentationContext
-      ? presentationSummary.activeDays
-      : days.filter(day => day.active).length,
+    activeDays: days.filter(day => day.active).length,
     primaryCompleted,
     primaryTotal,
     adherencePercent:
@@ -523,27 +766,19 @@ export const loadWeeklySummaryExperience = ({
         ? Math.round((primaryCompleted / primaryTotal) * 100)
         : 0,
     extraCompleted: days.reduce((sum, day) => sum + day.extraCompleted, 0),
-    hydrationDays: usePresentationContext
-      ? presentationSummary.hydrationDays
-      : days.filter(
-          day =>
-            day.hydrationMl > 0 &&
-            day.hydrationMl >= day.hydrationGoalMl,
-        ).length,
+    hydrationDays: days.filter(
+      day => day.hydrationGoalMl > 0 && day.hydrationMl >= day.hydrationGoalMl,
+    ).length,
     restSessions: days.reduce((sum, day) => sum + day.restSessions, 0),
-    sleepNights: usePresentationContext
-      ? presentationSummary.sleepDays
-      : days.filter(day => day.sleepLogged).length,
+    sleepNights: days.filter(day => day.sleepLogged).length,
     streakDays,
     domainParticipation,
+    actionSummary,
+    symptomLevels,
+    riskSummary,
     symptomTrend,
-    motherProgress: `This week included ${
-      days.filter(day => day.hydrationMl >= day.hydrationGoalMl).length
-    } hydration-target days and ${days.reduce(
-      (sum, day) => sum + day.restSessions,
-      0,
-    )} rest moments.`,
-    babyProgress: `Your care routine stayed connected to the Week ${pregnancyWeek} milestone.`,
+    motherProgress: riskSummaryText,
+    babyProgress: '',
     milestone,
     fetalSystems,
     nextWeek,

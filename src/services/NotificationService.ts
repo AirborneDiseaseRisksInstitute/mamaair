@@ -10,6 +10,7 @@ import { useUserStore } from '../store/useUserStore';
 
 const CHANNEL_ID = 'mamaair_reminders';
 const PENDING_ACTION_REMINDER_KEY = 'pending-action-reminder';
+const CATEGORY_REMINDERS_KEY = 'category-reminders';
 const notificationNavigationStorage = createMMKV({
   id: 'mamaair-notification-navigation',
 });
@@ -17,6 +18,38 @@ const notificationNavigationStorage = createMMKV({
 const REMINDER_IDS = ['r_sun', 'r_mon', 'r_tue', 'r_wed', 'r_thu', 'r_fri', 'r_sat'];
 const CARE_CADENCE_PREFIX = 'care_';
 const REST_TIMER_PREFIX = 'rest_';
+const CATEGORY_REMINDER_PREFIX = 'category_';
+
+export type ReminderCategory =
+  | 'behavior'
+  | 'activity'
+  | 'diet'
+  | 'wellbeing';
+
+export interface CategoryReminderSetting {
+  category: ReminderCategory;
+  hour: number;
+  minute: number;
+  body: string;
+  status: CategoryReminderDeliveryStatus;
+  updatedAt: string;
+}
+
+export type CategoryReminderDeliveryStatus =
+  | 'scheduled'
+  | 'needsPermission'
+  | 'needsDays'
+  | 'failed';
+
+export type CategoryReminderScheduleStatus =
+  | 'scheduled'
+  | 'permissionDenied'
+  | 'noDaysSelected'
+  | 'failed';
+
+type CategoryReminderSettings = Partial<
+  Record<ReminderCategory, CategoryReminderSetting>
+>;
 
 export type ActionReminderScheduleStatus =
   | 'scheduled'
@@ -119,6 +152,229 @@ const requestReminderPermission = async (): Promise<boolean> => {
     settings.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
     settings.authorizationStatus === AuthorizationStatus.PROVISIONAL
   );
+};
+
+const isReminderCategory = (value: unknown): value is ReminderCategory =>
+  value === 'behavior' ||
+  value === 'activity' ||
+  value === 'diet' ||
+  value === 'wellbeing';
+
+const isCategoryReminderSetting = (
+  value: unknown,
+): value is CategoryReminderSetting => {
+  if (!value || typeof value !== 'object') return false;
+  const setting = value as Partial<CategoryReminderSetting>;
+  return (
+    isReminderCategory(setting.category) &&
+    typeof setting.hour === 'number' &&
+    setting.hour >= 0 &&
+    setting.hour <= 23 &&
+    typeof setting.minute === 'number' &&
+    setting.minute >= 0 &&
+    setting.minute <= 59 &&
+    typeof setting.body === 'string' &&
+    (setting.status === 'scheduled' ||
+      setting.status === 'needsPermission' ||
+      setting.status === 'needsDays' ||
+      setting.status === 'failed') &&
+    typeof setting.updatedAt === 'string'
+  );
+};
+
+export const getCategoryReminderSettings = (): CategoryReminderSettings => {
+  const storedValue = notificationNavigationStorage.getString(
+    CATEGORY_REMINDERS_KEY,
+  );
+  if (!storedValue) return {};
+
+  try {
+    const parsed = JSON.parse(storedValue) as Record<string, unknown>;
+    return Object.entries(parsed).reduce<CategoryReminderSettings>(
+      (settings, [category, value]) => {
+        if (isReminderCategory(category) && isCategoryReminderSetting(value)) {
+          settings[category] = value;
+        }
+        return settings;
+      },
+      {},
+    );
+  } catch {
+    return {};
+  }
+};
+
+const saveCategoryReminderSettings = (
+  settings: CategoryReminderSettings,
+): void => {
+  notificationNavigationStorage.set(
+    CATEGORY_REMINDERS_KEY,
+    JSON.stringify(settings),
+  );
+};
+
+const categoryReminderId = (
+  category: ReminderCategory,
+  dayIndex: number,
+): string => `${CATEGORY_REMINDER_PREFIX}${category}_${dayIndex}`;
+
+export const nextWeeklyReminderTimestamp = (
+  now: Date,
+  dayIndex: number,
+  hour: number,
+  minute: number,
+): number => {
+  const fireDate = new Date(now);
+  const daysUntilReminder = (dayIndex - now.getDay() + 7) % 7;
+  fireDate.setDate(now.getDate() + daysUntilReminder);
+  fireDate.setHours(hour, minute, 0, 0);
+  if (fireDate.getTime() <= now.getTime()) {
+    fireDate.setDate(fireDate.getDate() + 7);
+  }
+  return fireDate.getTime();
+};
+
+const cancelCategoryReminderTriggers = async (
+  category: ReminderCategory,
+): Promise<void> => {
+  await Promise.all(
+    Array.from({ length: 7 }, (_, dayIndex) =>
+      notifee
+        .cancelTriggerNotification(categoryReminderId(category, dayIndex))
+        .catch(() => {}),
+    ),
+  );
+};
+
+const createCategoryReminderTriggers = async (
+  setting: CategoryReminderSetting,
+  days: string,
+): Promise<void> => {
+  await cancelCategoryReminderTriggers(setting.category);
+  const channelId = await createChannel();
+  const now = new Date();
+
+  for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+    if (days[dayIndex] !== '1') continue;
+    await notifee.createTriggerNotification(
+      {
+        id: categoryReminderId(setting.category, dayIndex),
+        title: 'MamaAir',
+        body: setting.body,
+        data: {
+          kind: 'categoryReminder',
+          category: setting.category,
+        },
+        android: {
+          channelId,
+          importance: AndroidImportance.HIGH,
+          pressAction: { id: 'default' },
+        },
+        ios: { sound: 'default' },
+      },
+      {
+        type: TriggerType.TIMESTAMP,
+        timestamp: nextWeeklyReminderTimestamp(
+          now,
+          dayIndex,
+          setting.hour,
+          setting.minute,
+        ),
+        repeatFrequency: RepeatFrequency.WEEKLY,
+      },
+    );
+  }
+};
+
+export async function scheduleCategoryReminder({
+  category,
+  hour,
+  minute,
+  body,
+  days,
+}: {
+  category: ReminderCategory;
+  hour: number;
+  minute: number;
+  body: string;
+  days: string;
+}): Promise<CategoryReminderScheduleStatus> {
+  const setting: CategoryReminderSetting = {
+    category,
+    hour,
+    minute,
+    body,
+    status: 'failed',
+    updatedAt: new Date().toISOString(),
+  };
+  const settings = getCategoryReminderSettings();
+  const persistStatus = (status: CategoryReminderDeliveryStatus): void => {
+    settings[category] = { ...setting, status };
+    saveCategoryReminderSettings(settings);
+  };
+
+  if (!days.includes('1')) {
+    await cancelCategoryReminderTriggers(category);
+    persistStatus('needsDays');
+    return 'noDaysSelected';
+  }
+  if (!(await requestReminderPermission())) {
+    await cancelCategoryReminderTriggers(category);
+    persistStatus('needsPermission');
+    return 'permissionDenied';
+  }
+
+  try {
+    await createCategoryReminderTriggers(setting, days);
+    persistStatus('scheduled');
+    return 'scheduled';
+  } catch {
+    await cancelCategoryReminderTriggers(category);
+    persistStatus('failed');
+    return 'failed';
+  }
+}
+
+export async function cancelCategoryReminder(
+  category: ReminderCategory,
+): Promise<void> {
+  await cancelCategoryReminderTriggers(category);
+  const settings = getCategoryReminderSettings();
+  delete settings[category];
+  saveCategoryReminderSettings(settings);
+}
+
+const rescheduleCategoryReminders = async (days: string): Promise<void> => {
+  const settings = getCategoryReminderSettings();
+  if (!days.includes('1')) {
+    await Promise.all(
+      Object.keys(settings)
+        .filter(isReminderCategory)
+        .map(cancelCategoryReminderTriggers),
+    );
+    Object.values(settings).forEach(setting => {
+      if (setting) setting.status = 'needsDays';
+    });
+    saveCategoryReminderSettings(settings);
+    return;
+  }
+  if (!(await hasPermission())) {
+    Object.values(settings).forEach(setting => {
+      if (setting) setting.status = 'needsPermission';
+    });
+    saveCategoryReminderSettings(settings);
+    return;
+  }
+  for (const setting of Object.values(settings)) {
+    if (!setting) continue;
+    try {
+      await createCategoryReminderTriggers(setting, days);
+      setting.status = 'scheduled';
+    } catch {
+      setting.status = 'failed';
+    }
+  }
+  saveCategoryReminderSettings(settings);
 };
 
 const minutesOfDay = (hour: number, minute: number): number =>
@@ -463,6 +719,7 @@ export async function scheduleReminders(
     toMinute,
     days,
   });
+  await rescheduleCategoryReminders(days);
 }
 
 export async function cancelReminders(): Promise<void> {

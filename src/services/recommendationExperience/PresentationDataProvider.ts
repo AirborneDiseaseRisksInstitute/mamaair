@@ -388,6 +388,7 @@ export const toPresentationDayRecord = (
     activity: day.activity.isWorkday,
     behaviour: day.activity.restBreaksAvailable,
     wellbeing: day.sleep.hours >= 6,
+    service: false,
   };
 
   return {
@@ -398,7 +399,7 @@ export const toPresentationDayRecord = (
     hydrationGoalMl: day.nutrition.waterGoalMl,
     moodLabel: 'No mood update',
     feelingLabel: 'No feeling update',
-    symptomLabel: 'No symptom update',
+    symptomLabel: 'No feeling update',
     active: day.activity.isWorkday,
     primaryCompleted: day.engagement.completed ? 1 : 0,
     primaryTotal: day.engagement.sent ? 1 : 0,

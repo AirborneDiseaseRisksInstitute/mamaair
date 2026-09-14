@@ -27,6 +27,7 @@ import {
 } from '@react-native-google-signin/google-signin';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faGlobe } from '@fortawesome/free-solid-svg-icons';
+import { consumeInitialLanguagePrompt } from '../../utils/initialLanguagePrompt';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -52,7 +53,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
   const [loading, setLoading] = useState(false);
   const setTokens = useAuthStore(state => state.setTokens);
   const { setEmail: setEmailStore, setLanguage, profile } = useUserStore();
-  const [showLangSheet, setShowLangSheet] = useState(true);
+  const [showLangSheet, setShowLangSheet] = useState(false);
 
   const emailInputRef = useRef<InputRef>(null);
   const passwordInputRef = useRef<InputRef>(null);
@@ -65,31 +66,33 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
     });
   }, []);
 
+  React.useEffect(() => {
+    if (consumeInitialLanguagePrompt(Boolean(profile.language))) {
+      setShowLangSheet(true);
+    }
+  }, [profile.language]);
+
   const handleGoogleLogin = async () => {
     try {
+      setLoading(true);
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
       
       if (isSuccessResponse(response)) {
         const idToken = response.data.idToken;
         if (idToken) {
-            setLoading(true);
-            const authResponse = await AuthService.googleSignIn(idToken);
-            if (authResponse.access && authResponse.refresh) {
-                setTokens(authResponse.access, authResponse.refresh);
-                if (authResponse.user?.email) {
-                    setEmailStore(authResponse.user.email);
-                }
-                if (onLogin) {
-                    onLogin(authResponse.user?.email || '', '');
-                }
-            }
+          const authResponse = await AuthService.googleSignIn(idToken);
+          setTokens(authResponse.access, authResponse.refresh);
+          if (authResponse.user?.email) {
+            setEmailStore(authResponse.user.email);
+          }
+          onLogin?.(authResponse.user?.email || '', '');
         } else {
-            showToast({
-              type: 'error',
-              title: t('auth.google_sign_in_error'),
-              message: t('auth.google_sign_in_failed'),
-            });
+          showToast({
+            type: 'error',
+            title: t('auth.google_sign_in_error'),
+            message: t('auth.google_sign_in_failed'),
+          });
         }
       } else {
         // sign in was cancelled by user
@@ -115,7 +118,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
             showToast({
               type: 'error',
               title: t('auth.google_sign_in_error'),
-              message: t('auth.google_sign_in_failed'),
+              message: getAuthErrorMessage(error, 'google'),
             });
         }
       } else {
@@ -123,11 +126,11 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
         showToast({
           type: 'error',
           title: t('auth.google_sign_in_error'),
-          message: t('auth.google_sign_in_failed'),
+          message: getAuthErrorMessage(error, 'google'),
         });
       }
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -256,17 +259,18 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
     if (email.trim() && password.trim()) {
       try {
         setLoading(true);
-        const response = await AuthService.login(email.trim(), password.trim());
+        const nextEmail = email.trim();
+        const response = await AuthService.login(nextEmail, password.trim());
 
         if (response.access && response.refresh) {
           setTokens(response.access, response.refresh);
-          setEmailStore(email.trim());
+          setEmailStore(nextEmail);
           showToast({
             type: 'success',
             title: t('auth.logged_in_title'),
             message: t('auth.logged_in_message'),
           });
-          onLogin?.(email, password);
+          onLogin?.(nextEmail, password);
         } else {
           showToast({
             type: 'error',
@@ -410,6 +414,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
             <TouchableOpacity
               style={styles.googleButton}
               onPress={handleGoogleLogin}
+              disabled={loading}
               activeOpacity={0.7}
             >
               <GoogleIcon />

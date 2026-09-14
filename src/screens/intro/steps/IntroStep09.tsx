@@ -9,14 +9,14 @@ import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/re
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-interface IntroStep09Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
+interface IntroStep09Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; showSkip?: boolean; }
 
-export const IntroStep09: React.FC<IntroStep09Props> = ({ onNext, onBack, onSkip }) => {
+export const IntroStep09: React.FC<IntroStep09Props> = ({ onNext, onBack, onSkip, showSkip = true }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { setWorkType } = useUserStore();
+  const { setWorkType, profile } = useUserStore();
   const { work_types } = useMetaChoices();
-  const [selectedWorkType, setSelectedWorkType] = useState<string | null>(null);
+  const [selectedWorkType, setSelectedWorkType] = useState<string | null>(profile.workType);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
 
   const styles = useMemo(() => StyleSheet.create({
@@ -60,9 +60,9 @@ export const IntroStep09: React.FC<IntroStep09Props> = ({ onNext, onBack, onSkip
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}>
+          {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}>
             <Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text>
-          </Pressable>
+          </Pressable> : null}
           <View style={styles.continueButtonWrapper}>
             <Button title={t('common.continue')} onPress={handleNext} disabled={!selectedWorkType} />
           </View>

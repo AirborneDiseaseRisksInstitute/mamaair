@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import { useTheme, spacing, radius } from '../../theme';
-import { ms, fs, vs } from '../../utils/responsive';
+import { ms, vs } from '../../utils/responsive';
 
 interface RadioOptionProps {
   iconSvg?: string; // SVG string content (optional)

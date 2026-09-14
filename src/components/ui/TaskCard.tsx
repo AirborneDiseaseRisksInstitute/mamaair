@@ -153,7 +153,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     reminderButtonText: {
       color: '#2196F3',
     },
-  }), [theme, checked, config]);
+  }), [theme, checked, config, hideIcon]);
 
   const getButtonStyle = (variant?: 'delay' | 'reminder') => {
     if (variant === 'delay') {
@@ -233,4 +233,3 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     </View>
   );
 };
-

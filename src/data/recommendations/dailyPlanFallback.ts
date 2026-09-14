@@ -147,4 +147,5 @@ export const DAILY_PLAN_DOMAIN_PURPOSE: Record<DailyActionDomain, string> = {
   activity: 'A manageable movement or rest step for today.',
   behaviour: 'A small routine change that can make today feel safer.',
   wellbeing: 'A supportive step for rest and emotional wellbeing.',
+  service: 'A care-service step for today.',
 };

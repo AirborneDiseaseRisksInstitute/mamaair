@@ -19,9 +19,13 @@ const DEV_LOCAL_RESET_APPLIED_KEY =
 
 interface AuthLoadingScreenProps {
   onComplete: (target: 'Home' | 'Intro' | 'Auth') => void;
+  authenticatedEmail?: string;
 }
 
-export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete }) => {
+export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
+  onComplete,
+  authenticatedEmail,
+}) => {
   const theme = useTheme();
   const { token, logout } = useAuthStore();
   const { clearUser, setProfile, setAgreementAccepted } = useUserStore();
@@ -59,6 +63,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
       }
 
       try {
+        const sessionEmail = authenticatedEmail?.trim() || null;
         // 2. Fetch Profile from API
         const profileData = await AuthService.getProfile();
 
@@ -84,9 +89,13 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
               profileData.id !== undefined && profileData.id !== null
                 ? String(profileData.id)
                 : undefined,
-            email: profileData.email,
+            email: profileData.email ?? sessionEmail,
             pregnancyWeek: profileData.week_of_pregnancy ?? profileData.pregnancyWeek,
             birthday: profileData.date_of_birth ?? profileData.birthday,
+            expectedDueDate:
+              profileData.expected_due_date ??
+              profileData.expectedDueDate ??
+              profileData.due_date,
             // country, language — stored as API values (NG, KE, en, fr, etc.)
         };
 
@@ -138,6 +147,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({ onComplete
         updateIfMissing('backendUserId', mappedProfile.backendUserId);
         updateIfMissing('email', mappedProfile.email);
         updateIfMissing('birthday', mappedProfile.birthday);
+        updateIfMissing('expectedDueDate', mappedProfile.expectedDueDate);
         updateIfMissing('height', mappedProfile.height);
         updateIfMissing('weight', mappedProfile.weight_pre_pregnancy || mappedProfile.weight);
         // Language is explicitly chosen by the user in IntroStep04 or Profile Settings.

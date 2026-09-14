@@ -1,7 +1,12 @@
 /**
  * Converts technical API/auth errors into user-friendly messages.
  */
-export function getAuthErrorMessage(error: any, context: 'login' | 'signup' = 'login'): string {
+type AuthErrorContext = 'login' | 'signup' | 'google' | 'verification' | 'passwordReset';
+
+export function getAuthErrorMessage(
+  error: any,
+  context: AuthErrorContext = 'login',
+): string {
   const status = error?.response?.status;
   const data = error?.response?.data;
   const rawMessage =
@@ -16,9 +21,27 @@ export function getAuthErrorMessage(error: any, context: 'login' | 'signup' = 'l
 
   // Status-based mapping
   if (status === 401 || status === 403) {
+    if (context === 'google') {
+      return 'Google sign-in could not be verified. Please try again.';
+    }
+    if (context === 'verification') {
+      return 'That code could not be verified. Please check it and try again.';
+    }
+    if (context === 'passwordReset') {
+      return 'We could not reset your password. Please check your code and try again.';
+    }
     return 'Incorrect email or password. Please try again.';
   }
   if (status === 400) {
+    if (context === 'google') {
+      return 'Google sign-in could not be verified. Please try again.';
+    }
+    if (context === 'verification') {
+      return 'That code could not be verified. Please check it and try again.';
+    }
+    if (context === 'passwordReset' && rawStr.includes('code')) {
+      return 'Please check your reset code and try again.';
+    }
     if (rawStr.includes('email') || rawStr.includes('invalid')) {
       return 'Please enter a valid email address.';
     }
@@ -42,16 +65,39 @@ export function getAuthErrorMessage(error: any, context: 'login' | 'signup' = 'l
     return 'Connection problem. Please check your internet and try again.';
   }
   if (rawStr.includes('403') || rawStr.includes('401') || rawStr.includes('unauthorized')) {
+    if (context === 'google') {
+      return 'Google sign-in could not be verified. Please try again.';
+    }
+    if (context === 'verification') {
+      return 'That code could not be verified. Please check it and try again.';
+    }
+    if (context === 'passwordReset') {
+      return 'We could not reset your password. Please check your code and try again.';
+    }
     return 'Incorrect email or password. Please try again.';
   }
   if (/^\d{3}\s*error/i.test(rawStr) || rawStr.includes('error') && /\d{3}/.test(rawStr)) {
-    return context === 'login'
-      ? 'Incorrect email or password. Please try again.'
-      : 'Something went wrong. Please try again.';
+    if (context === 'signup') {
+      return 'Something went wrong. Please try again.';
+    }
+    if (context === 'google') {
+      return 'Could not sign in with Google. Please try again.';
+    }
+    return 'Incorrect email or password. Please try again.';
   }
 
   // Generic fallback
-  return context === 'login'
-    ? 'Login failed. Please check your email and password and try again.'
-    : 'Sign up failed. Please check your details and try again.';
+  if (context === 'signup') {
+    return 'Sign up failed. Please check your details and try again.';
+  }
+  if (context === 'google') {
+    return 'Could not sign in with Google. Please try again.';
+  }
+  if (context === 'verification') {
+    return 'Verification failed. Please check your code and try again.';
+  }
+  if (context === 'passwordReset') {
+    return 'Password reset failed. Please check your details and try again.';
+  }
+  return 'Login failed. Please check your email and password and try again.';
 }

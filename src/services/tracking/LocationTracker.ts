@@ -3,12 +3,31 @@ import notifee, { AndroidImportance } from '@notifee/react-native';
 import { IndoorOutdoorClassifier } from '../logic/IndoorOutdoorClassifier';
 import { databaseService } from '../database/DatabaseService';
 import { Platform, PermissionsAndroid, Linking } from 'react-native';
+import { createMMKV } from 'react-native-mmkv';
 
 export type LocationPermissionStatus = 'granted' | 'denied' | 'blocked' | 'unavailable';
+
+const permissionStorage = createMMKV({
+  id: 'mamaair-location-permission',
+});
+const LOCATION_PERMISSION_GRANTED_KEY = 'location_permission_granted';
+
+const normalizeIosPermission = (status: string): LocationPermissionStatus => {
+  if (status === 'granted') return 'granted';
+  if (status === 'denied' || status === 'restricted') return 'blocked';
+  if (status === 'disabled') return 'unavailable';
+  return 'denied';
+};
 
 class LocationTracker {
   private watchId: number | null = null;
   private classifier = IndoorOutdoorClassifier.getInstance();
+  private permissionRequest: Promise<LocationPermissionStatus> | null = null;
+  private watchStartRequest: Promise<void> | null = null;
+  private lastKnownPermissionStatus: LocationPermissionStatus | null =
+    permissionStorage.getBoolean(LOCATION_PERMISSION_GRANTED_KEY)
+      ? 'granted'
+      : null;
   private listeners: ((location: { lat: number; lng: number; state: string; speed: number; accuracy: number }) => void)[] = [];
 
   public addListener(callback: (location: { lat: number; lng: number; state: string; speed: number; accuracy: number }) => void) {
@@ -24,22 +43,27 @@ class LocationTracker {
 
   /**
    * Returns the current permission status without requesting it.
-   * iOS: uses Geolocation.requestAuthorization — safe to call, won't show dialog if already determined.
+   * iOS: only re-check native authorization after a previous grant is known;
+   * this avoids triggering the initial system prompt before the user taps
+   * Allow in our own location sheet.
    * Android: uses PermissionsAndroid.check.
    */
   public async getPermissionStatus(): Promise<LocationPermissionStatus> {
     if (Platform.OS === 'ios') {
+      if (
+        this.lastKnownPermissionStatus !== 'granted' &&
+        !this.isTracking()
+      ) {
+        return 'denied';
+      }
+
       const auth = await Geolocation.requestAuthorization('whenInUse');
-      if (auth === 'granted') return 'granted';
-      if (auth === 'denied') return 'blocked';
-      if (auth === 'restricted') return 'blocked';
-      return 'denied';
+      return this.rememberPermissionStatus(normalizeIosPermission(auth));
     }
 
     if (Platform.OS === 'android') {
       const fine = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-      if (fine) return 'granted';
-      return 'denied';
+      return this.rememberPermissionStatus(fine ? 'granted' : 'denied');
     }
 
     return 'unavailable';
@@ -87,6 +111,17 @@ class LocationTracker {
 
   private async beginWatching() {
     if (this.watchId !== null) return; // already tracking
+    if (this.watchStartRequest) return this.watchStartRequest;
+
+    this.watchStartRequest = this.startWatching().finally(() => {
+      this.watchStartRequest = null;
+    });
+
+    return this.watchStartRequest;
+  }
+
+  private async startWatching() {
+    if (this.watchId !== null) return;
 
     await this.startForegroundService();
 
@@ -181,17 +216,26 @@ class LocationTracker {
   }
 
   private async requestPermissions(): Promise<LocationPermissionStatus> {
+    if (this.permissionRequest) {
+      return this.permissionRequest;
+    }
+
+    this.permissionRequest = this.performPermissionRequest()
+      .then(status => this.rememberPermissionStatus(status))
+      .finally(() => {
+        this.permissionRequest = null;
+      });
+
+    return this.permissionRequest;
+  }
+
+  private async performPermissionRequest(): Promise<LocationPermissionStatus> {
     if (Platform.OS === 'ios') {
-      const auth = await Geolocation.requestAuthorization('always');
-      if (auth === 'granted') return 'granted';
-      if (auth === 'denied' || auth === 'restricted') return 'blocked';
-      return 'denied';
+      const auth = await Geolocation.requestAuthorization('whenInUse');
+      return normalizeIosPermission(auth);
     }
 
     if (Platform.OS === 'android') {
-      // Step 1 — foreground location (fine/coarse). On Android 11+ the background
-      // permission MUST NOT be requested in the same call: the system silently
-      // denies it when bundled with foreground. Request foreground first.
       const fg = await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
@@ -203,28 +247,24 @@ class LocationTracker {
         return 'denied';
       }
 
-      // Step 2 — background location, requested separately and only on Android 10+
-      // (API 29+). Best-effort: foreground tracking (with the foreground service)
-      // still works if the user declines "Allow all the time", so a background
-      // denial must not block tracking from starting.
-      if (
-        typeof Platform.Version === 'number' &&
-        Platform.Version >= 29 &&
-        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
-      ) {
-        try {
-          await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
-          );
-        } catch {
-          // ignore — foreground permission is enough to start tracking
-        }
-      }
-
       return 'granted';
     }
 
     return 'unavailable';
+  }
+
+  private rememberPermissionStatus(
+    status: LocationPermissionStatus,
+  ): LocationPermissionStatus {
+    this.lastKnownPermissionStatus = status;
+
+    if (status === 'granted') {
+      permissionStorage.set(LOCATION_PERMISSION_GRANTED_KEY, true);
+    } else {
+      permissionStorage.remove(LOCATION_PERMISSION_GRANTED_KEY);
+    }
+
+    return status;
   }
 }
 

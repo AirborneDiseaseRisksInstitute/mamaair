@@ -69,9 +69,7 @@ export const theme = {
       regular: 'MPLUSRounded1c-Regular',
       medium: 'MPLUSRounded1c-Medium',
       bold: 'MPLUSRounded1c-Bold',
-      light: 'MPLUSRounded1c-Light',
       extraBold: 'MPLUSRounded1c-ExtraBold',
-      black: 'MPLUSRounded1c-Black',
     },
     fontSize: {
       xs: fontScale(12),

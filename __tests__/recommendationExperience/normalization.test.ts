@@ -3,6 +3,9 @@ jest.mock('../../src/store/useRecommendationExperienceStore', () => {
     ensureOwner: jest.fn(),
     getCheckIn: jest.fn(() => null),
     saveCheckIn: jest.fn(),
+    pendingMommySymptomSelections: {},
+    savePendingMommySymptomSelection: jest.fn(),
+    removePendingMommySymptomSelection: jest.fn(),
   };
   return {
     useRecommendationExperienceStore: {
@@ -38,6 +41,12 @@ jest.mock('../../src/services/api/SymptomsService', () => ({
     getMommyChecklist: jest.fn(),
     getMommySelection: jest.fn(),
     saveMommySelection: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/services/api/SummaryService', () => ({
+  SummaryService: {
+    getSummary: jest.fn(),
   },
 }));
 
@@ -106,6 +115,22 @@ describe('feeling check-in normalization', () => {
     group: 'wellbeing',
     name: 'Poor sleep',
     source: 'localFallback',
+  };
+  const apiMood: FeelingCheckInItem = {
+    key: 'api:mood:30',
+    kind: 'mood',
+    group: 'wellbeing',
+    name: 'Calm',
+    apiId: 30,
+    source: 'api',
+  };
+  const apiPoorSleep: FeelingCheckInItem = {
+    key: 'api:feeling:20',
+    kind: 'wellbeingFeeling',
+    group: 'wellbeing',
+    name: 'Poor sleep',
+    apiId: 20,
+    source: 'api',
   };
 
   beforeEach(() => {
@@ -183,9 +208,63 @@ describe('feeling check-in normalization', () => {
 
     expect(result.capabilities.mommySymptoms.status).toBe('available');
     expect(result.capabilities.wellbeing.status).toBe('available');
+    expect(result.mommySymptoms).toEqual([]);
+    expect(result.moods).toEqual([]);
+    expect(result.feelings).toEqual([]);
     expect(result.capabilities.unifiedFeelingSupplement.status).toBe(
       'notImplemented',
     );
+  });
+
+  it('hydrates saved mood and feeling selections from the wellbeing log', async () => {
+    (SymptomsService.getMommyChecklist as jest.Mock).mockResolvedValue({
+      symptoms: [],
+    });
+    (SymptomsService.getMommySelection as jest.Mock).mockResolvedValue({
+      symptom_ids: [],
+    });
+    (WellbeingService.getCatalog as jest.Mock).mockResolvedValue({
+      moods: [{ id: 30, name: 'Calm' }],
+      feelings: [{ id: 20, name: 'Poor sleep' }],
+    });
+    (WellbeingService.getLogStrict as jest.Mock).mockResolvedValue({
+      date: '2026-07-23',
+      water_amount: 0,
+      mood_ids: [30],
+      feeling_ids: [20],
+    });
+
+    const result = await loadFeelingCheckInExperience(
+      { backendUserId: 1 },
+      '2026-07-23',
+    );
+
+    expect(result.selection.moodKeys).toEqual(['api:mood:30']);
+    expect(result.selection.feelingKeys).toEqual(['api:feeling:20']);
+  });
+
+  it('does not add local supplement items when catalog APIs are unavailable', async () => {
+    (SymptomsService.getMommyChecklist as jest.Mock).mockRejectedValue(
+      new Error('timeout'),
+    );
+    (SymptomsService.getMommySelection as jest.Mock).mockRejectedValue(
+      new Error('timeout'),
+    );
+    (WellbeingService.getCatalog as jest.Mock).mockRejectedValue(
+      new Error('network'),
+    );
+    (WellbeingService.getLogStrict as jest.Mock).mockRejectedValue(
+      new Error('network'),
+    );
+
+    const result = await loadFeelingCheckInExperience(
+      { backendUserId: 1 },
+      '2026-07-23',
+    );
+
+    expect(result.mommySymptoms).toEqual([]);
+    expect(result.moods).toEqual([]);
+    expect(result.feelings).toEqual([]);
   });
 
   it('marks request failures unavailable without inferring notImplemented', async () => {
@@ -230,8 +309,8 @@ describe('feeling check-in normalization', () => {
       '2026-07-23',
       {
         mommySymptoms: [apiHeadache],
-        moods: [],
-        feelings: [localPoorSleep],
+        moods: [apiMood],
+        feelings: [apiPoorSleep],
         selection: {
           mommySymptomKeys: [],
           moodKeys: [],
@@ -269,13 +348,19 @@ describe('feeling check-in normalization', () => {
       },
       {
         mommySymptomKeys: [apiHeadache.key],
-        moodKeys: [],
-        feelingKeys: [localPoorSleep.key],
+        moodKeys: [apiMood.key],
+        feelingKeys: [apiPoorSleep.key],
         waterIncrementMl: 250,
       },
     );
 
     expect(storeMock.__testState.saveCheckIn).toHaveBeenCalledTimes(2);
+    expect(WellbeingService.saveLog).toHaveBeenCalledWith({
+      date: '2026-07-23',
+      mood_ids: [30],
+      feeling_ids: [20],
+      water_amount: 250,
+    });
     expect(result.savedRemotely).toBe(false);
     expect(result.partiallySaved).toBe(true);
     expect(result.record.writeStatus).toEqual({
@@ -284,6 +369,58 @@ describe('feeling check-in normalization', () => {
       dailyCheckIn: 'saved',
     });
     expect(result.record.waterDailyTotalMl).toBe(750);
+  });
+
+  it('writes mood-only changes to the wellbeing log', async () => {
+    (DailyCheckinService.checkExists as jest.Mock).mockResolvedValue(false);
+    (DailyCheckinService.create as jest.Mock).mockResolvedValue(undefined);
+    (WellbeingService.saveLog as jest.Mock).mockResolvedValue(undefined);
+
+    const result = await submitFeelingCheckIn(
+      { backendUserId: 1 },
+      '2026-07-24',
+      {
+        mommySymptoms: [],
+        moods: [apiMood],
+        feelings: [apiPoorSleep],
+        selection: {
+          mommySymptomKeys: [],
+          moodKeys: [],
+          feelingKeys: [],
+          waterIncrementMl: 0,
+        },
+        waterDailyTotalMl: 0,
+        recordState: 'unknown',
+        capabilities: {
+          mommySymptoms: capabilityState('available'),
+          mommySymptomsSelection: capabilityState('available'),
+          wellbeing: capabilityState('available'),
+          wellbeingLog: capabilityState('available'),
+          dailyCheckIn: capabilityState('available'),
+          unifiedFeelingSupplement:
+            capabilityState('notImplemented'),
+        },
+      },
+      {
+        mommySymptomKeys: [],
+        moodKeys: [apiMood.key],
+        feelingKeys: [],
+        waterIncrementMl: 0,
+      },
+    );
+
+    expect(SymptomsService.saveMommySelection).toHaveBeenCalledWith({
+      symptom_ids: [],
+      recorded_at: expect.any(String),
+    });
+    expect(WellbeingService.saveLog).toHaveBeenCalledWith({
+      date: '2026-07-24',
+      mood_ids: [30],
+      feeling_ids: [],
+      water_amount: 0,
+    });
+    expect(result.record.writeStatus.wellbeing).toBe('saved');
+    expect(result.record.moodKeys).toEqual([apiMood.key]);
   });
 
   it('keeps local DEV submissions local when API capabilities are unavailable', async () => {

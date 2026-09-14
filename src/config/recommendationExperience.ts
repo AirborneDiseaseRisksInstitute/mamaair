@@ -3,15 +3,26 @@ import type {
   ConfiguredCapabilityStatus,
   RecommendationCapability,
 } from '../types/recommendationExperience';
-import {
-  DEV_LOCAL_SESSION,
-  DEV_LOCAL_SESSION_RESET_TOKEN,
-} from './dev';
+import { DEV_LOCAL_SESSION, DEV_LOCAL_SESSION_RESET_TOKEN } from './dev';
 
 export const RECOMMENDATION_EXPERIENCE_STORAGE_VERSION = 1;
 export const RECOMMENDATION_DEMO_FALLBACK_ENABLED = true;
-export const ILLUSTRATIVE_PROGRESS_ENABLED = true;
-export const ILLUSTRATIVE_PROGRESS_VALUE = 16;
+// Legacy Daily Tasks remain available for development and rollback analysis,
+// but they must not replace the unified Daily Plan in the customer experience.
+export const LEGACY_DAILY_TASK_FALLBACK_ENABLED = false;
+export const LOCAL_FEELING_CHECK_IN_SUPPLEMENT_ENABLED = false;
+export const RISK_IMPACT_PRESENTATION_ENABLED = true;
+// Keep healthcare service-request screens implemented for the planned backend,
+// but do not expose promises or successful submissions before it is connected.
+export const HEALTHCARE_SERVICE_REQUESTS_ENABLED = false;
+/*
+ * Legacy fixed demo progress is intentionally disabled. Keep this restore
+ * point commented instead of deleting it, but do not use a fixed value in
+ * runtime presentation.
+ *
+ * export const ILLUSTRATIVE_PROGRESS_ENABLED = false;
+ * export const ILLUSTRATIVE_PROGRESS_VALUE = <legacy fixed demo value>;
+ */
 
 /**
  * Increment this value during development to clear the feature-owned MMKV
@@ -29,6 +40,7 @@ export const RECOMMENDATION_CAPABILITIES: Record<
   RecommendationCapability,
   ConfiguredCapabilityStatus
 > = {
+  dailyPlan: 'available',
   mommySymptoms: 'available',
   wellbeing: 'available',
   dailyCheckIn: 'available',
@@ -37,7 +49,7 @@ export const RECOMMENDATION_CAPABILITIES: Record<
   recommendationSnapshots: 'available',
   recommendationCompletion: 'available',
   unifiedFeelingSupplement: 'notImplemented',
-  dailyRecommendations: 'notImplemented',
+  dailyRecommendations: 'available',
   mentalWellbeingContent: 'notImplemented',
   weeklySummary: 'notImplemented',
   exposureHistory: 'available',
@@ -52,6 +64,7 @@ export const RECOMMENDATION_CAPABILITIES: Record<
 export const DEV_LOCAL_RECOMMENDATION_CAPABILITY_OVERRIDES: Partial<
   Record<RecommendationCapability, CapabilityStatus>
 > = {
+  dailyPlan: 'unavailable',
   mommySymptoms: 'unavailable',
   wellbeing: 'unavailable',
   dailyCheckIn: 'unavailable',
@@ -59,6 +72,7 @@ export const DEV_LOCAL_RECOMMENDATION_CAPABILITY_OVERRIDES: Partial<
   taskCompletion: 'unavailable',
   recommendationSnapshots: 'unavailable',
   recommendationCompletion: 'unavailable',
+  dailyRecommendations: 'unavailable',
   exposureHistory: 'unavailable',
 };
 

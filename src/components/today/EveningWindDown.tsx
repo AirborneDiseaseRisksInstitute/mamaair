@@ -1,14 +1,12 @@
-import React, { useMemo } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import {
   faBed,
   faCheck,
+  faChevronDown,
+  faChevronUp,
+  faMoon,
   faPersonWalking,
   faRotate,
   faWind,
@@ -61,11 +59,14 @@ const WIND_DOWN_ITEMS: Array<{
 ];
 const EMPTY_MOMENTS: Record<string, DailyMomentRecord> = {};
 
-export const EveningWindDown: React.FC<
-  EveningWindDownProps
-> = ({ date, identity, onChanged }) => {
+export const EveningWindDown: React.FC<EveningWindDownProps> = ({
+  date,
+  identity,
+  onChanged,
+}) => {
   const theme = useTheme();
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const moments = useRecommendationExperienceStore(
     state => state.dailyMoments[date] ?? EMPTY_MOMENTS,
   );
@@ -75,15 +76,20 @@ export const EveningWindDown: React.FC<
       StyleSheet.create({
         root: {
           marginTop: spacing('xl'),
+          paddingTop: spacing('md'),
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: theme.colors.neutral200,
         },
         headingRow: {
-          minHeight: 54,
+          minHeight: 62,
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: spacing('sm'),
-          borderLeftWidth: 4,
-          borderLeftColor: theme.colors.orange500,
-          backgroundColor: '#FFF7EF',
+          paddingVertical: spacing('xs'),
+          backgroundColor: '#FFFFFF',
+        },
+        headingPressed: {
+          backgroundColor: '#FAF7FC',
         },
         headingIcon: {
           width: 30,
@@ -92,7 +98,7 @@ export const EveningWindDown: React.FC<
           justifyContent: 'center',
           marginRight: spacing('sm'),
           borderRadius: 15,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: '#F1E8F7',
         },
         headingCopy: {
           flex: 1,
@@ -106,12 +112,19 @@ export const EveningWindDown: React.FC<
           paddingHorizontal: spacing('xs'),
           paddingVertical: 3,
           borderRadius: 8,
-          color: theme.colors.orange700,
+          color: '#70428F',
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 9,
           letterSpacing: 0.5,
           textTransform: 'uppercase',
-          backgroundColor: '#FFFFFF',
+          backgroundColor: '#F8F3FB',
+        },
+        chevron: {
+          width: 28,
+          height: 28,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginLeft: spacing('xs'),
         },
         description: {
           marginTop: 1,
@@ -120,8 +133,18 @@ export const EveningWindDown: React.FC<
           fontSize: 10,
           lineHeight: 14,
         },
+        separation: {
+          marginTop: 1,
+          color: '#70428F',
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 9,
+          lineHeight: 13,
+        },
         rows: {
-          paddingLeft: spacing('sm'),
+          paddingLeft: spacing('md'),
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: '#EADFED',
+          backgroundColor: '#FDFCFE',
         },
         item: {
           minHeight: 46,
@@ -132,7 +155,7 @@ export const EveningWindDown: React.FC<
           borderBottomColor: theme.colors.neutral200,
         },
         itemComplete: {
-          backgroundColor: '#FFFCF8',
+          backgroundColor: '#FAF7FC',
         },
         checkbox: {
           width: 20,
@@ -141,13 +164,13 @@ export const EveningWindDown: React.FC<
           justifyContent: 'center',
           marginRight: spacing('sm'),
           borderWidth: 1.5,
-          borderColor: theme.colors.orange300,
+          borderColor: '#B89ACB',
           borderRadius: 6,
           backgroundColor: '#FFFFFF',
         },
         checkboxComplete: {
-          borderColor: theme.colors.orange500,
-          backgroundColor: theme.colors.orange500,
+          borderColor: '#70428F',
+          backgroundColor: '#70428F',
         },
         itemIcon: {
           width: 24,
@@ -190,74 +213,73 @@ export const EveningWindDown: React.FC<
 
   return (
     <View style={styles.root}>
-      <View style={styles.headingRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={t('today.evening_title')}
+        onPress={() => setExpanded(current => !current)}
+        style={({ pressed }) => [
+          styles.headingRow,
+          pressed && styles.headingPressed,
+        ]}
+      >
         <View style={styles.headingIcon}>
-          <FontAwesomeIcon
-            icon={faBed}
-            size={13}
-            color={theme.colors.orange700}
-          />
+          <FontAwesomeIcon icon={faMoon} size={13} color="#70428F" />
         </View>
         <View style={styles.headingCopy}>
           <Text accessibilityRole="header" style={styles.heading}>
             {t('today.evening_title')}
           </Text>
-          <Text numberOfLines={1} style={styles.description}>
+          <Text style={styles.description}>
             {t('today.evening_description')}
           </Text>
+          <Text style={styles.separation}>
+            {t('today.evening_separate_from_plan')}
+          </Text>
         </View>
-        <Text style={styles.optional}>
-          {t('today.optional')}
-        </Text>
-      </View>
-      <View style={styles.rows}>
-        {WIND_DOWN_ITEMS.map(item => {
-          const completed = Boolean(moments[item.key]?.completed);
-          return (
-            <Pressable
-              key={item.key}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: completed }}
-              accessibilityLabel={t(item.titleKey)}
-              onPress={() => toggle(item)}
-              style={[
-                styles.item,
-                completed && styles.itemComplete,
-              ]}
-            >
-              <View
-                style={[
-                  styles.checkbox,
-                  completed && styles.checkboxComplete,
-                ]}
+        <Text style={styles.optional}>{t('today.optional')}</Text>
+        <View style={styles.chevron}>
+          <FontAwesomeIcon
+            icon={expanded ? faChevronUp : faChevronDown}
+            size={11}
+            color="#70428F"
+          />
+        </View>
+      </Pressable>
+      {expanded ? (
+        <View style={styles.rows}>
+          {WIND_DOWN_ITEMS.map(item => {
+            const completed = Boolean(moments[item.key]?.completed);
+            return (
+              <Pressable
+                key={item.key}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: completed }}
+                accessibilityLabel={t(item.titleKey)}
+                onPress={() => toggle(item)}
+                style={[styles.item, completed && styles.itemComplete]}
               >
-                {completed ? (
-                  <FontAwesomeIcon
-                    icon={faCheck}
-                    size={10}
-                    color="#FFFFFF"
-                  />
-                ) : null}
-              </View>
-              <View style={styles.itemIcon}>
-                <FontAwesomeIcon
-                  icon={item.icon}
-                  size={11}
-                  color={theme.colors.orange700}
-                />
-              </View>
-              <Text
-                style={[
-                  styles.title,
-                  completed && styles.titleComplete,
-                ]}
-              >
-                {t(item.titleKey)}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+                <View
+                  style={[
+                    styles.checkbox,
+                    completed && styles.checkboxComplete,
+                  ]}
+                >
+                  {completed ? (
+                    <FontAwesomeIcon icon={faCheck} size={10} color="#FFFFFF" />
+                  ) : null}
+                </View>
+                <View style={styles.itemIcon}>
+                  <FontAwesomeIcon icon={item.icon} size={11} color="#70428F" />
+                </View>
+                <Text style={[styles.title, completed && styles.titleComplete]}>
+                  {t(item.titleKey)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 };

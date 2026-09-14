@@ -13,14 +13,15 @@ import { Calendar, DateData, LocaleConfig } from 'react-native-calendars';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faChevronLeft, faChevronRight, faEdit } from '@fortawesome/free-solid-svg-icons';
 import { IconProp } from '@fortawesome/fontawesome-svg-core';
-import { useTheme, spacing, radius } from '../theme';
+import { useTheme, spacing } from '../theme';
 import { BackButton, Button, FixedButtonContainer } from '../components/ui';
-import { ms, fs, vs, FIXED_BUTTON_AREA_HEIGHT } from '../utils/responsive';
+import { ms, vs, FIXED_BUTTON_AREA_HEIGHT } from '../utils/responsive';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { Image } from 'react-native';
 import { useUserStore } from '../store/useUserStore';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 import { useTranslation } from 'react-i18next';
+import { parseLocalDate } from '../utils/dateUtils';
 
 interface PlanBirthdayScreenProps {
   onBack?: () => void;
@@ -35,22 +36,26 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
     : i18n.resolvedLanguage === 'sw'
       ? 'sw-KE'
       : 'en-US';
-  const { profile } = useUserStore();
+  const { profile, setExpectedDueDate } = useUserStore();
 
   const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate) || 1;
   const weeksRemaining = Math.max(0, 40 - currentWeek);
   const estimatedDueDate = useMemo(() => {
+    const storedDueDate = parseLocalDate(profile.expectedDueDate);
+    if (storedDueDate) return storedDueDate;
+
     const d = new Date();
     d.setDate(d.getDate() + weeksRemaining * 7);
     return d;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [profile.expectedDueDate, weeksRemaining]);
 
   const [selectedDate, setSelectedDate] = useState<Date>(estimatedDueDate);
   const selectedDateRef = useRef<Date>(estimatedDueDate);
   const [markedDates, setMarkedDates] = useState<any>({});
   const [currentMonth, setCurrentMonth] = useState<Date>(estimatedDueDate);
-  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(
+    () => parseLocalDate(profile.expectedDueDate) !== null,
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   const updateMarkedDates = (date: Date) => {
@@ -509,6 +514,12 @@ export const PlanBirthdayScreen: React.FC<PlanBirthdayScreenProps> = ({ onBack, 
             title={t('date_picker.confirm_birth_date')}
             onPress={() => {
               setIsLoading(true);
+              setExpectedDueDate(selectedDateRef.current);
+              // Backend EDD persistence is intentionally inactive until the
+              // profile API exposes a documented field for it.
+              // ProfileService.patchProfile({
+              //   expected_due_date: formatLocalDate(selectedDateRef.current),
+              // }).catch(() => {});
               // Call onConfirm callback
               onConfirm?.(selectedDate);
               // After a short delay, show the confirmed card

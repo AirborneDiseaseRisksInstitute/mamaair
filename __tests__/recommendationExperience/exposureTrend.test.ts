@@ -19,7 +19,7 @@ describe('exposure history capability handling', () => {
     jest.clearAllMocks();
   });
 
-  it('keeps capability status explicit when an empty response needs presentation values', async () => {
+  it('does not show presentation values when backend and summary history are empty', async () => {
     historyMock.mockResolvedValue({ items: [] });
     const result = await loadExposureTrend({
       summary: null,
@@ -28,9 +28,8 @@ describe('exposure history capability handling', () => {
     });
 
     expect(result.status).toBe('available');
-    expect(result.source).toBe('presentation');
-    expect(result.points).toHaveLength(7);
-    expect(result.points[6].date).toBe('2026-07-27');
+    expect(result.source).toBe('none');
+    expect(result.points).toEqual([]);
   });
 
   it('uses already-loaded summary history after a temporary history failure', async () => {

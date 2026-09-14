@@ -5,6 +5,7 @@ import { Navigation } from './Navigation';
 import { ToastProvider } from '../components/ui/Toast';
 import { useLanguageSync } from '../hooks/useLanguageSync';
 import { backgroundSync } from '../services/sync/BackgroundSync';
+import { MommySymptomSyncCoordinator } from '../components/recommendations/MommySymptomSyncCoordinator';
 
 const AppInner: React.FC = () => {
   useLanguageSync();
@@ -17,7 +18,12 @@ const AppInner: React.FC = () => {
       .catch((e) => console.warn('[BackgroundSync] init failed', e));
   }, []);
 
-  return <Navigation />;
+  return (
+    <>
+      <MommySymptomSyncCoordinator />
+      <Navigation />
+    </>
+  );
 };
 
 export const AppRoot: React.FC = () => {
@@ -37,7 +43,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
-
 
 
 

@@ -21,7 +21,6 @@ import LinearGradient from 'react-native-linear-gradient';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import {
   faArrowLeft,
-  faBaby,
   faBed,
   faBrain,
   faCheck,
@@ -34,6 +33,12 @@ import {
   faShareNodes,
   faXmark,
   faShieldHeart,
+  faPersonPregnant,
+  faBaby,
+  faArrowTrendDown,
+  faArrowTrendUp,
+  faMinus,
+  faCircleInfo,
 } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
 import { radius, spacing, useTheme } from '../theme';
@@ -71,6 +76,7 @@ import {
   type SummaryResponse,
 } from '../services/api/SummaryService';
 import { DEV_LOCAL_SESSION } from '../config/dev';
+import { buildWeeklyRiskSummaryViewModel } from '../services/recommendationExperience/WeeklyRiskSummaryPresenter';
 
 interface WeeklySummaryScreenProps {
   onBack?: () => void;
@@ -80,7 +86,7 @@ interface WeeklySummaryScreenProps {
   mode?: 'checkpoint' | 'review';
 }
 
-const DOMAIN_ORDER: DailyActionDomain[] = [
+const DOMAIN_ORDER: Exclude<DailyActionDomain, 'service'>[] = [
   'diet',
   'activity',
   'behaviour',
@@ -92,6 +98,7 @@ const DOMAIN_COLORS: Record<DailyActionDomain, string> = {
   activity: '#946000',
   behaviour: '#A83149',
   wellbeing: '#70428F',
+  service: '#48607A',
 };
 
 const DomainIcon: React.FC<{
@@ -123,6 +130,11 @@ const displayWeekday = (value: string, locale: string): string =>
   new Date(`${value}T00:00:00`).toLocaleDateString(locale, {
     weekday: 'short',
   });
+
+const displayRiskPercent = (value: number, locale: string): string =>
+  new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 1,
+  }).format(value);
 
 export const WeeklySummaryScreen: React.FC<
   WeeklySummaryScreenProps
@@ -590,6 +602,131 @@ export const WeeklySummaryScreen: React.FC<
           fontSize: 11,
           lineHeight: 17,
         },
+        riskHeader: {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          padding: spacing('md'),
+        },
+        riskHeaderCopy: {
+          flex: 1,
+        },
+        riskTitle: {
+          color: theme.colors.textPrimary,
+          fontFamily: theme.typography.fontFamily.bold,
+          fontSize: 14,
+          lineHeight: 20,
+        },
+        riskOverview: {
+          marginTop: 3,
+          color: theme.colors.textSecondary,
+          fontFamily: theme.typography.fontFamily.regular,
+          fontSize: 12,
+          lineHeight: 18,
+        },
+        riskChangeList: {
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: theme.colors.neutral200,
+        },
+        riskChangeRow: {
+          minHeight: 58,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing('md'),
+        },
+        riskAudienceIcon: {
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing('sm'),
+        },
+        riskAudienceIconMother: {
+          backgroundColor: '#FFF1E6',
+        },
+        riskAudienceIconChild: {
+          backgroundColor: '#EAF6F2',
+        },
+        riskAudienceLabel: {
+          flex: 1,
+          color: theme.colors.textPrimary,
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 12,
+        },
+        riskChangeValue: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 5,
+        },
+        riskChangeValueText: {
+          fontFamily: theme.typography.fontFamily.bold,
+          fontSize: 12,
+        },
+        riskChangeLower: {
+          color: '#2E7D4A',
+        },
+        riskChangeHigher: {
+          color: '#A83149',
+        },
+        riskChangeStable: {
+          color: theme.colors.textSecondary,
+        },
+        riskRowDivider: {
+          height: StyleSheet.hairlineWidth,
+          marginLeft: 58,
+          backgroundColor: theme.colors.neutral100,
+        },
+        riskCareImpact: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginHorizontal: spacing('md'),
+          marginTop: spacing('sm'),
+          padding: spacing('sm'),
+          borderRadius: radius('sm'),
+          backgroundColor: '#EFF8F2',
+        },
+        riskCareImpactIcon: {
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing('sm'),
+          backgroundColor: '#DDEFE3',
+        },
+        riskCareImpactText: {
+          flex: 1,
+          color: '#285F3C',
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 11,
+          lineHeight: 17,
+        },
+        riskFactorRow: {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          marginHorizontal: spacing('md'),
+          marginTop: spacing('sm'),
+        },
+        riskFactorText: {
+          flex: 1,
+          marginLeft: spacing('xs'),
+          color: theme.colors.textSecondary,
+          fontFamily: theme.typography.fontFamily.regular,
+          fontSize: 11,
+          lineHeight: 17,
+        },
+        riskDisclaimer: {
+          marginTop: spacing('sm'),
+          paddingHorizontal: spacing('md'),
+          paddingTop: spacing('sm'),
+          paddingBottom: spacing('md'),
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: theme.colors.neutral100,
+          color: theme.colors.textSecondary,
+          fontFamily: theme.typography.fontFamily.regular,
+          fontSize: 10,
+          lineHeight: 15,
+        },
         divider: {
           height: StyleSheet.hairlineWidth,
           marginLeft: 64,
@@ -866,6 +1003,24 @@ export const WeeklySummaryScreen: React.FC<
     );
   }
 
+  const actionSummaries = DOMAIN_ORDER.map(
+    domain => summary.actionSummary[domain],
+  );
+  const hasActionSummary = actionSummaries.some(
+    item => item.recommended > 0 || item.completed > 0,
+  );
+  const hasWeeklyHighlights =
+    summary.hydrationDays > 0 ||
+    summary.sleepNights > 0 ||
+    summary.restSessions > 0 ||
+    summary.extraCompleted > 0;
+  const hasSymptomLevels =
+    summary.symptomLevels.length > 0 && summary.symptomTrend.length > 0;
+  const riskViewModel = summary.riskSummary
+    ? buildWeeklyRiskSummaryViewModel(summary.riskSummary)
+    : null;
+  const hasRiskSummary = riskViewModel !== null;
+
   return (
     <SafeAreaView edges={[]} style={styles.container}>
       <View style={styles.header}>
@@ -1054,207 +1209,347 @@ export const WeeklySummaryScreen: React.FC<
           ))}
         </View>
 
-        <Text style={styles.sectionTitle}>
-          {t('weekly_summary.weekly_highlights')}
-        </Text>
-        <View style={styles.metricGrid}>
-          <View style={styles.metric}>
-            <View
-              style={[
-                styles.metricIcon,
-                styles.metricIconHydration,
-              ]}
-            >
-              <FontAwesomeIcon
-                icon={faDroplet}
-                size={13}
-                color="#307AA8"
-              />
-            </View>
-            <Text style={styles.metricValue}>
-              {summary.hydrationDays}/7
+        {hasWeeklyHighlights ? (
+          <>
+            <Text style={styles.sectionTitle}>
+              {t('weekly_summary.weekly_highlights')}
             </Text>
-            <Text style={styles.metricLabel}>
-              {t('weekly_summary.hydration_days')}
-            </Text>
-          </View>
-          <View style={styles.metric}>
-            <View
-              style={[
-                styles.metricIcon,
-                styles.metricIconSleep,
-              ]}
-            >
-              <FontAwesomeIcon
-                icon={faBed}
-                size={13}
-                color="#4C6F9F"
-              />
-            </View>
-            <Text style={styles.metricValue}>
-              {summary.sleepNights}/7
-            </Text>
-            <Text style={styles.metricLabel}>
-              {t('weekly_summary.sleep_nights')}
-            </Text>
-          </View>
-          <View style={styles.metric}>
-            <View
-              style={[
-                styles.metricIcon,
-                styles.metricIconRest,
-              ]}
-            >
-              <FontAwesomeIcon
-                icon={faShieldHeart}
-                size={13}
-                color="#70428F"
-              />
-            </View>
-            <Text style={styles.metricValue}>
-              {summary.restSessions}
-            </Text>
-            <Text style={styles.metricLabel}>
-              {t('weekly_summary.rest_sessions')}
-            </Text>
-          </View>
-          <View style={styles.metric}>
-            <View
-              style={[
-                styles.metricIcon,
-                styles.metricIconExtra,
-              ]}
-            >
-              <FontAwesomeIcon
-                icon={faPlus}
-                size={13}
-                color={theme.colors.orange600}
-              />
-            </View>
-            <Text style={styles.metricValue}>
-              {summary.extraCompleted}
-            </Text>
-            <Text style={styles.metricLabel}>
-              {t('weekly_summary.extra_actions')}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>
-          {t('weekly_summary.care_areas')}
-        </Text>
-        <View style={styles.domainCard}>
-          {DOMAIN_ORDER.map((domain, index) => {
-            const color = DOMAIN_COLORS[domain];
-            const value = summary.domainParticipation[domain];
-            return (
-              <View
-                key={domain}
-                style={[
-                  styles.domainRow,
-                  index === DOMAIN_ORDER.length - 1 &&
-                    styles.domainRowLast,
-                ]}
-              >
+            <View style={styles.metricGrid}>
+              <View style={styles.metric}>
                 <View
                   style={[
-                    styles.domainIcon,
-                    { backgroundColor: `${color}16` },
+                    styles.metricIcon,
+                    styles.metricIconHydration,
                   ]}
                 >
-                  <DomainIcon domain={domain} color={color} />
-                </View>
-                <Text style={styles.domainName}>
-                  {t(`today.domain_${domain}`)}
-                </Text>
-                <View style={styles.domainTrack}>
-                  <View
-                    style={[
-                      styles.domainFill,
-                      {
-                        width: `${(value / 7) * 100}%`,
-                        backgroundColor: color,
-                      },
-                    ]}
+                  <FontAwesomeIcon
+                    icon={faDroplet}
+                    size={13}
+                    color="#307AA8"
                   />
                 </View>
-                <Text style={styles.domainValue}>{value}/7</Text>
+                <Text style={styles.metricValue}>
+                  {summary.hydrationDays}/7
+                </Text>
+                <Text style={styles.metricLabel}>
+                  {t('weekly_summary.hydration_days')}
+                </Text>
               </View>
-            );
-          })}
-        </View>
+              <View style={styles.metric}>
+                <View
+                  style={[
+                    styles.metricIcon,
+                    styles.metricIconSleep,
+                  ]}
+                >
+                  <FontAwesomeIcon
+                    icon={faBed}
+                    size={13}
+                    color="#4C6F9F"
+                  />
+                </View>
+                <Text style={styles.metricValue}>
+                  {summary.sleepNights}/7
+                </Text>
+                <Text style={styles.metricLabel}>
+                  {t('weekly_summary.sleep_nights')}
+                </Text>
+              </View>
+              <View style={styles.metric}>
+                <View
+                  style={[
+                    styles.metricIcon,
+                    styles.metricIconRest,
+                  ]}
+                >
+                  <FontAwesomeIcon
+                    icon={faShieldHeart}
+                    size={13}
+                    color="#70428F"
+                  />
+                </View>
+                <Text style={styles.metricValue}>
+                  {summary.restSessions}
+                </Text>
+                <Text style={styles.metricLabel}>
+                  {t('weekly_summary.rest_sessions')}
+                </Text>
+              </View>
+              <View style={styles.metric}>
+                <View
+                  style={[
+                    styles.metricIcon,
+                    styles.metricIconExtra,
+                  ]}
+                >
+                  <FontAwesomeIcon
+                    icon={faPlus}
+                    size={13}
+                    color={theme.colors.orange600}
+                  />
+                </View>
+                <Text style={styles.metricValue}>
+                  {summary.extraCompleted}
+                </Text>
+                <Text style={styles.metricLabel}>
+                  {t('weekly_summary.extra_actions')}
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : null}
 
-        <Text style={styles.sectionTitle}>
-          {t('weekly_summary.feeling_trend')}
-        </Text>
-        <View style={styles.insight}>
-          <View style={styles.insightIcon}>
-            <FontAwesomeIcon
-              icon={faBrain}
-              size={15}
-              color="#70428F"
-            />
-          </View>
-          <View style={styles.insightCopy}>
-            <Text style={styles.insightTitle}>
-              {t('weekly_summary.trend_title')}
+        {hasActionSummary ? (
+          <>
+            <Text style={styles.sectionTitle}>
+              {t('weekly_summary.care_areas')}
             </Text>
-            <Text style={styles.insightText}>
-              {summary.symptomTrend}
-            </Text>
-          </View>
-        </View>
+            <View style={styles.domainCard}>
+              {actionSummaries.map((item, index) => {
+                const color = DOMAIN_COLORS[item.domain];
+                const width =
+                  item.recommended > 0
+                    ? (item.completed / item.recommended) * 100
+                    : 0;
+                return (
+                  <View
+                    key={item.domain}
+                    style={[
+                      styles.domainRow,
+                      index === actionSummaries.length - 1 &&
+                        styles.domainRowLast,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.domainIcon,
+                        { backgroundColor: `${color}16` },
+                      ]}
+                    >
+                      <DomainIcon domain={item.domain} color={color} />
+                    </View>
+                    <Text style={styles.domainName}>
+                      {t(`today.domain_${item.domain}`)}
+                    </Text>
+                    <View style={styles.domainTrack}>
+                      <View
+                        style={[
+                          styles.domainFill,
+                          {
+                            width: `${Math.min(100, width)}%`,
+                            backgroundColor: color,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.domainValue}>
+                      {item.completed}/{item.recommended}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
 
-        <Text style={styles.sectionTitle}>
-          {t('weekly_summary.mother_and_baby')}
-        </Text>
-        <View style={styles.progressCard}>
-          <View style={styles.progressRow}>
-            <View
-              style={[
-                styles.progressIcon,
-                styles.progressIconMother,
-              ]}
-            >
-              <FontAwesomeIcon
-                icon={faHeart}
-                size={15}
-                color={theme.colors.orange600}
-              />
+        {hasSymptomLevels ? (
+          <>
+            <Text style={styles.sectionTitle}>
+              {t('weekly_summary.feeling_trend')}
+            </Text>
+            <View style={styles.insight}>
+              <View style={styles.insightIcon}>
+                <FontAwesomeIcon
+                  icon={faBrain}
+                  size={15}
+                  color="#70428F"
+                />
+              </View>
+              <View style={styles.insightCopy}>
+                <Text style={styles.insightTitle}>
+                  {t('weekly_summary.level_statistics')}
+                </Text>
+                <Text style={styles.insightText}>
+                  {summary.symptomTrend}
+                </Text>
+              </View>
             </View>
-            <View style={styles.progressCopy}>
-              <Text style={styles.progressTitle}>
-                {t('weekly_summary.mother_progress')}
-              </Text>
-              <Text style={styles.progressText}>
-                {summary.motherProgress}
+          </>
+        ) : null}
+
+        {hasRiskSummary ? (
+          <>
+            <Text style={styles.sectionTitle}>
+              {t('weekly_summary.environmental_health')}
+            </Text>
+            <View style={styles.progressCard}>
+              <View style={styles.riskHeader}>
+                <View
+                  style={[
+                    styles.progressIcon,
+                    styles.progressIconMother,
+                  ]}
+                >
+                  <FontAwesomeIcon
+                    icon={faShieldHeart}
+                    size={15}
+                    color={theme.colors.orange600}
+                  />
+                </View>
+                <View style={styles.riskHeaderCopy}>
+                  <Text style={styles.riskTitle}>
+                    {t('weekly_summary.risk_change_title')}
+                  </Text>
+                  <Text style={styles.riskOverview}>
+                    {t(
+                      `weekly_summary.risk_overview_${riskViewModel?.overview}`,
+                    )}
+                  </Text>
+                </View>
+              </View>
+
+              {riskViewModel && riskViewModel.changes.length > 0 ? (
+                <View style={styles.riskChangeList}>
+                  {riskViewModel.changes.map((change, index) => {
+                    const directionStyle =
+                      change.direction === 'lower'
+                        ? styles.riskChangeLower
+                        : change.direction === 'higher'
+                        ? styles.riskChangeHigher
+                        : styles.riskChangeStable;
+                    const directionColor =
+                      change.direction === 'lower'
+                        ? '#2E7D4A'
+                        : change.direction === 'higher'
+                        ? '#A83149'
+                        : theme.colors.textSecondary;
+
+                    return (
+                      <React.Fragment key={change.audience}>
+                        {index > 0 ? <View style={styles.riskRowDivider} /> : null}
+                        <View style={styles.riskChangeRow}>
+                          <View
+                            style={[
+                              styles.riskAudienceIcon,
+                              change.audience === 'mother'
+                                ? styles.riskAudienceIconMother
+                                : styles.riskAudienceIconChild,
+                            ]}
+                          >
+                            <FontAwesomeIcon
+                              icon={
+                                change.audience === 'mother'
+                                  ? faPersonPregnant
+                                  : faBaby
+                              }
+                              size={14}
+                              color={
+                                change.audience === 'mother'
+                                  ? '#B45309'
+                                  : '#287A6A'
+                              }
+                            />
+                          </View>
+                          <Text style={styles.riskAudienceLabel}>
+                            {t(
+                              change.audience === 'mother'
+                                ? 'weekly_summary.risk_mother'
+                                : 'weekly_summary.risk_child',
+                            )}
+                          </Text>
+                          <View style={styles.riskChangeValue}>
+                            <FontAwesomeIcon
+                              icon={
+                                change.direction === 'lower'
+                                  ? faArrowTrendDown
+                                  : change.direction === 'higher'
+                                  ? faArrowTrendUp
+                                  : faMinus
+                              }
+                              size={13}
+                              color={directionColor}
+                            />
+                            <Text
+                              style={[
+                                styles.riskChangeValueText,
+                                directionStyle,
+                              ]}
+                            >
+                              {t(
+                                `weekly_summary.risk_change_${change.direction}`,
+                                {
+                                  value: displayRiskPercent(
+                                    change.value,
+                                    locale,
+                                  ),
+                                },
+                              )}
+                            </Text>
+                          </View>
+                        </View>
+                      </React.Fragment>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              {riskViewModel?.completedCareReduction !== null &&
+              riskViewModel?.completedCareReduction !== undefined ? (
+                <View style={styles.riskCareImpact}>
+                  <View style={styles.riskCareImpactIcon}>
+                    <FontAwesomeIcon
+                      icon={faCheck}
+                      size={12}
+                      color="#2E7D4A"
+                    />
+                  </View>
+                  <Text style={styles.riskCareImpactText}>
+                    {t('weekly_summary.risk_care_reduction', {
+                      value: displayRiskPercent(
+                        riskViewModel.completedCareReduction,
+                        locale,
+                      ),
+                    })}
+                  </Text>
+                </View>
+              ) : riskViewModel?.hasCompletedCareImpact ? (
+                <View style={styles.riskCareImpact}>
+                  <View style={styles.riskCareImpactIcon}>
+                    <FontAwesomeIcon
+                      icon={faCheck}
+                      size={12}
+                      color="#2E7D4A"
+                    />
+                  </View>
+                  <Text style={styles.riskCareImpactText}>
+                    {t('weekly_summary.risk_care_included')}
+                  </Text>
+                </View>
+              ) : null}
+
+              {riskViewModel &&
+              riskViewModel.changes.length === 0 &&
+              riskViewModel.trackedFactorCount > 0 ? (
+                <View style={styles.riskFactorRow}>
+                  <FontAwesomeIcon
+                    icon={faCircleInfo}
+                    size={12}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={styles.riskFactorText}>
+                    {t('weekly_summary.risk_factors_included', {
+                      count: riskViewModel.trackedFactorCount,
+                    })}
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.riskDisclaimer}>
+                {t('weekly_summary.risk_disclaimer')}
               </Text>
             </View>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.progressRow}>
-            <View
-              style={[
-                styles.progressIcon,
-                styles.progressIconBaby,
-              ]}
-            >
-              <FontAwesomeIcon
-                icon={faBaby}
-                size={15}
-                color="#70428F"
-              />
-            </View>
-            <View style={styles.progressCopy}>
-              <Text style={styles.progressTitle}>
-                {t('weekly_summary.baby_progress')}
-              </Text>
-              <Text style={styles.progressText}>
-                {summary.babyProgress}
-              </Text>
-            </View>
-          </View>
-        </View>
+          </>
+        ) : null}
         <View style={styles.milestone}>
           <Text style={styles.milestoneLabel}>
             {t('weekly_summary.week_milestone', {

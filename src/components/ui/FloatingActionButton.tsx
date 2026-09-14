@@ -42,7 +42,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   const styles = useMemo(() => StyleSheet.create({
     fab: {
       position: 'absolute',
-      bottom: spacing('xl'),
+      bottom: spacing('lg'),
       right: spacing('lg'),
       width: FAB_SIZE,
       height: FAB_SIZE,

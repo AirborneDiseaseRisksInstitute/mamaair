@@ -77,7 +77,7 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingHorizontal: spacing('md'),
-      paddingTop: 24,
+      paddingTop: spacing('xl'),
       paddingBottom: spacing('md'),
       backgroundColor: '#fff',
       shadowColor: '#000',

@@ -9,12 +9,13 @@ import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/re
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-interface IntroStep10Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
+interface IntroStep10Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; showSkip?: boolean; }
 
-export const IntroStep10: React.FC<IntroStep10Props> = ({ onNext, onBack, onSkip }) => {
+export const IntroStep10: React.FC<IntroStep10Props> = ({ onNext, onBack, onSkip, showSkip = true }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const [selectedDiet, setSelectedDiet] = useState<string | null>(null);
+  const profile = useUserStore(state => state.profile);
+  const [selectedDiet, setSelectedDiet] = useState<string | null>(profile.diet);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
   const { setDiet } = useUserStore();
   const { diet_types } = useMetaChoices();
@@ -50,7 +51,7 @@ export const IntroStep10: React.FC<IntroStep10Props> = ({ onNext, onBack, onSkip
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable>
+          {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable> : null}
           <View style={styles.continueButtonWrapper}><Button title={t('common.continue')} onPress={handleNext} disabled={!selectedDiet} /></View>
         </View>
       </FixedButtonContainer>

@@ -9,6 +9,7 @@ import {
   Image,
   Pressable,
   Linking,
+  Alert,
 } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
@@ -16,6 +17,8 @@ import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { useTheme, spacing, radius } from '../theme';
 import { BackButton, UpgradeSubscription, BottomSheet, Button, BottomSheetOption, useToast } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { AuthService } from '../services/api/AuthService';
 import { scheduleReminders } from '../services/NotificationService';
 import { getDeviceTimezone, getTimezoneList } from '../utils/timezoneUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
@@ -25,23 +28,32 @@ import { useTranslation } from 'react-i18next';
 const notifThumb = require('../assets/images/notifThumb.png');
 const SHADOW_OFFSET_1 = 6;
 const SHADOW_OFFSET_2 = 12;
+// Temporary Premium scope gate. Flip to true when upgrade/subscription flows are ready.
+const PREMIUM_FLOWS_ENABLED = false;
 
 interface AppSettingsScreenProps {
   onBack?: () => void;
   onNavigateToNotificationTime?: () => void;
+  onAccountDeleted?: () => void;
 }
 
 const CARD_HEIGHT = vs(110);
 
-export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, onNavigateToNotificationTime }) => {
+export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
+  onBack,
+  onNavigateToNotificationTime,
+  onAccountDeleted,
+}) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { profile, setTimezone } = useUserStore();
+  const { logout } = useAuthStore();
   const [showUpgradeSubscription, setShowUpgradeSubscription] = useState(false);
   const [showNotifSheet, setShowNotifSheet] = useState(false);
   const [showTimezoneSheet, setShowTimezoneSheet] = useState(false);
   const [timezoneList, setTimezoneList] = useState<string[]>([]);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const currentTimezone = profile.timezone || getDeviceTimezone();
 
   useEffect(() => {
@@ -79,12 +91,46 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
     return `${pad(fh)}:${pad(fm)} - ${pad(th)}:${pad(tm)}`;
   };
 
+  const deleteAccount = async () => {
+    if (isDeletingAccount) return;
+
+    setIsDeletingAccount(true);
+    try {
+      await AuthService.deleteAccount();
+      logout();
+      onAccountDeleted?.();
+    } catch {
+      showToast({
+        type: 'error',
+        title: t('settings.delete_account_failed_title'),
+        message: t('settings.delete_account_failed_message'),
+      });
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      t('settings.delete_account_confirm_title'),
+      t('settings.delete_account_confirm_message'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('settings.delete_account_confirm_action'),
+          style: 'destructive',
+          onPress: deleteAccount,
+        },
+      ],
+    );
+  };
+
   const menuItems = [
     'notifications',
     'notification_time',
     'time_zone',
     // 'Appearance',
-    'manage_subscription',
+    ...(PREMIUM_FLOWS_ENABLED ? ['manage_subscription'] : []),
     // 'Manage account',
     'delete_account',
   ];
@@ -254,7 +300,7 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
                 style={styles.menuItem}
                 activeOpacity={0.7}
                 onPress={() => {
-                  if (item === 'manage_subscription') {
+                  if (PREMIUM_FLOWS_ENABLED && item === 'manage_subscription') {
                     setShowUpgradeSubscription(true);
                   } else if (item === 'notifications') {
                     setShowNotifSheet(true);
@@ -262,10 +308,13 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
                     setShowTimezoneSheet(true);
                   } else if (item === 'notification_time') {
                     onNavigateToNotificationTime?.();
+                  } else if (item === 'delete_account') {
+                    confirmDeleteAccount();
                   } else {
                     console.log(`${item} pressed`);
                   }
                 }}
+                disabled={item === 'delete_account' && isDeletingAccount}
               >
                 <Text
                   style={[
@@ -278,7 +327,9 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
                   ? `${t(`settings.${item}`)} (${currentTimezone})`
                   : item === 'notification_time'
                     ? `${t(`settings.${item}`)} (${formatNotifTime()})`
-                    : t(`settings.${item}`)}
+                    : item === 'delete_account' && isDeletingAccount
+                      ? t('settings.deleting_account')
+                      : t(`settings.${item}`)}
               </Text>
                 <FontAwesomeIcon
                   icon={faChevronRight as any}
@@ -293,13 +344,15 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({ onBack, on
         </View>
       </ScrollView>
 
-      <UpgradeSubscription
-        visible={showUpgradeSubscription}
-        onClose={() => setShowUpgradeSubscription(false)}
-        onUpgrade={() => {
-          // Handle upgrade action - can navigate to purchase flow later
-        }}
-      />
+      {PREMIUM_FLOWS_ENABLED ? (
+        <UpgradeSubscription
+          visible={showUpgradeSubscription}
+          onClose={() => setShowUpgradeSubscription(false)}
+          onUpgrade={() => {
+            // Handle upgrade action - can navigate to purchase flow later
+          }}
+        />
+      ) : null}
 
       <BottomSheet
         visible={showTimezoneSheet}

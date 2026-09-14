@@ -13,13 +13,15 @@ interface FixedButtonContainerProps {
   children: React.ReactNode;
   paddingTop?: number;
   paddingBottom?: number;
+  backgroundColor?: string;
   onLayout?: (event: LayoutChangeEvent) => void;
 }
 
-export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({ 
+export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
   children,
   paddingTop = spacing('md'),
   paddingBottom,
+  backgroundColor = 'rgba(255,255,255,0.9)',
   onLayout,
 }) => {
   const insets = useSafeAreaInsets();
@@ -28,7 +30,7 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
   useEffect(() => {
     const keyboardWillShowListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (event) => {
+      event => {
         const height = event.endCoordinates.height;
         // Move container up by keyboard height minus a small spacing
         Animated.timing(translateY, {
@@ -36,19 +38,19 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
           duration: event.duration || 250,
           useNativeDriver: true,
         }).start();
-      }
+      },
     );
 
     const keyboardWillHideListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      (event) => {
+      event => {
         // Move container back to original position
         Animated.timing(translateY, {
           toValue: 0,
           duration: event.duration || 250,
           useNativeDriver: true,
         }).start();
-      }
+      },
     );
 
     return () => {
@@ -57,9 +59,8 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
     };
   }, [translateY]);
 
-  const defaultPaddingBottom = paddingBottom !== undefined 
-    ? paddingBottom 
-    : spacing('lg') + insets.bottom;
+  const defaultPaddingBottom =
+    paddingBottom !== undefined ? paddingBottom : spacing('lg') + insets.bottom;
 
   return (
     <Animated.View
@@ -69,6 +70,7 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
         {
           paddingTop,
           paddingBottom: defaultPaddingBottom,
+          backgroundColor,
           transform: [{ translateY }],
         },
       ]}
@@ -85,6 +87,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: spacing('md'),
-    backgroundColor: 'rgba(255,255,255,0.9)',
   },
 });

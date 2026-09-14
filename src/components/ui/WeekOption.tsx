@@ -1,7 +1,6 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useTheme, spacing, radius } from '../../theme';
-import { fs } from '../../utils/responsive';
 
 interface WeekOptionProps {
   week: number;

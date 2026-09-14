@@ -13,6 +13,7 @@ import {
   faBrain,
   faCheck,
   faChevronRight,
+  faCircleInfo,
   faTimes,
   faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
@@ -21,16 +22,13 @@ import { SvgXml } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { BottomSheet } from '../ui';
 import { spacing, useTheme } from '../../theme';
-import {
-  BEHAVIOUR_SVG,
-  DIET_SVG,
-  RUNNING_SVG,
-} from '../../utils/svgIcons';
+import { BEHAVIOUR_SVG, DIET_SVG, RUNNING_SVG } from '../../utils/svgIcons';
 import type {
   DailyActionState,
   DailyActionDomain,
   DailyPlanAction,
   DailyPlanExperience,
+  TodayRecommendationItem,
 } from '../../types/recommendationExperience';
 
 interface ExploreMoreViewProps {
@@ -38,7 +36,7 @@ interface ExploreMoreViewProps {
   onChangeActionState: (
     action: DailyPlanAction,
     state: DailyActionState,
-  ) => void;
+  ) => void | Promise<boolean>;
 }
 
 const DOMAIN_ORDER: DailyActionDomain[] = [
@@ -46,7 +44,11 @@ const DOMAIN_ORDER: DailyActionDomain[] = [
   'diet',
   'activity',
   'behaviour',
+  // Service/treatment escalation is disabled for the current release.
+  // Restore this entry when the backend-supported experience is approved.
+  // 'service',
 ];
+const GUIDANCE_IN_MORE_FOR_TODAY_ENABLED = false;
 
 const DOMAIN_CONFIG: Record<
   DailyActionDomain,
@@ -75,6 +77,10 @@ const DOMAIN_CONFIG: Record<
     color: '#70428F',
     background: '#F8F2FC',
   },
+  service: {
+    color: '#48607A',
+    background: '#F3F7FA',
+  },
 };
 
 const DomainIcon: React.FC<{
@@ -86,7 +92,7 @@ const DomainIcon: React.FC<{
   }
   return (
     <FontAwesomeIcon
-      icon={faBrain}
+      icon={domain === 'wellbeing' ? faBrain : faCircleInfo}
       size={13}
       color={config.color}
     />
@@ -104,10 +110,13 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
   const [visible, setVisible] = useState(false);
 
   const additionalCount = DOMAIN_ORDER.reduce(
-    (total, item) =>
-      total + experience.additionalActions[item].length,
+    (total, item) => total + experience.additionalActions[item].length,
     0,
   );
+  const legacySheetGuidanceRecommendations = [
+    ...experience.importantGuidanceRecommendations.slice(1),
+    ...experience.guidanceRecommendations,
+  ];
   const populatedDomains = DOMAIN_ORDER.filter(
     domain => experience.additionalActions[domain].length > 0,
   );
@@ -259,16 +268,99 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
           fontSize: 11,
           lineHeight: 18,
         },
-        empty: {
-          paddingVertical: spacing('xl'),
+        recommendationSection: {
+          marginBottom: spacing('md'),
+        },
+        recommendationHeader: {
+          minHeight: 38,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing('sm'),
+          borderLeftWidth: 3,
+          borderLeftColor: theme.colors.orange500,
+          backgroundColor: '#FFF7EF',
+        },
+        recommendationHeaderIcon: {
+          width: 25,
+          height: 25,
+          borderRadius: 13,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing('xs'),
+          backgroundColor: '#FFFFFF',
+        },
+        recommendationHeaderText: {
+          flex: 1,
+          color: theme.colors.orange800,
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 12,
+        },
+        recommendationRow: {
+          paddingVertical: spacing('md'),
+          paddingHorizontal: spacing('sm'),
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.neutral200,
+        },
+        recommendationTitle: {
+          color: theme.colors.textPrimary,
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 13,
+          lineHeight: 19,
+        },
+        recommendationBody: {
+          marginTop: spacing('xs'),
           color: theme.colors.textSecondary,
           fontFamily: theme.typography.fontFamily.regular,
-          fontSize: 14,
-          textAlign: 'center',
+          fontSize: 11,
+          lineHeight: 18,
         },
       }),
     [height, insets.bottom, theme],
   );
+
+  const renderRecommendationSection = (
+    titleKey: string,
+    items: TodayRecommendationItem[],
+  ) => {
+    if (items.length === 0) return null;
+    return (
+      <View style={styles.recommendationSection}>
+        <View style={styles.recommendationHeader}>
+          <View style={styles.recommendationHeaderIcon}>
+            <FontAwesomeIcon
+              icon={faCircleInfo}
+              size={12}
+              color={theme.colors.orange700}
+            />
+          </View>
+          <Text style={styles.recommendationHeaderText}>{t(titleKey)}</Text>
+          <Text style={styles.domainCount}>
+            {t('today.recommendation_count', {
+              count: items.length,
+            })}
+          </Text>
+        </View>
+        {items.map(item => (
+          <View key={item.key} style={styles.recommendationRow}>
+            <Text style={styles.recommendationTitle}>{item.title}</Text>
+            {item.alert || item.message ? (
+              <Text style={styles.recommendationBody}>
+                {item.alert || item.message}
+              </Text>
+            ) : null}
+            {item.recommendationText.map(text => (
+              <Text
+                key={`${item.key}:${text.dimension}`}
+                style={styles.recommendationBody}
+              >
+                • {text.text}
+              </Text>
+            ))}
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   if (additionalCount === 0) return null;
 
@@ -281,10 +373,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
         })}
         accessibilityHint={t('today.opens_recommendations')}
         onPress={() => setVisible(true)}
-        style={({ pressed }) => [
-          styles.entry,
-          pressed && styles.entryPressed,
-        ]}
+        style={({ pressed }) => [styles.entry, pressed && styles.entryPressed]}
       >
         <LinearGradient
           pointerEvents="none"
@@ -300,7 +389,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
           color={theme.colors.orange700}
         />
         <Text numberOfLines={1} style={styles.entryText}>
-          {t('today.extra_ideas_count', {
+          {t('today.more_support_count', {
             count: additionalCount,
           })}
         </Text>
@@ -318,16 +407,11 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
       >
         <View
           accessibilityViewIsModal
-          accessibilityLabel={t(
-            'today.more_support_for_today',
-          )}
+          accessibilityLabel={t('today.more_support_for_today')}
           style={styles.sheet}
         >
           <View style={styles.sheetHeader}>
-            <Text
-              accessibilityRole="header"
-              style={styles.sheetTitle}
-            >
+            <Text accessibilityRole="header" style={styles.sheetTitle}>
               {t('today.more_support_for_today')}
             </Text>
             <Pressable
@@ -343,121 +427,106 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
               />
             </Pressable>
           </View>
-          <Text style={styles.sheetIntro}>
-            {t('today.optional_ideas_intro')}
-          </Text>
+          <Text style={styles.sheetIntro}>{t('today.more_actions_intro')}</Text>
           <ScrollView
             style={styles.list}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator
             nestedScrollEnabled
           >
-            {populatedDomains.length > 0 ? (
-              populatedDomains.map(domain => {
-                const config = DOMAIN_CONFIG[domain];
-                const actions =
-                  experience.additionalActions[domain];
-                return (
+            {/* Guidance used to share this sheet with additional actions.
+                Keep the presentation path disabled so the header count and
+                completion model describe actions only. */}
+            {GUIDANCE_IN_MORE_FOR_TODAY_ENABLED
+              ? renderRecommendationSection(
+                  'today.guidance_recommendations',
+                  legacySheetGuidanceRecommendations,
+                )
+              : null}
+            {GUIDANCE_IN_MORE_FOR_TODAY_ENABLED
+              ? renderRecommendationSection(
+                  'today.optional_support',
+                  experience.optionalSupportRecommendations,
+                )
+              : null}
+            {populatedDomains.map(domain => {
+              const config = DOMAIN_CONFIG[domain];
+              const actions = experience.additionalActions[domain];
+              return (
+                <View key={domain} style={styles.domainGroup}>
                   <View
-                    key={domain}
-                    style={styles.domainGroup}
+                    style={[
+                      styles.domainHeader,
+                      {
+                        backgroundColor: config.background,
+                        borderLeftColor: config.color,
+                      },
+                    ]}
                   >
+                    <View style={[styles.domainIcon, styles.domainIconSurface]}>
+                      <DomainIcon domain={domain} />
+                    </View>
+                    <Text style={[styles.domainName, { color: config.color }]}>
+                      {t(`today.domain_${domain}`)}
+                    </Text>
+                    <Text style={styles.domainCount}>
+                      {t('today.recommendation_count', {
+                        count: actions.length,
+                      })}
+                    </Text>
+                  </View>
+
+                  {actions.map((action, index) => (
                     <View
+                      key={action.key}
                       style={[
-                        styles.domainHeader,
-                        {
-                          backgroundColor: config.background,
-                          borderLeftColor: config.color,
-                        },
+                        styles.idea,
+                        index === actions.length - 1 && styles.ideaLast,
                       ]}
                     >
-                      <View
-                        style={[
-                          styles.domainIcon,
-                          styles.domainIconSurface,
-                        ]}
+                      <Pressable
+                        accessibilityRole="checkbox"
+                        accessibilityState={{
+                          checked: action.completed,
+                        }}
+                        accessibilityLabel={t(
+                          action.completed
+                            ? 'today.mark_not_complete'
+                            : 'today.complete_extra_action',
+                          { action: action.title },
+                        )}
+                        onPress={() =>
+                          onChangeActionState(
+                            action,
+                            action.completed ? 'pending' : 'completed',
+                          )
+                        }
+                        style={styles.completionButton}
                       >
-                        <DomainIcon domain={domain} />
-                      </View>
-                      <Text
-                        style={[
-                          styles.domainName,
-                          { color: config.color },
-                        ]}
-                      >
-                        {t(`today.domain_${domain}`)}
-                      </Text>
-                      <Text style={styles.domainCount}>
-                        {t('today.recommendation_count', {
-                          count: actions.length,
-                        })}
-                      </Text>
-                    </View>
-
-                    {actions.map((action, index) => (
-                      <View
-                        key={action.key}
-                        style={[
-                          styles.idea,
-                          index === actions.length - 1 &&
-                            styles.ideaLast,
-                        ]}
-                      >
-                        <Pressable
-                          accessibilityRole="checkbox"
-                          accessibilityState={{
-                            checked: action.completed,
-                          }}
-                          accessibilityLabel={t(
-                            action.completed
-                              ? 'today.mark_not_complete'
-                              : 'today.complete_extra_action',
-                            { action: action.title },
-                          )}
-                          onPress={() =>
-                            onChangeActionState(
-                              action,
-                              action.completed
-                                ? 'pending'
-                                : 'completed',
-                            )
-                          }
-                          style={styles.completionButton}
+                        <View
+                          style={[
+                            styles.completionIndicator,
+                            action.completed && styles.completionIndicatorDone,
+                          ]}
                         >
-                          <View
-                            style={[
-                              styles.completionIndicator,
-                              action.completed &&
-                                styles.completionIndicatorDone,
-                            ]}
-                          >
-                            {action.completed ? (
-                              <FontAwesomeIcon
-                                icon={faCheck}
-                                size={10}
-                                color="#FFFFFF"
-                              />
-                            ) : null}
-                          </View>
-                        </Pressable>
-                        <View style={styles.ideaCopy}>
-                          <Text style={styles.ideaTitle}>
-                            {action.title}
-                          </Text>
-                          <Text style={styles.ideaPurpose}>
-                            {action.purpose}
-                          </Text>
+                          {action.completed ? (
+                            <FontAwesomeIcon
+                              icon={faCheck}
+                              size={10}
+                              color="#FFFFFF"
+                            />
+                          ) : null}
                         </View>
+                      </Pressable>
+                      <View style={styles.ideaCopy}>
+                        <Text style={styles.ideaTitle}>{action.title}</Text>
+                        <Text style={styles.ideaPurpose}>{action.purpose}</Text>
                       </View>
-                    ))}
-                  </View>
-                );
-              })
-            ) : (
-              <Text style={styles.empty}>
-                {t('today.no_more_ideas')}
-              </Text>
-            )}
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
           </ScrollView>
         </View>
       </BottomSheet>

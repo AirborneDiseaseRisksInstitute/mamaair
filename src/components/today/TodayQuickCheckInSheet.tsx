@@ -17,7 +17,7 @@ import {
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
-import { BottomSheet } from '../ui';
+import { BottomSheet, useToast } from '../ui';
 import { radius, spacing, useTheme } from '../../theme';
 import type {
   FeelingCheckInExperience,
@@ -73,6 +73,7 @@ export const TodayQuickCheckInSheet: React.FC<
   const { t } = useTranslation();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
   const [selection, setSelection] =
     useState<FeelingCheckInSelection | null>(null);
   const [saving, setSaving] = useState(false);
@@ -320,17 +321,36 @@ export const TodayQuickCheckInSheet: React.FC<
         onClose();
         return;
       }
-      await submitFeelingCheckIn(
+      const result = await submitFeelingCheckIn(
         identity,
         date,
         experience,
         selection,
       );
+      if (result.symptomsPendingSync) {
+        showToast({
+          type: 'info',
+          title: t('feeling_checkin.offline_saved_title'),
+          message: t('feeling_checkin.offline_saved_message'),
+          duration: 4500,
+        });
+        AccessibilityInfo.announceForAccessibility(
+          t('feeling_checkin.offline_saved_message'),
+        );
+        onClose();
+        return;
+      }
       await onSaved();
       AccessibilityInfo.announceForAccessibility(
         t('today.checkin_saved_announcement'),
       );
       onClose();
+    } catch {
+      showToast({
+        type: 'error',
+        title: t('feeling_checkin.save_failed_title'),
+        message: t('feeling_checkin.save_failed_message'),
+      });
     } finally {
       setSaving(false);
     }

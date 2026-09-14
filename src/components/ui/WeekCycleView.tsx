@@ -1,14 +1,5 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, StyleSheet, Image, Text, Dimensions, TouchableOpacity } from 'react-native';
-import Animated, {
-  cancelAnimation,
-  Easing,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
 import Svg, { Circle, G, ForeignObject, Path, Defs, ClipPath, Mask, Rect, Pattern } from "react-native-svg";
 import { SvgXml } from 'react-native-svg';
 import { useTheme } from '../../theme';
@@ -66,8 +57,6 @@ const changeSvgColor = (svgXml: string, color: string): string => {
 const BORDER_WIDTH = 2;
 
 const TOTAL_DOTS = 11;
-const LIVE_PULSE_DURATION_MS = 2400;
-
 const waveViewBoxMatch = WAVE_BACKGROUND_SVG.match(/viewBox="([^"]*)"/);
 const WAVE_VIEW_BOX = waveViewBoxMatch
   ? waveViewBoxMatch[1].split(' ').map(Number)
@@ -407,36 +396,8 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
 
   const theme = useTheme();
   const { t } = useTranslation();
-  const reduceMotion = useReducedMotion();
-  const livePulseProgress = useSharedValue(0);
-  const liveHaloStyle = useAnimatedStyle(() => ({
-    opacity: 0.12 + livePulseProgress.value * 0.16,
-    transform: [{ scale: 1 + livePulseProgress.value * 0.025 }],
-  }));
   const screenWidth = Dimensions.get('window').width;
   const weekSectionMarginRight = reversed ? Math.round(screenWidth * 0.22) : 0;
-
-  useEffect(() => {
-    cancelAnimation(livePulseProgress);
-    livePulseProgress.value = 0;
-
-    if (!isActive || reduceMotion) {
-      return;
-    }
-
-    livePulseProgress.value = withRepeat(
-      withTiming(1, {
-        duration: LIVE_PULSE_DURATION_MS,
-        easing: Easing.inOut(Easing.ease),
-      }),
-      -1,
-      true,
-    );
-
-    return () => {
-      cancelAnimation(livePulseProgress);
-    };
-  }, [isActive, livePulseProgress, reduceMotion]);
 
   // Create map from circleIcons for fast access
   const iconMap = React.useMemo(() => {
@@ -796,13 +757,6 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
           
           {/* Main circle + dots */}
           <View style={styles.circleSection}>
-            {isActive && !reduceMotion && (
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.liveHalo, liveHaloStyle]}
-              />
-            )}
-            
             {/* SVG CIRCLE */}
             {renderCircleSvg()}
 
@@ -1123,15 +1077,6 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  liveHalo: {
-    position: 'absolute',
-    width: MAIN_CIRCLE_DIAMETER * 1.04,
-    height: MAIN_CIRCLE_DIAMETER * 1.04,
-    borderRadius: MAIN_CIRCLE_DIAMETER,
-    borderWidth: 3,
-    borderColor: '#FF8B3D',
-    backgroundColor: '#FFF1E8',
   },
   textSection: {
     paddingHorizontal: 16,

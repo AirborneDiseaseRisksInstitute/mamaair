@@ -10,6 +10,7 @@ export interface UserProfile {
   name: string | null;
   email: string | null;
   birthday: string | null; // ISO date string
+  expectedDueDate: string | null; // ISO date string
   height: number | null; // in cm
   weight: number | null; // in kg
   language: string | null;
@@ -47,6 +48,7 @@ interface UserStore {
   setName: (name: string) => void;
   setEmail: (email: string) => void;
   setBirthday: (birthday: Date | null) => void;
+  setExpectedDueDate: (expectedDueDate: Date | null) => void;
   setHeight: (height: number | null) => void;
   setWeight: (weight: number | null) => void;
   setLanguage: (language: string) => void;
@@ -77,6 +79,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     name: userStorage.getString('user_name') || null,
     email: userStorage.getString('user_email') || null,
     birthday: userStorage.getString('user_birthday') || null,
+    expectedDueDate: userStorage.getString('user_expected_due_date') || null,
     height: userStorage.getNumber('user_height') || null,
     weight: userStorage.getNumber('user_weight') || null,
     language: userStorage.getString('user_language') || null,
@@ -138,6 +141,17 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }
     set((state) => ({
       profile: { ...state.profile, birthday: dateString },
+    }));
+  },
+  setExpectedDueDate: (expectedDueDate) => {
+    const dateString = expectedDueDate ? formatLocalDate(expectedDueDate) : null;
+    if (dateString) {
+      userStorage.set('user_expected_due_date', dateString);
+    } else {
+      userStorage.remove('user_expected_due_date');
+    }
+    set((state) => ({
+      profile: { ...state.profile, expectedDueDate: dateString },
     }));
   },
   setHeight: (height) => {
@@ -328,6 +342,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (profileData.name) userStorage.set('user_name', profileData.name);
     if (profileData.email) userStorage.set('user_email', profileData.email);
     if (profileData.birthday) userStorage.set('user_birthday', profileData.birthday);
+    if (profileData.expectedDueDate) userStorage.set('user_expected_due_date', profileData.expectedDueDate);
     if (profileData.height) userStorage.set('user_height', profileData.height);
     if (profileData.weight) userStorage.set('user_weight', profileData.weight);
     if (profileData.language) userStorage.set('user_language', profileData.language);
@@ -366,6 +381,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     userStorage.remove('user_name');
     userStorage.remove('user_email');
     userStorage.remove('user_birthday');
+    userStorage.remove('user_expected_due_date');
     userStorage.remove('user_height');
     userStorage.remove('user_weight');
     userStorage.remove('user_language');
@@ -398,6 +414,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         name: null,
         email: null,
         birthday: null,
+        expectedDueDate: null,
         height: null,
         weight: null,
         language: null,

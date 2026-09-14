@@ -6,7 +6,7 @@ import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import { useTheme, spacing, radius } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, BottomSheet, BottomSheetOption } from '../../../components/ui';
 import { useUserStore } from '../../../store/useUserStore';
-import { ms, fs, s, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { ms, s, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');

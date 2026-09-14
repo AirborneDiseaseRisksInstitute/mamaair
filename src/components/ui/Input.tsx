@@ -16,7 +16,7 @@ import {
   faTimesCircle 
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing, radius } from '../../theme';
-import { ms, fs, vs } from '../../utils/responsive';
+import { ms, vs } from '../../utils/responsive';
 import { useTranslation } from 'react-i18next';
 
 export interface InputRef {
@@ -250,7 +250,7 @@ const InputComponent = forwardRef<InputRef, InputProps>(({
           {/* Password Toggle Icon */}
           {isPassword && (
             <TouchableOpacity
-              style={styles.iconContainer}
+              style={[styles.iconContainer, styles.passwordIconContainer]}
               onPress={() => setShowPassword(!showPassword)}
               activeOpacity={0.7}
             >
@@ -314,6 +314,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     minWidth: ms(32),
+  },
+  passwordIconContainer: {
+    paddingRight: spacing('md'),
   },
   errorText: {
     fontSize: 12,

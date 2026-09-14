@@ -283,6 +283,8 @@ export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
     }
   };
 
+  // Keep initialScrollIndex as the only initial positioning mechanism.
+  // Pairing it with contentOffset can leave adjacent Android/Fabric lists unpainted.
   return (
     <View
       {...restContainerProps}
@@ -332,7 +334,6 @@ export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
             offset: itemHeight * index,
           })}
           initialScrollIndex={selectedIndex}
-          contentOffset={{ x: 0, y: selectedIndex * itemHeight }}
           initialNumToRender={initialRenderCount}
           maxToRenderPerBatch={initialRenderCount}
           removeClippedSubviews={false}

@@ -11,6 +11,7 @@ const emptyCounts = (): DailyTaskDomainCounts => ({
   activity: 0,
   behaviour: 0,
   wellbeing: 0,
+  service: 0,
 });
 
 const sampleActionDomains = new Map<string, DailyActionDomain>(

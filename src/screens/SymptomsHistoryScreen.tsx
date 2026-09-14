@@ -19,12 +19,10 @@ import {
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import {
   faArrowLeft,
-  faBaby,
   faCheck,
   faChevronLeft,
   faChevronRight,
   faCircleExclamation,
-  faPersonPregnant,
   faRotateRight,
   faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
@@ -34,8 +32,9 @@ import { useUserStore } from '../store/useUserStore';
 import {
   loadSymptomHistoryDay,
   type SymptomHistoryDay,
-  type SymptomHistoryEntry,
+  type SymptomHistoryClassEntry,
 } from '../services/recommendationExperience/SymptomHistoryRepository';
+import type { SymptomClassKey } from '../services/recommendationExperience/SymptomClassTrendRepository';
 import type { RecommendationExperienceIdentity } from '../types/recommendationExperience';
 import { formatLocalDate } from '../utils/dateUtils';
 
@@ -59,6 +58,13 @@ const displayDate = (value: string, locale: string): string =>
     month: 'short',
     year: 'numeric',
   });
+
+const CLASS_LABEL_KEYS: Record<SymptomClassKey, string> = {
+  class1: 'mother.emergency',
+  class2: 'mother.systemic',
+  class3: 'mother.fetal',
+  class4: 'mother.lifestyle',
+};
 
 export const SymptomsHistoryScreen: React.FC<
   SymptomsHistoryScreenProps
@@ -248,6 +254,9 @@ export const SymptomsHistoryScreen: React.FC<
           fontSize: 14,
           lineHeight: 20,
         },
+        classCopy: {
+          flex: 1,
+        },
         empty: {
           alignItems: 'center',
           paddingHorizontal: spacing('lg'),
@@ -303,41 +312,103 @@ export const SymptomsHistoryScreen: React.FC<
     [insets.bottom, insets.top, theme],
   );
 
-  const renderSection = (
-    title: string,
-    entries: SymptomHistoryEntry[],
-    kind: 'physical' | 'warning' | 'baby',
+  /*
+   * Exact event history is disabled for this release. Keep the old
+   * list renderer here so it can be restored if policy changes.
+   *
+   * const renderSection = (
+   *   title: string,
+   *   entries: SymptomHistoryEntry[],
+   *   kind: 'physical' | 'warning' | 'baby',
+   * ) => {
+   *   if (entries.length === 0) return null;
+   *   const icon =
+   *     kind === 'warning'
+   *       ? faTriangleExclamation
+   *       : kind === 'baby'
+   *       ? faBaby
+   *       : faPersonPregnant;
+   *   const color =
+   *     kind === 'warning'
+   *       ? '#B93838'
+   *       : kind === 'baby'
+   *       ? '#7A4B96'
+   *       : theme.colors.orange500;
+   *
+   *   return (
+   *     <View style={styles.section}>
+   *       <View style={styles.sectionHeader}>
+   *         <View
+   *           style={[
+   *             styles.sectionIcon,
+   *             kind === 'warning' && styles.warningIcon,
+   *             kind === 'baby' && styles.babyIcon,
+   *           ]}
+   *         >
+   *           <FontAwesomeIcon icon={icon} size={14} color={color} />
+   *         </View>
+   *         <Text style={styles.sectionTitle}>{title}</Text>
+   *         <Text style={styles.count}>
+   *           {t('symptoms.recorded_count', {
+   *             count: entries.length,
+   *           })}
+   *         </Text>
+   *       </View>
+   *       <View style={styles.list}>
+   *         {entries.map((entry, index) => (
+   *           <View
+   *             key={entry.key}
+   *             style={[
+   *               styles.row,
+   *               index > 0 && styles.rowBorder,
+   *             ]}
+   *           >
+   *             <View
+   *               style={[
+   *                 styles.check,
+   *                 kind === 'warning' && styles.warningCheck,
+   *               ]}
+   *             >
+   *               <FontAwesomeIcon
+   *                 icon={faCheck}
+   *                 size={10}
+   *                 color="#FFFFFF"
+   *               />
+   *             </View>
+   *             <Text style={styles.name}>{entry.name}</Text>
+   *           </View>
+   *         ))}
+   *       </View>
+   *     </View>
+   *   );
+   * };
+   */
+
+  const renderClassSection = (
+    entries: SymptomHistoryClassEntry[],
   ) => {
     if (entries.length === 0) return null;
-    const icon =
-      kind === 'warning'
-        ? faTriangleExclamation
-        : kind === 'baby'
-        ? faBaby
-        : faPersonPregnant;
-    const color =
-      kind === 'warning'
-        ? '#B93838'
-        : kind === 'baby'
-        ? '#7A4B96'
-        : theme.colors.orange500;
+    const totalCount = entries.reduce(
+      (sum, entry) => sum + entry.total,
+      0,
+    );
 
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <View
-            style={[
-              styles.sectionIcon,
-              kind === 'warning' && styles.warningIcon,
-              kind === 'baby' && styles.babyIcon,
-            ]}
-          >
-            <FontAwesomeIcon icon={icon} size={14} color={color} />
+          <View style={[styles.sectionIcon, styles.warningIcon]}>
+            <FontAwesomeIcon
+              icon={faTriangleExclamation}
+              size={14}
+              color="#B93838"
+            />
           </View>
-          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={styles.sectionTitle}>
+            {t('symptoms.symptom_classes')}
+          </Text>
           <Text style={styles.count}>
             {t('symptoms.recorded_count', {
-              count: entries.length,
+              count: totalCount,
             })}
           </Text>
         </View>
@@ -353,7 +424,7 @@ export const SymptomsHistoryScreen: React.FC<
               <View
                 style={[
                   styles.check,
-                  kind === 'warning' && styles.warningCheck,
+                  styles.warningCheck,
                 ]}
               >
                 <FontAwesomeIcon
@@ -362,7 +433,21 @@ export const SymptomsHistoryScreen: React.FC<
                   color="#FFFFFF"
                 />
               </View>
-              <Text style={styles.name}>{entry.name}</Text>
+              <View style={styles.classCopy}>
+                <Text style={styles.name}>
+                  {t('symptoms.class_level', {
+                    level: entry.level,
+                    label: t(CLASS_LABEL_KEYS[entry.key]),
+                  })}
+                </Text>
+                <Text style={styles.onlineNoticeText}>
+                  {t('symptoms.class_count_summary', {
+                    count: entry.total,
+                    mother: entry.mommyCount,
+                    baby: entry.babyCount,
+                  })}
+                </Text>
+              </View>
             </View>
           ))}
         </View>
@@ -370,10 +455,10 @@ export const SymptomsHistoryScreen: React.FC<
     );
   };
 
-  const total =
-    (day?.physical.length ?? 0) +
-    (day?.warning.length ?? 0) +
-    (day?.baby.length ?? 0);
+  const total = day?.classes.reduce(
+    (sum, entry) => sum + entry.total,
+    0,
+  ) ?? 0;
   return (
     <SafeAreaView edges={[]} style={styles.container}>
       <View style={styles.header}>
@@ -464,21 +549,28 @@ export const SymptomsHistoryScreen: React.FC<
         >
           {total > 0 ? (
             <>
-              {renderSection(
-                t('symptoms.physical_symptoms'),
-                day.physical,
-                'physical',
-              )}
-              {renderSection(
-                t('symptoms.warning_signs'),
-                day.warning,
-                'warning',
-              )}
-              {renderSection(
-                t('symptoms.baby_symptoms'),
-                day.baby,
-                'baby',
-              )}
+              {renderClassSection(day.classes)}
+              {/*
+                Exact symptom sections are disabled for this release.
+
+                <>
+                  {renderSection(
+                    t('symptoms.physical_symptoms'),
+                    day.physical,
+                    'physical',
+                  )}
+                  {renderSection(
+                    t('symptoms.warning_signs'),
+                    day.warning,
+                    'warning',
+                  )}
+                  {renderSection(
+                    t('symptoms.baby_symptoms'),
+                    day.baby,
+                    'baby',
+                  )}
+                </>
+              */}
             </>
           ) : (
             <View style={styles.empty}>

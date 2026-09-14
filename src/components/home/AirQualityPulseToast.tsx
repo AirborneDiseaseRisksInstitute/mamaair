@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
+  BackHandler,
   Image,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,6 +21,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTranslation } from 'react-i18next';
+import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
+import { faLocationDot } from '@fortawesome/free-solid-svg-icons';
 import type { AirExposure } from '../../services/api/ExposureService';
 import { useTheme } from '../../theme';
 import { resolveAirQualityLevel } from '../../utils/airQualitySummary';
@@ -26,9 +30,11 @@ import type { AirQualityLevel } from '../../utils/airQualitySummary';
 import { resolveAirQualityPulseLayout } from '../../utils/airQualityPulseLayout';
 
 interface AirQualityPulseToastProps {
-  airExposure: AirExposure;
+  airExposure?: AirExposure | null;
   animate: boolean;
   onDismiss: () => void;
+  locationPermissionRequired?: boolean;
+  onRequestLocation?: () => void;
 }
 
 interface Tone {
@@ -83,20 +89,33 @@ const TONES: Record<AirQualityLevel, Tone> = {
   },
 };
 
+const LOCATION_PERMISSION_TONE: Tone = {
+  accent: '#E76500',
+  accentDark: '#7A3600',
+  gradient: ['#FFFFFF', '#FFF1E6', '#FFFBF7'],
+  shadow: '#C95300',
+};
+
 const appLogoSource = require('../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png');
 
 export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
   airExposure,
   animate,
   onDismiss,
+  locationPermissionRequired = false,
+  onRequestLocation,
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const openProgress = useSharedValue(0);
   const dismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const level = resolveAirQualityLevel(airExposure);
-  const tone = TONES[level];
+  const level = airExposure
+    ? resolveAirQualityLevel(airExposure)
+    : 'unavailable';
+  const tone = locationPermissionRequired
+    ? LOCATION_PERMISSION_TONE
+    : TONES[level];
   const {
     circleTop,
     contentTopPadding,
@@ -178,11 +197,36 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
     dismissTimeout.current = setTimeout(onDismiss, animate ? 290 : 0);
   }, [animate, onDismiss, openProgress]);
 
-  const statusLabel = t(`home_air_pulse.status_${level}`);
-  const guidanceLabel = t(`home_air_pulse.guidance_${level}`);
-  const detailsHint = t('home_air_pulse.details_hint');
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        handleDismiss();
+        return true;
+      },
+    );
+
+    return () => subscription.remove();
+  }, [handleDismiss]);
+
+  const statusLabel = locationPermissionRequired
+    ? t('location.permission_title')
+    : t(`home_air_pulse.status_${level}`);
+  const guidanceLabel = locationPermissionRequired
+    ? t('location.permission_body')
+    : t(`home_air_pulse.guidance_${level}`);
+  const detailsHint = locationPermissionRequired
+    ? t('location.permission_settings_hint')
+    : t('home_air_pulse.details_hint');
+  const actionLabel = locationPermissionRequired
+    ? t('location.enable')
+    : t('home_air_pulse.acknowledge');
   const accessibilityLabel = [
-    t('home_air_pulse.eyebrow'),
+    t(
+      locationPermissionRequired
+        ? 'location.permission_eyebrow'
+        : 'home_air_pulse.eyebrow',
+    ),
     statusLabel,
     guidanceLabel,
     detailsHint,
@@ -190,10 +234,18 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
 
   return (
     <View style={styles.host} accessibilityLiveRegion="polite">
-      <Animated.View
-        style={[styles.backdrop, backdropAnimatedStyle]}
-        pointerEvents="none"
-      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('home_air_pulse.close')}
+        onPress={handleDismiss}
+        style={StyleSheet.absoluteFill}
+        testID="air-quality-pulse-backdrop"
+      >
+        <Animated.View
+          style={[styles.backdrop, backdropAnimatedStyle]}
+          pointerEvents="none"
+        />
+      </Pressable>
 
       <Animated.View
         accessible
@@ -254,7 +306,11 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
           >
             <View style={[styles.liveDot, { backgroundColor: tone.accent }]} />
             <Text style={styles.eyebrow} allowFontScaling={false}>
-              {t('home_air_pulse.eyebrow')}
+              {t(
+                locationPermissionRequired
+                  ? 'location.permission_eyebrow'
+                  : 'home_air_pulse.eyebrow',
+              )}
             </Text>
           </View>
           <Text
@@ -297,21 +353,33 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
                 maxWidth: contentWidth,
               },
             ]}
-            onPress={handleDismiss}
+            onPress={
+              locationPermissionRequired
+                ? onRequestLocation
+                : handleDismiss
+            }
             accessibilityRole="button"
-            accessibilityLabel={t('home_air_pulse.acknowledge')}
+            accessibilityLabel={actionLabel}
             activeOpacity={0.8}
           >
             <View style={styles.checkCircle}>
-              <Text
-                style={[styles.check, { color: tone.accent }]}
-                allowFontScaling={false}
-              >
-                ✓
-              </Text>
+              {locationPermissionRequired ? (
+                <FontAwesomeIcon
+                  icon={faLocationDot as any}
+                  size={12}
+                  color={tone.accent}
+                />
+              ) : (
+                <Text
+                  style={[styles.check, { color: tone.accent }]}
+                  allowFontScaling={false}
+                >
+                  ✓
+                </Text>
+              )}
             </View>
             <Text style={styles.acknowledgeText} allowFontScaling={false}>
-              {t('home_air_pulse.acknowledge')}
+              {actionLabel}
             </Text>
           </TouchableOpacity>
         </Animated.View>

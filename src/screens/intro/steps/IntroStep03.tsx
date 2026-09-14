@@ -6,7 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faCalendar, faUser } from '@fortawesome/free-solid-svg-icons';
 import { useUserStore } from '../../../store/useUserStore';
 import { useTranslation } from 'react-i18next';
-import { ms, fs, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { ms, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const SHADOW_OFFSET = 4;
 const INPUT_HEIGHT = vs(54);

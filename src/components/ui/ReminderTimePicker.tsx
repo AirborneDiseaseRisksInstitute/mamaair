@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from '@react-native-community/datetimepicker';
 import { BottomSheet } from './BottomSheet';
-import { ReliableWheelPicker } from './ReliableWheelPicker';
 import { useTheme, spacing, radius } from '../../theme';
 import { useTranslation } from 'react-i18next';
 
@@ -15,19 +23,16 @@ interface ReminderTimePickerProps {
   onRemove?: () => void;
 }
 
-const hourOptions = Array.from({ length: 24 }, (_, i) => i);
-const hourLabels = hourOptions.map(h => (h < 10 ? `0${h}` : `${h}`));
-
-export const TIME_PICKER_MINUTE_VALUES = Array.from(
-  { length: 60 },
-  (_, minute) => minute,
-);
-export const TIME_PICKER_MINUTE_LABELS = TIME_PICKER_MINUTE_VALUES.map(minute =>
-  minute.toString().padStart(2, '0'),
-);
-
-const ITEM_HEIGHT = 56;
-const VISIBLE_REST = 2;
+const createTimeValue = (hour: number, minute: number): Date => {
+  const value = new Date();
+  value.setHours(
+    Math.min(23, Math.max(0, Math.trunc(hour))),
+    Math.min(59, Math.max(0, Math.trunc(minute))),
+    0,
+    0,
+  );
+  return value;
+};
 
 export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
   visible,
@@ -40,51 +45,87 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
+  const [selectedTime, setSelectedTime] = useState(() =>
+    createTimeValue(initialHour, initialMinute),
+  );
+  const androidPickerOpenRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  const onConfirmRef = useRef(onConfirm);
+  const onRemoveRef = useRef(onRemove);
 
-  const getInitialHourIndex = useCallback(() => {
-    const index = hourOptions.indexOf(initialHour);
-    return index >= 0 ? index : 8;
-  }, [initialHour]);
-
-  const getInitialMinuteIndex = useCallback(() => {
-    const index = TIME_PICKER_MINUTE_VALUES.indexOf(initialMinute);
-    return index >= 0 ? index : 0;
-  }, [initialMinute]);
-
-  const [hourIndex, setHourIndex] = useState(getInitialHourIndex());
-  const [minuteIndex, setMinuteIndex] = useState(getInitialMinuteIndex());
-
-  const handleConfirm = () => {
-    onConfirm(hourOptions[hourIndex], TIME_PICKER_MINUTE_VALUES[minuteIndex]);
-    onClose();
-  };
-
-  const handleCancel = () => {
-    onClose();
-  };
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    onConfirmRef.current = onConfirm;
+    onRemoveRef.current = onRemove;
+  }, [onClose, onConfirm, onRemove]);
 
   useEffect(() => {
     if (visible) {
-      setHourIndex(getInitialHourIndex());
-      setMinuteIndex(getInitialMinuteIndex());
+      setSelectedTime(createTimeValue(initialHour, initialMinute));
     }
-  }, [visible, getInitialHourIndex, getInitialMinuteIndex]);
+  }, [initialHour, initialMinute, visible]);
 
-  const scaleFunction = useCallback((x: number) => {
-    return Math.max(0.45, 1 - x * 0.22);
-  }, []);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
 
-  const opacityFunction = useCallback((x: number) => {
-    return Math.max(0.3, 1 - x * 0.28);
-  }, []);
+    if (!visible) {
+      if (androidPickerOpenRef.current) {
+        DateTimePickerAndroid.dismiss('time').catch(() => {});
+        androidPickerOpenRef.current = false;
+      }
+      return;
+    }
 
-  const itemTextStyle = {
-    fontFamily: theme.typography.fontFamily.bold,
-    fontSize: 28,
-    color: theme.colors.orange500,
+    if (androidPickerOpenRef.current) return;
+    androidPickerOpenRef.current = true;
+
+    const closePicker = () => {
+      androidPickerOpenRef.current = false;
+      onCloseRef.current();
+    };
+
+    DateTimePickerAndroid.open({
+      value: createTimeValue(initialHour, initialMinute),
+      mode: 'time',
+      display: 'clock',
+      positiveButton: {
+        label: t('common.ok'),
+        textColor: theme.colors.orange500,
+      },
+      negativeButton: {
+        label: t('common.cancel'),
+        textColor: theme.colors.textSecondary,
+      },
+      ...(onRemoveRef.current
+        ? {
+            neutralButton: {
+              label: t('common.remove'),
+              textColor: '#B93838',
+            },
+            onNeutralButtonPress: () => {
+              androidPickerOpenRef.current = false;
+              onRemoveRef.current?.();
+              onCloseRef.current();
+            },
+          }
+        : {}),
+      onValueChange: (_, value) => {
+        androidPickerOpenRef.current = false;
+        onConfirmRef.current(value.getHours(), value.getMinutes());
+        onCloseRef.current();
+      },
+      onDismiss: closePicker,
+      onError: closePicker,
+    });
+  }, [initialHour, initialMinute, t, theme, visible]);
+
+  if (Platform.OS === 'android') return null;
+
+  const handleConfirm = () => {
+    onConfirm(selectedTime.getHours(), selectedTime.getMinutes());
+    onClose();
   };
 
-  const pickerHeight = ITEM_HEIGHT * (VISIBLE_REST * 2 + 1);
   const title = taskTitle
     ? t('picker.set_reminder_for', { task: taskTitle })
     : t('picker.set_reminder_time');
@@ -92,68 +133,23 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
   return (
     <BottomSheet visible={visible} onClose={onClose} showHandle>
       <View style={styles.container}>
-        <View style={styles.titleContainer}>
-          <Text
-            style={[styles.title, { color: theme.colors.textPrimary }]}
-            allowFontScaling={false}
-          >
-            {title}
-          </Text>
-        </View>
+        <Text
+          style={[styles.title, { color: theme.colors.textPrimary }]}
+          allowFontScaling={false}
+        >
+          {title}
+        </Text>
 
-        <View style={styles.labelsContainer}>
-          <View style={styles.labelWrapper}>
-            <Text
-              style={[styles.label, { color: theme.colors.textPrimary }]}
-              allowFontScaling={false}
-            >
-              {t('common.hour')}
-            </Text>
-          </View>
-          <View style={styles.labelWrapper}>
-            <Text
-              style={[styles.label, { color: theme.colors.textPrimary }]}
-              allowFontScaling={false}
-            >
-              {t('common.minute')}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.pickersContainer, { height: pickerHeight }]}>
-          <View style={styles.pickersAnimatedContainer}>
-            <View style={styles.pickerWrapper}>
-              <ReliableWheelPicker
-                selectedIndex={hourIndex}
-                options={hourLabels}
-                onChange={setHourIndex}
-                visibleRest={VISIBLE_REST}
-                itemHeight={ITEM_HEIGHT}
-                itemTextStyle={itemTextStyle}
-                selectedIndicatorStyle={styles.selectedIndicator}
-                containerStyle={styles.wheelContainer}
-                scaleFunction={scaleFunction}
-                opacityFunction={opacityFunction}
-                decelerationRate="fast"
-              />
-            </View>
-            <View style={styles.pickerWrapper}>
-              <ReliableWheelPicker
-                selectedIndex={minuteIndex}
-                options={TIME_PICKER_MINUTE_LABELS}
-                onChange={setMinuteIndex}
-                visibleRest={VISIBLE_REST}
-                itemHeight={ITEM_HEIGHT}
-                itemTextStyle={itemTextStyle}
-                selectedIndicatorStyle={styles.selectedIndicator}
-                containerStyle={styles.wheelContainer}
-                scaleFunction={scaleFunction}
-                opacityFunction={opacityFunction}
-                decelerationRate="fast"
-              />
-            </View>
-          </View>
-        </View>
+        <DateTimePicker
+          value={selectedTime}
+          mode="time"
+          display="spinner"
+          minuteInterval={5}
+          onValueChange={(_, value) => setSelectedTime(value)}
+          textColor={theme.colors.textPrimary}
+          themeVariant="light"
+          style={styles.iosPicker}
+        />
 
         <View style={styles.actionsContainer}>
           {onRemove ? (
@@ -169,7 +165,7 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
           ) : null}
           <TouchableOpacity
             style={styles.cancelButton}
-            onPress={handleCancel}
+            onPress={onClose}
             activeOpacity={0.7}
           >
             <Text
@@ -198,9 +194,7 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
               <Text
                 style={[
                   styles.okButtonText,
-                  {
-                    fontFamily: theme.typography.fontFamily.extraBold,
-                  },
+                  { fontFamily: theme.typography.fontFamily.extraBold },
                 ]}
                 allowFontScaling={false}
               >
@@ -217,58 +211,24 @@ export const ReminderTimePicker: React.FC<ReminderTimePickerProps> = ({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
+    paddingHorizontal: spacing('md'),
     paddingBottom: spacing('lg'),
   },
-  titleContainer: {
-    paddingHorizontal: spacing('md'),
+  title: {
     paddingTop: spacing('sm'),
     paddingBottom: spacing('md'),
-  },
-  title: {
     fontSize: 20,
     fontFamily: 'MPLUSRounded1c-Bold',
   },
-  labelsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing('md'),
-    marginBottom: spacing('sm'),
-  },
-  labelWrapper: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  label: {
-    fontSize: 16,
-    fontFamily: 'MPLUSRounded1c-Bold',
-  },
-  pickersContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing('md'),
-    overflow: 'hidden',
-  },
-  pickersAnimatedContainer: {
-    flexDirection: 'row',
-    width: '100%',
-  },
-  pickerWrapper: {
-    flex: 1,
-    paddingHorizontal: spacing('xs'),
-    minWidth: 0,
-  },
-  wheelContainer: {
-    width: '100%',
-  },
-  selectedIndicator: {
-    backgroundColor: 'transparent',
-    borderTopWidth: 0,
-    borderBottomWidth: 0,
+  iosPicker: {
+    alignSelf: 'stretch',
+    height: 216,
   },
   actionsContainer: {
     flexDirection: 'row',
-    paddingHorizontal: spacing('md'),
     alignItems: 'center',
     gap: spacing('md'),
-    paddingTop: spacing('lg'),
+    paddingTop: spacing('md'),
   },
   removeButton: {
     flex: 1,

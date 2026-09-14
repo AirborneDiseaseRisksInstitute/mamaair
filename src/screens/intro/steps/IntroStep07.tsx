@@ -9,14 +9,14 @@ import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/re
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-interface IntroStep07Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
+interface IntroStep07Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; showSkip?: boolean; }
 
 type VentilationType = 'good' | 'moderate' | 'poor';
 
-export const IntroStep07: React.FC<IntroStep07Props> = ({ onNext, onBack, onSkip }) => {
+export const IntroStep07: React.FC<IntroStep07Props> = ({ onNext, onBack, onSkip, showSkip = true }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { setCookingMethod, setVentilation } = useUserStore();
+  const { setCookingMethod, setVentilation, profile } = useUserStore();
   const { cooking_methods } = useMetaChoices();
 
   const VENTILATION_OPTIONS: Array<{ id: VentilationType; label: string }> = [
@@ -24,8 +24,8 @@ export const IntroStep07: React.FC<IntroStep07Props> = ({ onNext, onBack, onSkip
     { id: 'moderate', label: t('profile.ventilation_moderate') },
     { id: 'poor', label: t('profile.ventilation_poor') },
   ];
-  const [selectedCookingMethod, setSelectedCookingMethod] = useState<string | null>(null);
-  const [selectedVentilation, setSelectedVentilation] = useState<VentilationType | null>(null);
+  const [selectedCookingMethod, setSelectedCookingMethod] = useState<string | null>(profile.cookingMethod);
+  const [selectedVentilation, setSelectedVentilation] = useState<VentilationType | null>(profile.ventilation as VentilationType | null);
   const [ventilationSheetVisible, setVentilationSheetVisible] = useState(false);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
 
@@ -77,9 +77,9 @@ export const IntroStep07: React.FC<IntroStep07Props> = ({ onNext, onBack, onSkip
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}>
+          {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}>
             <Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text>
-          </Pressable>
+          </Pressable> : null}
           <View style={styles.continueButtonWrapper}>
             <Button title={t('common.continue')} onPress={handleNext} disabled={!isFormValid} />
           </View>

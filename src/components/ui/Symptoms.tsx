@@ -18,25 +18,33 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing } from '../../theme';
 import { Button } from './Button';
-import { WellbeingService, type WellbeingCatalogItem } from '../../services/api/WellbeingService';
+import {
+  WellbeingService,
+  type WellbeingCatalogItem,
+} from '../../services/api/WellbeingService';
 import { useTranslation } from 'react-i18next';
 
-// Fallback options used when API catalog is unavailable
-const FALLBACK_MOODS: WellbeingCatalogItem[] = [
-  { id: 1, name: 'Feel sick', emoji: '🤢' },
-  { id: 2, name: 'Distressed', emoji: '😖' },
-  { id: 3, name: 'Nervous', emoji: '😰' },
-  { id: 4, name: 'Nauseous', emoji: '🤮' },
-];
-
-const FALLBACK_FEELINGS: WellbeingCatalogItem[] = [
-  { id: 1, name: 'Everything is fine', emoji: '💪🏾' },
-  { id: 2, name: 'Poor Sleep', emoji: '🙍🏾' },
-  { id: 3, name: 'Headache', emoji: '🙎🏾' },
-  { id: 4, name: 'Back Pain', emoji: '😣' },
-  { id: 5, name: 'Fatigue', emoji: '😴' },
-  { id: 6, name: 'Nausea', emoji: '🤢' },
-];
+/*
+ * Local fallback catalog items are disabled for this release. Backend
+ * symptoms/feelings remain the source of truth, and mood selections are not
+ * persisted to the backend.
+ *
+ * const FALLBACK_MOODS: WellbeingCatalogItem[] = [
+ *   { id: 1, name: 'Feel sick', emoji: '🤢' },
+ *   { id: 2, name: 'Distressed', emoji: '😖' },
+ *   { id: 3, name: 'Nervous', emoji: '😰' },
+ *   { id: 4, name: 'Nauseous', emoji: '🤮' },
+ * ];
+ *
+ * const FALLBACK_FEELINGS: WellbeingCatalogItem[] = [
+ *   { id: 1, name: 'Everything is fine', emoji: '💪🏾' },
+ *   { id: 2, name: 'Poor Sleep', emoji: '🙍🏾' },
+ *   { id: 3, name: 'Headache', emoji: '🙎🏾' },
+ *   { id: 4, name: 'Back Pain', emoji: '😣' },
+ *   { id: 5, name: 'Fatigue', emoji: '😴' },
+ *   { id: 6, name: 'Nausea', emoji: '🤢' },
+ * ];
+ */
 
 const WATER_QUICK_AMOUNTS = [100, 250, 500];
 
@@ -66,8 +74,8 @@ export const Symptoms: React.FC<SymptomsProps> = ({
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const [moods, setMoods] = useState<WellbeingCatalogItem[]>(FALLBACK_MOODS);
-  const [feelings, setFeelings] = useState<WellbeingCatalogItem[]>(FALLBACK_FEELINGS);
+  const [moods, setMoods] = useState<WellbeingCatalogItem[]>([]);
+  const [feelings, setFeelings] = useState<WellbeingCatalogItem[]>([]);
   const [selectedMoodIds, setSelectedMoodIds] = useState<number[]>(initialMoodIds);
   const [selectedFeelingIds, setSelectedFeelingIds] = useState<number[]>(initialFeelingIds);
   const [waterIncrement, setWaterIncrement] = useState(0);
@@ -79,7 +87,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({
         if (catalog.feelings?.length) setFeelings(catalog.feelings);
       })
       .catch(() => {
-        // keep fallback options
+        // Keep catalog empty; do not invent local catalog IDs.
       });
   }, []);
 
@@ -105,9 +113,10 @@ export const Symptoms: React.FC<SymptomsProps> = ({
   };
 
   const handleApply = () => {
+    const feelingIds = new Set(feelings.map(item => item.id));
     onApply?.({
-      mood_ids: selectedMoodIds,
-      feeling_ids: selectedFeelingIds,
+      mood_ids: [],
+      feeling_ids: selectedFeelingIds.filter(id => feelingIds.has(id)),
       water_amount: waterIncrement,
     });
     onClose();

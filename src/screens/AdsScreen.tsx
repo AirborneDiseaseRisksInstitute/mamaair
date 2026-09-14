@@ -11,14 +11,19 @@ import {
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faTimes } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
+import { AdPlacement, resolveAdImage } from '../data/ads';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface AdsScreenProps {
   onClose?: () => void;
+  placement?: AdPlacement;
 }
 
-export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
+export const AdsScreen: React.FC<AdsScreenProps> = ({
+  onClose,
+  placement = 'standalone',
+}) => {
   const { t } = useTranslation();
   const [timeLeft, setTimeLeft] = useState(3);
   const [canClose, setCanClose] = useState(false);
@@ -36,7 +41,7 @@ export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
     return () => clearInterval(timer);
   }, [timeLeft, onClose]);
 
-  const drugImage = require('../assets/ads/drug.png');
+  const adImage = resolveAdImage(placement);
 
   const handleClose = () => {
     if (canClose || timeLeft === 0) {
@@ -48,7 +53,7 @@ export const AdsScreen: React.FC<AdsScreenProps> = ({ onClose }) => {
     <SafeAreaView style={styles.container}>
       {/* Background Image - Full Screen */}
       <Image
-        source={drugImage}
+        source={adImage}
         style={styles.image}
         resizeMode="cover"
       />

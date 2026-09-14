@@ -1,4 +1,5 @@
 export type RecommendationCapability =
+  | 'dailyPlan'
   | 'mommySymptoms'
   | 'wellbeing'
   | 'dailyCheckIn'
@@ -47,8 +48,16 @@ export interface FeelingCheckInSelection {
 export type BackendWriteStatus =
   | 'notAttempted'
   | 'saved'
+  | 'pending'
   | 'failed'
   | 'skipped';
+
+export interface PendingMommySymptomSelection {
+  date: string;
+  symptomIds: number[];
+  recordedAt: string;
+  updatedAt: string;
+}
 
 export interface FeelingCheckInWriteStatus {
   mommySymptoms: BackendWriteStatus;
@@ -60,6 +69,7 @@ export interface FeelingCheckInRecord extends FeelingCheckInSelection {
   date: string;
   recordedAt: string;
   updatedAt: string;
+  scope?: 'full' | 'symptoms';
   waterDailyTotalMl?: number;
   writeStatus: FeelingCheckInWriteStatus;
 }
@@ -89,21 +99,66 @@ export interface RecommendationExperienceIdentity {
   email?: string | null;
 }
 
+export type PlanProfileStep =
+  | 'IntroStep03'
+  | 'IntroStep05'
+  | 'IntroStep05Timezone'
+  | 'IntroStep11'
+  | 'IntroStep06'
+  | 'IntroStep07'
+  | 'IntroStep08'
+  | 'IntroStep09'
+  | 'IntroStep10'
+  | 'IntroStep10Pregnancy';
+
+export interface PlanInputReadiness {
+  ready: boolean;
+  profileReady: boolean;
+  checkInReady: boolean;
+  missingProfileSteps: PlanProfileStep[];
+}
+
 export interface FeelingCheckInSubmitResult {
   record: FeelingCheckInRecord;
   savedRemotely: boolean;
   partiallySaved: boolean;
+  symptomsPendingSync: boolean;
 }
 
-export type DailyActionDomain = 'diet' | 'activity' | 'behaviour' | 'wellbeing';
+export type BackendDailyPlanDomain =
+  | 'nutrition'
+  | 'activity'
+  | 'behavior'
+  | 'mental'
+  | 'service';
+
+export type BackendDailyPlanCompletionState =
+  | 'not_done'
+  | 'completed'
+  | 'skipped';
+
+export type DailyActionDomain =
+  | 'diet'
+  | 'activity'
+  | 'behaviour'
+  | 'wellbeing'
+  | 'service';
 
 export type DailyActionSource =
+  | 'apiDailyPlan'
   | 'apiDailyTask'
   | 'apiRecommendation'
   | 'localFallback'
   | 'sample';
 
-export type DailyActionState = 'pending' | 'planned' | 'completed';
+export type DailyActionState = 'pending' | 'planned' | 'completed' | 'skipped';
+
+export type DailyActionRiskImpactSource = 'backendAction' | 'allocatedSummary';
+
+export interface DailyActionRiskImpact {
+  value: number;
+  source: DailyActionRiskImpactSource;
+}
 
 export type DailyActionBackendReference =
   | {
@@ -116,18 +171,65 @@ export type DailyActionBackendReference =
       ruleId: string;
       ruleVersion: number;
       dimension: string;
+    }
+  | {
+      kind: 'dailyPlanAction';
+      actionId: string;
+      bucket: 'primary' | 'additional' | 'support';
     };
 
 export interface DailyPlanAction {
   key: string;
   domain: DailyActionDomain;
+  backendDomain?: BackendDailyPlanDomain;
+  backendCompletionState?: BackendDailyPlanCompletionState;
   title: string;
-  purpose: string;
-  priority: number;
+  purpose?: string;
+  priority?: number;
+  timingLabel?: string;
+  durationMinutes?: number;
+  durationLabel?: string;
+  contextLabel?: string;
   source: DailyActionSource;
   state: DailyActionState;
   completed: boolean;
+  riskImpact?: DailyActionRiskImpact;
   backendReference?: DailyActionBackendReference;
+}
+
+export type TodayRecommendationPlacement =
+  | 'medicalAttention'
+  | 'importantGuidance'
+  | 'guidance'
+  | 'optionalSupport';
+
+export type TodayRecommendationDimension =
+  | 'diet'
+  | 'activity'
+  | 'behaviour'
+  | 'wellbeing';
+
+export interface TodayRecommendationText {
+  dimension: TodayRecommendationDimension;
+  text: string;
+}
+
+export interface TodayRecommendationItem {
+  key: string;
+  placement: TodayRecommendationPlacement;
+  id: string;
+  ruleId: string;
+  ruleVersion: number;
+  severity: string;
+  category: string;
+  priority: number;
+  title: string;
+  alert?: string;
+  message?: string;
+  expiresAt?: string;
+  engineVersion?: string;
+  sources: string[];
+  recommendationText: TodayRecommendationText[];
 }
 
 export type DailyPlanAdditionalActions = Record<
@@ -135,18 +237,47 @@ export type DailyPlanAdditionalActions = Record<
   DailyPlanAction[]
 >;
 
+export type DailyPlanRiskImpactSource = 'summaryRisksDelta' | 'backendAction';
+
+export interface DailyPlanRiskImpact {
+  totalValue: number;
+  source: DailyPlanRiskImpactSource;
+  missingBackendActionValues: boolean;
+}
+
 export interface DailyPlanExperience {
   date: string;
+  timezone?: string;
+  source?: 'dailyPlanApi' | 'adviceApi' | 'unifiedApi' | 'legacy';
+  riskImpact?: DailyPlanRiskImpact;
   primaryActions: DailyPlanAction[];
   additionalActions: DailyPlanAdditionalActions;
+  supportActions: DailyPlanAction[];
   backendCompletedTaskCodes: string[];
+  medicalAttention: TodayRecommendationItem[];
+  importantGuidanceRecommendations: TodayRecommendationItem[];
+  guidanceRecommendations: TodayRecommendationItem[];
+  optionalSupportRecommendations: TodayRecommendationItem[];
 }
 
 export interface DailyActionCompletionRecord {
   state: DailyActionState;
   completed: boolean;
   domain?: DailyActionDomain;
-  kind?: 'primary' | 'extra';
+  kind?: 'primary' | 'extra' | 'support';
+  riskImpactValue?: number;
+  updatedAt: string;
+}
+
+export interface EnvironmentalRiskReading {
+  predicted: number;
+  afterSelfCare: number;
+}
+
+export interface EnvironmentalRiskObservation {
+  date: string;
+  mother?: EnvironmentalRiskReading;
+  baby?: EnvironmentalRiskReading;
   updatedAt: string;
 }
 
@@ -234,6 +365,28 @@ export interface WeeklySummaryDay {
   domains: Record<DailyActionDomain, boolean>;
 }
 
+export type WeeklyActionSummaryDomain = Exclude<DailyActionDomain, 'service'>;
+
+export interface WeeklyDomainActionSummary {
+  domain: WeeklyActionSummaryDomain;
+  recommended: number;
+  completed: number;
+}
+
+export interface WeeklySymptomLevelSummary {
+  level: 1 | 2 | 3 | 4;
+  total: number;
+  mommyCount: number;
+  babyCount: number;
+}
+
+export interface WeeklyRiskSummary {
+  identifiedRisks: string[];
+  completedActionImpact: number;
+  motherRiskDelta?: number;
+  babyRiskDelta?: number;
+}
+
 export interface WeeklySummaryExperience {
   dataMode: 'recorded' | 'careContext';
   week: number;
@@ -250,6 +403,9 @@ export interface WeeklySummaryExperience {
   sleepNights: number;
   streakDays: number;
   domainParticipation: Record<DailyActionDomain, number>;
+  actionSummary: Record<WeeklyActionSummaryDomain, WeeklyDomainActionSummary>;
+  symptomLevels: WeeklySymptomLevelSummary[];
+  riskSummary: WeeklyRiskSummary | null;
   symptomTrend: string;
   motherProgress: string;
   babyProgress: string;
@@ -258,7 +414,10 @@ export interface WeeklySummaryExperience {
   nextWeek: WeeklySummaryNextWeek | null;
 }
 
-export type WeeklyBadgeDomain = Exclude<DailyActionDomain, 'wellbeing'>;
+export type WeeklyBadgeDomain = Exclude<
+  DailyActionDomain,
+  'wellbeing' | 'service'
+>;
 
 export interface WeeklyBadge {
   domain: WeeklyBadgeDomain;

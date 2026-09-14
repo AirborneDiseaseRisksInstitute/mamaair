@@ -9,8 +9,10 @@ import type {
   DailyActionCompletionRecord,
   DailyActionState,
   DailyMomentRecord,
+  EnvironmentalRiskObservation,
   FeelingCheckInRecord,
   FocusBoostRecord,
+  PendingMommySymptomSelection,
   PresentationDayRecord,
   PresentedDailyActionsRecord,
   RecommendationExperienceIdentity,
@@ -43,6 +45,8 @@ interface PersistedRecommendationExperienceState {
   streakFreezes: Record<string, StreakFreezeRecord>;
   weeklyCheckpoints: Record<string, WeeklyCheckpointRecord>;
   shareHistory: WeeklyShareRecord[];
+  pendingMommySymptomSelections: Record<string, PendingMommySymptomSelection>;
+  environmentalRiskObservations: Record<string, EnvironmentalRiskObservation>;
 }
 
 interface RecommendationExperienceStore {
@@ -62,6 +66,8 @@ interface RecommendationExperienceStore {
   streakFreezes: Record<string, StreakFreezeRecord>;
   weeklyCheckpoints: Record<string, WeeklyCheckpointRecord>;
   shareHistory: WeeklyShareRecord[];
+  pendingMommySymptomSelections: Record<string, PendingMommySymptomSelection>;
+  environmentalRiskObservations: Record<string, EnvironmentalRiskObservation>;
   ensureOwner: (identity: RecommendationExperienceIdentity) => void;
   getCheckIn: (date: string) => FeelingCheckInRecord | null;
   saveCheckIn: (record: FeelingCheckInRecord) => void;
@@ -73,29 +79,23 @@ interface RecommendationExperienceStore {
     date: string,
     actionKey: string,
     state: DailyActionState,
-    details?: Pick<DailyActionCompletionRecord, 'domain' | 'kind'>,
+    details?: Pick<
+      DailyActionCompletionRecord,
+      'domain' | 'kind' | 'riskImpactValue'
+    >,
   ) => void;
   setActionCompleted: (
     date: string,
     actionKey: string,
     completed: boolean,
   ) => void;
-  getReminder: (
-    date: string,
-    actionKey: string,
-  ) => ActionReminderRecord | null;
+  getReminder: (date: string, actionKey: string) => ActionReminderRecord | null;
   saveReminder: (record: ActionReminderRecord) => void;
   removeReminder: (date: string, actionKey: string) => void;
-  getRestTimer: (
-    date: string,
-    actionKey: string,
-  ) => RestTimerRecord | null;
+  getRestTimer: (date: string, actionKey: string) => RestTimerRecord | null;
   saveRestTimer: (record: RestTimerRecord) => void;
   removeRestTimer: (date: string, actionKey: string) => void;
-  getDailyMoment: (
-    date: string,
-    key: string,
-  ) => DailyMomentRecord | null;
+  getDailyMoment: (date: string, key: string) => DailyMomentRecord | null;
   saveDailyMoment: (record: DailyMomentRecord) => void;
   removeDailyMoment: (date: string, key: string) => void;
   hasCelebratedDailyWin: (date: string) => boolean;
@@ -107,12 +107,20 @@ interface RecommendationExperienceStore {
   saveFocusBoost: (record: FocusBoostRecord) => void;
   getStreakFreeze: (weekKey: string) => StreakFreezeRecord | null;
   saveStreakFreeze: (record: StreakFreezeRecord) => void;
-  getWeeklyCheckpoint: (
-    weekKey: string,
-  ) => WeeklyCheckpointRecord | null;
+  getWeeklyCheckpoint: (weekKey: string) => WeeklyCheckpointRecord | null;
   saveWeeklyCheckpoint: (record: WeeklyCheckpointRecord) => void;
   markWeeklyCeremonySeen: (weekKey: string) => void;
   saveShareRecord: (record: WeeklyShareRecord) => void;
+  savePendingMommySymptomSelection: (
+    record: PendingMommySymptomSelection,
+  ) => void;
+  removePendingMommySymptomSelection: (
+    date: string,
+    expectedUpdatedAt?: string,
+  ) => void;
+  saveEnvironmentalRiskObservation: (
+    record: EnvironmentalRiskObservation,
+  ) => void;
 }
 
 export const recommendationExperienceStorage = createMMKV({
@@ -139,6 +147,8 @@ const emptyPersistedState = (): PersistedRecommendationExperienceState => ({
   streakFreezes: {},
   weeklyCheckpoints: {},
   shareHistory: [],
+  pendingMommySymptomSelections: {},
+  environmentalRiskObservations: {},
 });
 
 const readPersistedState = (
@@ -156,22 +166,19 @@ const readPersistedState = (
       return emptyPersistedState();
     }
     const actionCompletions = Object.fromEntries(
-      Object.entries(parsed.actionCompletions ?? {}).map(
-        ([date, records]) => [
-          date,
-          Object.fromEntries(
-            Object.entries(records).map(([actionKey, record]) => [
-              actionKey,
-              {
-                ...record,
-                state:
-                  record.state ??
-                  (record.completed ? 'completed' : 'pending'),
-              },
-            ]),
-          ),
-        ],
-      ),
+      Object.entries(parsed.actionCompletions ?? {}).map(([date, records]) => [
+        date,
+        Object.fromEntries(
+          Object.entries(records).map(([actionKey, record]) => [
+            actionKey,
+            {
+              ...record,
+              state:
+                record.state ?? (record.completed ? 'completed' : 'pending'),
+            },
+          ]),
+        ),
+      ]),
     );
     return {
       ...parsed,
@@ -186,6 +193,8 @@ const readPersistedState = (
       streakFreezes: parsed.streakFreezes ?? {},
       weeklyCheckpoints: parsed.weeklyCheckpoints ?? {},
       shareHistory: parsed.shareHistory ?? [],
+      pendingMommySymptomSelections: parsed.pendingMommySymptomSelections ?? {},
+      environmentalRiskObservations: parsed.environmentalRiskObservations ?? {},
     };
   } catch {
     return emptyPersistedState();
@@ -283,13 +292,16 @@ const stateFromStore = (
   streakFreezes: state.streakFreezes,
   weeklyCheckpoints: state.weeklyCheckpoints,
   shareHistory: state.shareHistory,
+  pendingMommySymptomSelections: state.pendingMommySymptomSelections,
+  environmentalRiskObservations: state.environmentalRiskObservations,
 });
 
 const applyDevelopmentReset = (): void => {
   if (!__DEV__) return;
 
-  const appliedToken =
-    recommendationExperienceStorage.getNumber(DEV_RESET_APPLIED_KEY);
+  const appliedToken = recommendationExperienceStorage.getNumber(
+    DEV_RESET_APPLIED_KEY,
+  );
   if (appliedToken === DEV_RECOMMENDATION_EXPERIENCE_RESET_TOKEN) return;
 
   recommendationExperienceStorage.clearAll();
@@ -323,7 +335,11 @@ export const useRecommendationExperienceStore =
     streakFreezes: initialPersistedState.streakFreezes,
     weeklyCheckpoints: initialPersistedState.weeklyCheckpoints,
     shareHistory: initialPersistedState.shareHistory,
-    ensureOwner: (identity) => {
+    pendingMommySymptomSelections:
+      initialPersistedState.pendingMommySymptomSelections,
+    environmentalRiskObservations:
+      initialPersistedState.environmentalRiskObservations,
+    ensureOwner: identity => {
       const nextOwner = resolveOwnerNamespace(identity);
       const previousOwner = get().owner;
       if (previousOwner.key === nextOwner.key) return;
@@ -336,10 +352,7 @@ export const useRecommendationExperienceStore =
       if (shouldMigrateOwnerState(previousOwner, nextOwner)) {
         const migratedState: PersistedRecommendationExperienceState = {
           version: RECOMMENDATION_EXPERIENCE_STORAGE_VERSION,
-          checkIns: mergeCheckIns(
-            nextState.checkIns,
-            previousState.checkIns,
-          ),
+          checkIns: mergeCheckIns(nextState.checkIns, previousState.checkIns),
           actionCompletions: mergeActionCompletions(
             nextState.actionCompletions,
             previousState.actionCompletions,
@@ -391,6 +404,14 @@ export const useRecommendationExperienceStore =
                   item.initiatedAt === record.initiatedAt,
               ) === index,
           ),
+          pendingMommySymptomSelections: mergePresentationDays(
+            nextState.pendingMommySymptomSelections,
+            previousState.pendingMommySymptomSelections,
+          ),
+          environmentalRiskObservations: mergePresentationDays(
+            nextState.environmentalRiskObservations,
+            previousState.environmentalRiskObservations,
+          ),
         };
         writePersistedState(nextOwner, migratedState);
         recommendationExperienceStorage.remove(dataKey(previousOwner));
@@ -408,6 +429,10 @@ export const useRecommendationExperienceStore =
           streakFreezes: migratedState.streakFreezes,
           weeklyCheckpoints: migratedState.weeklyCheckpoints,
           shareHistory: migratedState.shareHistory,
+          pendingMommySymptomSelections:
+            migratedState.pendingMommySymptomSelections,
+          environmentalRiskObservations:
+            migratedState.environmentalRiskObservations,
         });
         return;
       }
@@ -426,10 +451,12 @@ export const useRecommendationExperienceStore =
         streakFreezes: nextState.streakFreezes,
         weeklyCheckpoints: nextState.weeklyCheckpoints,
         shareHistory: nextState.shareHistory,
+        pendingMommySymptomSelections: nextState.pendingMommySymptomSelections,
+        environmentalRiskObservations: nextState.environmentalRiskObservations,
       });
     },
-    getCheckIn: (date) => get().checkIns[date] ?? null,
-    saveCheckIn: (record) => {
+    getCheckIn: date => get().checkIns[date] ?? null,
+    saveCheckIn: record => {
       const nextCheckIns = {
         ...get().checkIns,
         [record.date]: record,
@@ -528,8 +555,7 @@ export const useRecommendationExperienceStore =
       });
       set({ restTimers });
     },
-    getDailyMoment: (date, key) =>
-      get().dailyMoments[date]?.[key] ?? null,
+    getDailyMoment: (date, key) => get().dailyMoments[date]?.[key] ?? null,
     saveDailyMoment: record => {
       const dailyMoments = {
         ...get().dailyMoments,
@@ -557,8 +583,7 @@ export const useRecommendationExperienceStore =
       });
       set({ dailyMoments });
     },
-    hasCelebratedDailyWin: date =>
-      Boolean(get().celebratedDates[date]),
+    hasCelebratedDailyWin: date => Boolean(get().celebratedDates[date]),
     markDailyWinCelebrated: date => {
       const celebratedDates = {
         ...get().celebratedDates,
@@ -570,8 +595,7 @@ export const useRecommendationExperienceStore =
       });
       set({ celebratedDates });
     },
-    getPresentationDay: date =>
-      get().presentationDays[date] ?? null,
+    getPresentationDay: date => get().presentationDays[date] ?? null,
     savePresentationDay: record => {
       const presentationDays = {
         ...get().presentationDays,
@@ -606,8 +630,7 @@ export const useRecommendationExperienceStore =
       });
       set({ focusBoosts });
     },
-    getStreakFreeze: weekKey =>
-      get().streakFreezes[weekKey] ?? null,
+    getStreakFreeze: weekKey => get().streakFreezes[weekKey] ?? null,
     saveStreakFreeze: record => {
       const streakFreezes = {
         ...get().streakFreezes,
@@ -619,8 +642,7 @@ export const useRecommendationExperienceStore =
       });
       set({ streakFreezes });
     },
-    getWeeklyCheckpoint: weekKey =>
-      get().weeklyCheckpoints[weekKey] ?? null,
+    getWeeklyCheckpoint: weekKey => get().weeklyCheckpoints[weekKey] ?? null,
     saveWeeklyCheckpoint: record => {
       const weeklyCheckpoints = {
         ...get().weeklyCheckpoints,
@@ -647,5 +669,51 @@ export const useRecommendationExperienceStore =
         shareHistory,
       });
       set({ shareHistory });
+    },
+    savePendingMommySymptomSelection: record => {
+      const pendingMommySymptomSelections = {
+        ...get().pendingMommySymptomSelections,
+        [record.date]: record,
+      };
+      writePersistedState(get().owner, {
+        ...stateFromStore(get()),
+        pendingMommySymptomSelections,
+      });
+      set({ pendingMommySymptomSelections });
+    },
+    removePendingMommySymptomSelection: (date, expectedUpdatedAt) => {
+      const current = get().pendingMommySymptomSelections[date];
+      if (
+        !current ||
+        (expectedUpdatedAt && current.updatedAt !== expectedUpdatedAt)
+      ) {
+        return;
+      }
+      const pendingMommySymptomSelections = {
+        ...get().pendingMommySymptomSelections,
+      };
+      delete pendingMommySymptomSelections[date];
+      writePersistedState(get().owner, {
+        ...stateFromStore(get()),
+        pendingMommySymptomSelections,
+      });
+      set({ pendingMommySymptomSelections });
+    },
+    saveEnvironmentalRiskObservation: record => {
+      const existing = get().environmentalRiskObservations[record.date];
+      const environmentalRiskObservations = {
+        ...get().environmentalRiskObservations,
+        [record.date]: {
+          ...existing,
+          ...record,
+          mother: record.mother ?? existing?.mother,
+          baby: record.baby ?? existing?.baby,
+        },
+      };
+      writePersistedState(get().owner, {
+        ...stateFromStore(get()),
+        environmentalRiskObservations,
+      });
+      set({ environmentalRiskObservations });
     },
   }));

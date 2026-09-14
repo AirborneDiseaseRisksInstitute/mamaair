@@ -1,5 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing, radius } from '../../theme';
 import { ms, fs } from '../../utils/responsive';
@@ -33,7 +42,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [toast, setToast] = useState<ToastOptions & { id: number } | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(30)).current;
-  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextIdRef = useRef(1);
 
   const hide = useCallback(() => {
@@ -119,12 +128,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const type = toast.type ?? 'info';
 
     // Subtle, input-like 3D style variants
-    const variantStyles =
-      type === 'success'
-        ? styles.success
-        : type === 'error'
-        ? styles.error
-        : styles.info;
+    const variantStyles = getVariantStyles(theme)[type];
 
     const titleText =
       toast.title ??
@@ -222,8 +226,19 @@ const getStyles = (theme: any, bottomInset: number) =>
     touchArea: {
       width: ms(16),
     },
+  });
 
-    // Variants with subtle coloring – not full red backgrounds
+type ToastVariantStyles = {
+  container: ViewStyle;
+  accentBar: ViewStyle;
+  title: TextStyle;
+  message: TextStyle;
+};
+
+const getVariantStyles = (
+  theme: any,
+): Record<ToastType, ToastVariantStyles> => ({
+    // Variants with subtle coloring, not full red backgrounds.
     success: {
       container: {
         backgroundColor: theme.colors.background,
@@ -273,5 +288,4 @@ const getStyles = (theme: any, bottomInset: number) =>
       },
     },
   });
-
 

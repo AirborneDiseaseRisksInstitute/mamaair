@@ -60,6 +60,7 @@ import {
   type SummaryResponse,
 } from '../services/api/SummaryService';
 import { DEV_LOCAL_SESSION } from '../config/dev';
+import { HEALTHCARE_SERVICE_REQUESTS_ENABLED } from '../config/recommendationExperience';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEALTH_CARD_PADDING = 16 * 2;
@@ -68,6 +69,19 @@ const HEALTH_CARD_WIDTH =
 const HEALTH_CARD_HEIGHT = HEALTH_CARD_WIDTH * 0.75; // Increased to 0.75 to ensure button stays inside
 const HEALTH_ICON_SIZE = HEALTH_CARD_WIDTH * 0.2;
 const HEALTH_NOTCH_DEPTH = HEALTH_ICON_SIZE * 0.7;
+const formatProfileDate = (
+  value: string | null,
+  locale: string,
+): string | null => {
+  if (!value) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day).toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+};
 
 interface UserProfileScreenProps {
   onBack?: () => void;
@@ -170,20 +184,25 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     );
   };
 
-  // Calculate expected due date from pregnancyWeek recorded during registration
+  // Prefer the user-edited EDD. Fall back to the original week-based estimate
+  // until the profile API exposes a documented EDD field.
   const calculatedDueDate = useMemo(() => {
+    const storedDueDate = formatProfileDate(profile.expectedDueDate, locale);
+    if (storedDueDate) return storedDueDate;
+
     if (!profile.pregnancyWeek || !profile.pregnancyWeekSetDate) return null;
     const setDate = new Date(profile.pregnancyWeekSetDate);
     const weeksRemaining = 40 - profile.pregnancyWeek;
     const due = new Date(
       setDate.getTime() + weeksRemaining * 7 * 24 * 60 * 60 * 1000,
     );
-    return due.toLocaleDateString(locale, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  }, [locale, profile.pregnancyWeek, profile.pregnancyWeekSetDate]);
+    return formatProfileDate(formatLocalDate(due), locale);
+  }, [
+    locale,
+    profile.expectedDueDate,
+    profile.pregnancyWeek,
+    profile.pregnancyWeekSetDate,
+  ]);
 
   const currentPregnancyWeek =
     getCurrentPregnancyWeek(
@@ -1300,30 +1319,33 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity
-              style={styles.menuItem}
-              activeOpacity={0.7}
-              onPress={() => setIsHealthServiceSheetVisible(true)}
-            >
-              <View style={styles.menuIcon}>
-                <FontAwesomeIcon
-                  icon={faHospital as any}
-                  size={20}
-                  color={theme.colors.textPrimary}
-                />
-              </View>
-              <Text style={styles.menuText} allowFontScaling={false}>
-                {t('profile.menu_healthcare')}
-              </Text>
-              <FontAwesomeIcon
-                icon={faChevronRight as any}
-                size={14}
-                color={theme.colors.textSecondary}
-                style={styles.menuChevron}
-              />
-            </TouchableOpacity>
-
-            <View style={styles.menuDivider} />
+            {HEALTHCARE_SERVICE_REQUESTS_ENABLED ? (
+              <>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  activeOpacity={0.7}
+                  onPress={() => setIsHealthServiceSheetVisible(true)}
+                >
+                  <View style={styles.menuIcon}>
+                    <FontAwesomeIcon
+                      icon={faHospital as any}
+                      size={20}
+                      color={theme.colors.textPrimary}
+                    />
+                  </View>
+                  <Text style={styles.menuText} allowFontScaling={false}>
+                    {t('profile.menu_healthcare')}
+                  </Text>
+                  <FontAwesomeIcon
+                    icon={faChevronRight as any}
+                    size={14}
+                    color={theme.colors.textSecondary}
+                    style={styles.menuChevron}
+                  />
+                </TouchableOpacity>
+                <View style={styles.menuDivider} />
+              </>
+            ) : null}
 
             <TouchableOpacity
               style={styles.menuItem}
@@ -1968,6 +1990,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           onRequestClose={() => {}}
         >
           <AdsScreen
+            placement="profile-to-baby-twin"
             onClose={() => {
               setShowBabyTwinAds(false);
               onNavigateToBabyTwin?.();

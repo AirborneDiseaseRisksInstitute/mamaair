@@ -46,10 +46,24 @@ const summary: WeeklySummaryExperience = {
     activity: 3,
     behaviour: 2,
     wellbeing: 5,
+    service: 0,
   },
-  symptomTrend: 'No new symptoms were recorded this week.',
-  motherProgress: 'You kept a steady care rhythm.',
-  babyProgress: 'This week’s routine supported growth.',
+  actionSummary: {
+    diet: { domain: 'diet', recommended: 5, completed: 4 },
+    activity: { domain: 'activity', recommended: 4, completed: 3 },
+    behaviour: { domain: 'behaviour', recommended: 3, completed: 2 },
+    wellbeing: { domain: 'wellbeing', recommended: 5, completed: 5 },
+  },
+  symptomLevels: [{ level: 2, mommyCount: 1, babyCount: 0, total: 1 }],
+  riskSummary: {
+    identifiedRisks: ['Mother: preeclampsia'],
+    completedActionImpact: -6,
+    motherRiskDelta: -6,
+  },
+  symptomTrend: 'Level 2: 1',
+  motherProgress:
+    'Identified risks: Mother: preeclampsia. Risk change: mother -6%. Completed action impact: -6%.',
+  babyProgress: '',
   milestone: 'Week 19 milestone',
   fetalSystems: [],
   nextWeek: null,
@@ -82,6 +96,14 @@ describe('progression and privacy-safe reports', () => {
     const report = buildWeeklyReport(summary);
     expect(report.shareText).toContain('pregnancy week 19');
     expect(report.shareText).toContain('Active care days: 5 of 7');
+    expect(report.shareText).toContain(
+      'Mother estimate: 6% lower',
+    );
+    expect(report.shareText).toContain(
+      'Completed care actions were linked to an estimated 6% reduction.',
+    );
+    expect(report.shareText).not.toContain('preeclampsia');
+    expect(report.motherRecap).not.toContain('preeclampsia');
     expect(report.shareText).not.toMatch(
       /latitude|longitude|GPS|H3|route|snapshot|rule_id|database/i,
     );

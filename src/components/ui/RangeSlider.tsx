@@ -8,7 +8,7 @@ import {
   LayoutChangeEvent,
 } from 'react-native';
 import { useTheme, spacing } from '../../theme';
-import { ms, fs } from '../../utils/responsive';
+import { ms } from '../../utils/responsive';
 
 interface RangeSliderProps {
   min: number;

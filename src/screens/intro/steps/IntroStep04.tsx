@@ -1,13 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing } from '../../../theme';
-import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, IntroTitleBox, LanguagePickerSheet } from '../../../components/ui';
+import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, IntroTitleBox } from '../../../components/ui';
 import { ENGLISH_FLAG_SVG, FRENCH_FLAG_SVG, SWAHILI_FLAG_SVG } from '../../../utils/svgIcons';
 import { useUserStore } from '../../../store/useUserStore';
 import { useMetaChoices } from '../../../hooks/useMetaChoices';
 import { useTranslation } from 'react-i18next';
-import { fs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,7 +25,6 @@ export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
   const { languages } = useMetaChoices();
   const [selectedLanguage, setSelectedLanguageLocal] = useState<string | null>(profile.language || null);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
-  const [showLangSheet, setShowLangSheet] = useState(true);
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },
@@ -65,17 +63,6 @@ export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
           disabled={!selectedLanguage}
         />
       </FixedButtonContainer>
-
-      <LanguagePickerSheet
-        visible={showLangSheet}
-        selectedLanguage={selectedLanguage}
-        onConfirm={(lang) => {
-          setSelectedLanguageLocal(lang);
-          setLanguage(lang);
-          setShowLangSheet(false);
-        }}
-        onClose={() => setShowLangSheet(false)}
-      />
     </SafeAreaView>
   );
 };

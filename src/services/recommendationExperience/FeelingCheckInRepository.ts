@@ -1,4 +1,5 @@
 import {
+  LOCAL_FEELING_CHECK_IN_SUPPLEMENT_ENABLED,
   RECOMMENDATION_CAPABILITIES,
   RECOMMENDATION_DEMO_FALLBACK_ENABLED,
   resolveRecommendationCapabilityStatus,
@@ -30,6 +31,10 @@ import {
 } from '../api/WellbeingService';
 import { useRecommendationExperienceStore } from '../../store/useRecommendationExperienceStore';
 import { formatLocalIsoTimestamp } from '../../utils/dateUtils';
+import {
+  submitMommySymptomSelection,
+  type MommySymptomSubmissionStatus,
+} from './MommySymptomSyncService';
 import { ProductAnalytics } from './ProductAnalytics';
 
 interface CapabilityLoad<T> {
@@ -218,6 +223,7 @@ const selectedApiKeys = (
 const localItemsForKind = (
   kind: FeelingCheckInItem['kind'],
 ): FeelingCheckInItem[] =>
+  LOCAL_FEELING_CHECK_IN_SUPPLEMENT_ENABLED &&
   RECOMMENDATION_DEMO_FALLBACK_ENABLED &&
   RECOMMENDATION_CAPABILITIES.unifiedFeelingSupplement === 'notImplemented'
     ? FEELING_CHECK_IN_SUPPLEMENT.filter(item => item.kind === kind)
@@ -288,10 +294,7 @@ export const loadFeelingCheckInExperience = async (
     mommySelection?.symptom_ids ?? [],
     mommySymptoms,
   );
-  const apiMoodKeys = selectedApiKeys(
-    wellbeingLog?.mood_ids ?? [],
-    moods,
-  );
+  const apiMoodKeys = selectedApiKeys(wellbeingLog?.mood_ids ?? [], moods);
   const apiFeelingKeys = selectedApiKeys(
     wellbeingLog?.feeling_ids ?? [],
     feelings,
@@ -329,10 +332,7 @@ export const loadFeelingCheckInExperience = async (
       : apiMommySelectionKeys,
     moodKeys: localRecord
       ? useApiWellbeingSelection
-        ? uniqueKeys(
-            apiMoodKeys,
-            fallbackKeys(remappedLocalMoods, moods),
-          )
+        ? uniqueKeys(apiMoodKeys, fallbackKeys(remappedLocalMoods, moods))
         : remappedLocalMoods
       : apiMoodKeys,
     feelingKeys: localRecord
@@ -400,11 +400,25 @@ export const apiIdsForSelectedKeys = (
     .map(item => item.apiId as number);
 };
 
+const sameNumberSet = (left: number[], right: number[]): boolean => {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every(value => rightSet.has(value));
+};
+
 const statusForResult = (
   result: PromiseSettledResult<void> | null,
 ): BackendWriteStatus => {
   if (!result) return 'skipped';
   return result.status === 'fulfilled' ? 'saved' : 'failed';
+};
+
+const mommyStatusForResult = (
+  result: PromiseSettledResult<MommySymptomSubmissionStatus> | null,
+): BackendWriteStatus => {
+  if (!result) return 'skipped';
+  if (result.status === 'rejected') return 'failed';
+  return result.value === 'pending' ? 'pending' : 'saved';
 };
 
 export const submitFeelingCheckIn = async (
@@ -420,12 +434,17 @@ export const submitFeelingCheckIn = async (
   store.ensureOwner(identity);
 
   const now = new Date();
+  const existingRecord = store.getCheckIn(date);
   const recordedAt = formatLocalIsoTimestamp(now);
   const initialRecord: FeelingCheckInRecord = {
     ...selection,
     date,
     recordedAt,
     updatedAt: now.toISOString(),
+    scope:
+      options.writeScope === 'symptoms' && existingRecord?.scope !== 'full'
+        ? 'symptoms'
+        : 'full',
     waterDailyTotalMl:
       experience.waterDailyTotalMl +
       selection.waterIncrementMl,
@@ -440,26 +459,46 @@ export const submitFeelingCheckIn = async (
   const mommyWrite =
     experience.capabilities.mommySymptoms.status === 'available' &&
     experience.capabilities.mommySymptomsSelection.status === 'available'
-      ? SymptomsService.saveMommySelection({
-          symptom_ids: apiIdsForSelectedKeys(
+      ? submitMommySymptomSelection(
+          date,
+          apiIdsForSelectedKeys(
             selection.mommySymptomKeys,
             experience.mommySymptoms,
           ),
-          recorded_at: recordedAt,
-        }).then(() => undefined)
+          recordedAt,
+        )
       : null;
+
+  const selectedBackendMoodIds = apiIdsForSelectedKeys(
+    selection.moodKeys,
+    experience.moods,
+  );
+  const existingBackendMoodIds = apiIdsForSelectedKeys(
+    experience.selection.moodKeys,
+    experience.moods,
+  );
+  const selectedBackendFeelingIds = apiIdsForSelectedKeys(
+    selection.feelingKeys,
+    experience.feelings,
+  );
+  const existingBackendFeelingIds = apiIdsForSelectedKeys(
+    experience.selection.feelingKeys,
+    experience.feelings,
+  );
+  const shouldWriteWellbeing =
+    selection.waterIncrementMl > 0 ||
+    !sameNumberSet(selectedBackendMoodIds, existingBackendMoodIds) ||
+    !sameNumberSet(selectedBackendFeelingIds, existingBackendFeelingIds);
 
   const wellbeingWrite =
     options.writeScope !== 'symptoms' &&
     experience.capabilities.wellbeing.status === 'available' &&
-    experience.capabilities.wellbeingLog.status === 'available'
+    experience.capabilities.wellbeingLog.status === 'available' &&
+    shouldWriteWellbeing
       ? WellbeingService.saveLog({
           date,
-          mood_ids: apiIdsForSelectedKeys(selection.moodKeys, experience.moods),
-          feeling_ids: apiIdsForSelectedKeys(
-            selection.feelingKeys,
-            experience.feelings,
-          ),
+          mood_ids: selectedBackendMoodIds,
+          feeling_ids: selectedBackendFeelingIds,
           water_amount: selection.waterIncrementMl,
         })
       : null;
@@ -487,7 +526,7 @@ export const submitFeelingCheckIn = async (
     ...initialRecord,
     updatedAt: new Date().toISOString(),
     writeStatus: {
-      mommySymptoms: statusForResult(mommyResult),
+      mommySymptoms: mommyStatusForResult(mommyResult),
       wellbeing: statusForResult(wellbeingResult),
       dailyCheckIn: statusForResult(dailyCheckInResult),
     },
@@ -502,10 +541,17 @@ export const submitFeelingCheckIn = async (
   const statuses = Object.values(completedRecord.writeStatus);
   const savedCount = statuses.filter(status => status === 'saved').length;
   const savedRemotely = statuses.every(status => status === 'saved');
+  const symptomsPendingSync =
+    completedRecord.writeStatus.mommySymptoms === 'pending';
+
+  if (mommyResult?.status === 'rejected') {
+    throw mommyResult.reason;
+  }
 
   return {
     record: completedRecord,
     savedRemotely,
     partiallySaved: savedCount > 0 && !savedRemotely,
+    symptomsPendingSync,
   };
 };

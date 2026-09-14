@@ -12,9 +12,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, G } from 'react-native-svg';
 import { useTheme, spacing, radius } from '../../theme';
-import { Input, Button, OrangeHalo, type InputRef, useToast } from '../../components/ui';
-import { AuthService } from '../../services/api/AuthService';
-import { getAuthErrorMessage } from '../../utils/authErrors';
+import {
+  Input,
+  Button,
+  OrangeHalo,
+  VerificationCodeInput,
+  type InputRef,
+  useToast,
+} from '../../components/ui';
+import { AuthService, type LoginResponse } from '../../services/api/AuthService';
 import { s, vs, ms, mvs } from '../../utils/responsive';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -25,6 +31,7 @@ import {
   isErrorWithCode,
   isSuccessResponse,
 } from '@react-native-google-signin/google-signin';
+import { getAuthErrorMessage } from '../../utils/authErrors';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -47,7 +54,10 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const setToken = useAuthStore(state => state.setToken);
+  const [step, setStep] = useState<'details' | 'verify'>('details');
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const setTokens = useAuthStore(state => state.setTokens);
   const setEmailStore = useUserStore(state => state.setEmail);
 
@@ -65,29 +75,25 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
 
   const handleGoogleLogin = async () => {
     try {
+      setLoading(true);
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
 
       if (isSuccessResponse(response)) {
         const idToken = response.data.idToken;
         if (idToken) {
-            setLoading(true);
-            const authResponse = await AuthService.googleSignIn(idToken);
-            if (authResponse.access && authResponse.refresh) {
-                setTokens(authResponse.access, authResponse.refresh);
-                if (authResponse.user?.email) {
-                    setEmailStore(authResponse.user.email);
-                }
-                if (onSignUp) {
-                    onSignUp(authResponse.user?.email || '', '');
-                }
-            }
+          const authResponse = await AuthService.googleSignIn(idToken);
+          setTokens(authResponse.access, authResponse.refresh);
+          if (authResponse.user?.email) {
+            setEmailStore(authResponse.user.email);
+          }
+          onSignUp?.(authResponse.user?.email || '', '');
         } else {
-            showToast({
-              type: 'error',
-              title: t('auth.google_sign_in_error'),
-              message: t('auth.google_sign_in_failed'),
-            });
+          showToast({
+            type: 'error',
+            title: t('auth.google_sign_in_error'),
+            message: t('auth.google_sign_in_failed'),
+          });
         }
       } else {
         // sign in was cancelled by user
@@ -113,7 +119,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             showToast({
               type: 'error',
               title: t('auth.google_sign_in_error'),
-              message: t('auth.google_sign_in_failed'),
+              message: getAuthErrorMessage(error, 'google'),
             });
         }
       } else {
@@ -121,11 +127,11 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
         showToast({
           type: 'error',
           title: t('auth.google_sign_in_error'),
-          message: t('auth.google_sign_in_failed'),
+          message: getAuthErrorMessage(error, 'google'),
         });
       }
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -175,6 +181,35 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
     signUpButtonContainer: {
       marginTop: spacing('md'),
       marginBottom: spacing('md'),
+    },
+    codeContainer: {
+      marginTop: spacing('md'),
+      marginBottom: spacing('lg'),
+    },
+    verificationDescription: {
+      fontSize: theme.typography.fontSize.md,
+      fontFamily: theme.typography.fontFamily.regular,
+      color: theme.colors.textPrimary,
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: spacing('md'),
+    },
+    sentText: {
+      fontSize: theme.typography.fontSize.sm,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+      marginBottom: spacing('lg'),
+      lineHeight: 20,
+    },
+    resendButton: {
+      alignItems: 'center',
+      marginTop: spacing('lg'),
+    },
+    resendText: {
+      fontSize: theme.typography.fontSize.sm,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.orange500,
     },
     loginLinkContainer: {
       alignItems: 'center',
@@ -228,59 +263,94 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
   }), [theme]);
 
   const handleSignUp = async () => {
-    if (isFormValid) {
-      try {
-        setLoading(true);
-        const response = await AuthService.register(
-          email.trim(),
-          password.trim(),
-        );
-        console.log('SignUp response:', response);
+    if (!isFormValid) return;
+    const nextEmail = email.trim();
 
-        // Handle different response formats
-        if (response.access && response.refresh) {
-          // Standard JWT response with both tokens
-          setTokens(response.access, response.refresh);
-          setEmailStore(email.trim());
-          showToast({
-            type: 'success',
-            title: t('auth.account_created_title'),
-            message: t('auth.account_created_message'),
-          });
-          onSignUp?.(email, password);
-        } else {
-          // Fallback for other formats or if no token is returned immediately
-          const token = response.token || response.access_token || (typeof response === 'string' ? response : null);
-
-          if (token) {
-            setToken(token);
-            setEmailStore(email.trim());
-            showToast({
-              type: 'success',
-              title: t('auth.account_created_title'),
-              message: t('auth.account_created_message'),
-            });
-            onSignUp?.(email, password);
-          } else {
-            showToast({
-              type: 'success',
-              title: t('auth.account_created_title'),
-              message: t('auth.already_have_account_login'),
-            });
-            onLogin?.();
-          }
-        }
-      } catch (error: any) {
-        console.error('SignUp error:', error);
-        showToast({
-          type: 'error',
-          title: t('auth.sign_up_failed'),
-          message: getAuthErrorMessage(error, 'signup'),
-        });
-      } finally {
-        setLoading(false);
-      }
+    try {
+      setLoading(true);
+      await AuthService.registerWithEmail(nextEmail, password.trim());
+      setVerificationEmail(nextEmail);
+      setVerificationCode('');
+      setVerificationError(null);
+      setStep('verify');
+      showToast({
+        type: 'success',
+        title: t('auth.verification_code_sent_title'),
+        message: t('auth.verification_code_sent_message', { email: nextEmail }),
+      });
+    } catch (error: any) {
+      console.error('Email registration error:', error);
+      showToast({
+        type: 'error',
+        title: t('auth.sign_up_failed'),
+        message: getAuthErrorMessage(error, 'signup'),
+      });
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleVerificationCodeChange = (code: string) => {
+    setVerificationCode(code);
+    if (verificationError) {
+      setVerificationError(null);
+    }
+  };
+
+  const handleVerifyCode = async (code = verificationCode) => {
+    if (code.length < 4) return;
+
+    try {
+      setLoading(true);
+      const nextEmail = verificationEmail || email.trim();
+      const response = await AuthService.verifyEmailRegistration(nextEmail, code);
+      const tokenResponse: LoginResponse = response.access && response.refresh
+        ? { access: response.access, refresh: response.refresh }
+        : await AuthService.login(nextEmail, password.trim());
+
+      setTokens(tokenResponse.access, tokenResponse.refresh);
+      setEmailStore(nextEmail);
+      showToast({
+        type: 'success',
+        title: t('auth.account_created_title'),
+        message: t('auth.account_created_message'),
+      });
+      onSignUp?.(nextEmail, password);
+    } catch (error: any) {
+      console.error('Email verification error:', error);
+      setVerificationError(getAuthErrorMessage(error, 'verification'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    const nextEmail = verificationEmail || email.trim();
+
+    try {
+      setLoading(true);
+      await AuthService.resendEmailVerification(nextEmail);
+      setVerificationCode('');
+      setVerificationError(null);
+      showToast({
+        type: 'success',
+        title: t('auth.verification_code_sent_title'),
+        message: t('auth.verification_code_sent_message', {
+          email: nextEmail,
+        }),
+      });
+    } catch (error: any) {
+      console.error('Email verification resend error:', error);
+      setVerificationError(getAuthErrorMessage(error, 'verification'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditDetails = () => {
+    setStep('details');
+    setVerificationCode('');
+    setVerificationError(null);
   };
 
   const GoogleIcon = () => (
@@ -328,69 +398,119 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             </View>
 
             {/* Welcome Text */}
-            <Text style={styles.welcomeText} allowFontScaling={false}>{t('auth.new_here')}</Text>
+            <Text style={styles.welcomeText} allowFontScaling={false}>
+              {step === 'details'
+                ? t('auth.new_here')
+                : t('auth.verify_email_title')}
+            </Text>
 
-            {/* Email Input */}
-            <View style={styles.inputContainer}>
-              <Input
-                ref={emailInputRef}
-                title={t('auth.email')}
-                placeholder={t('auth.email_placeholder')}
-                type="email"
-                value={email}
-                onChangeText={setEmail}
-                nextInputRef={passwordInputRef}
-              />
-            </View>
+            {step === 'details' ? (
+              <>
+                {/* Email Input */}
+                <View style={styles.inputContainer}>
+                  <Input
+                    ref={emailInputRef}
+                    title={t('auth.email')}
+                    placeholder={t('auth.email_placeholder')}
+                    type="email"
+                    value={email}
+                    onChangeText={setEmail}
+                    nextInputRef={passwordInputRef}
+                  />
+                </View>
 
-            {/* Password Input */}
-            <View style={styles.inputContainer}>
-              <Input
-                ref={passwordInputRef}
-                title={t('auth.password')}
-                placeholder={t('auth.password_placeholder')}
-                type="password"
-                value={password}
-                onChangeText={setPassword}
-                nextInputRef={confirmPasswordInputRef}
-              />
-            </View>
+                {/* Password Input */}
+                <View style={styles.inputContainer}>
+                  <Input
+                    ref={passwordInputRef}
+                    title={t('auth.password')}
+                    placeholder={t('auth.password_placeholder')}
+                    type="password"
+                    value={password}
+                    onChangeText={setPassword}
+                    nextInputRef={confirmPasswordInputRef}
+                  />
+                </View>
 
-            {/* Confirm Password Input */}
-            <View style={styles.inputContainer}>
-              <Input
-                ref={confirmPasswordInputRef}
-                title={t('auth.confirm_password')}
-                placeholder={t('auth.confirm_password_placeholder')}
-                type="password"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-              />
-            </View>
+                {/* Confirm Password Input */}
+                <View style={styles.inputContainer}>
+                  <Input
+                    ref={confirmPasswordInputRef}
+                    title={t('auth.confirm_password')}
+                    placeholder={t('auth.confirm_password_placeholder')}
+                    type="password"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    onSubmitEditing={handleSignUp}
+                  />
+                </View>
 
-            {/* Sign Up Button */}
-            <View style={styles.signUpButtonContainer}>
-              <Button
-                title={loading ? t('auth.signing_up') : t('auth.sign_up')}
-                onPress={handleSignUp}
-                disabled={loading || !isFormValid}
-              />
-            </View>
+                {/* Sign Up Button */}
+                <View style={styles.signUpButtonContainer}>
+                  <Button
+                    title={loading ? t('auth.sending_code') : t('auth.send_verification_code')}
+                    onPress={handleSignUp}
+                    disabled={loading || !isFormValid}
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.verificationDescription} allowFontScaling={false}>
+                  {t('auth.enter_verification_code_description')}
+                </Text>
+                <Text style={styles.sentText} allowFontScaling={false}>
+                  {t('auth.verification_code_sent_message', {
+                    email: verificationEmail,
+                  })}
+                </Text>
+                <View style={styles.codeContainer}>
+                  <VerificationCodeInput
+                    value={verificationCode}
+                    onChangeText={handleVerificationCodeChange}
+                    error={verificationError}
+                    onComplete={handleVerifyCode}
+                  />
+                </View>
+                <View style={styles.signUpButtonContainer}>
+                  <Button
+                    title={loading ? t('auth.verifying_code') : t('auth.verify_code')}
+                    onPress={handleVerifyCode}
+                    disabled={loading || verificationCode.length < 4}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={handleResendCode}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.resendText} allowFontScaling={false}>
+                    {t('auth.resend_code')}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             {/* Login Link */}
             <TouchableOpacity
               style={styles.loginLinkContainer}
-              onPress={onLogin}
+              onPress={step === 'details' ? onLogin : handleEditDetails}
               activeOpacity={0.7}
             >
               <Text style={styles.loginLinkText} allowFontScaling={false}>
-                {t('auth.already_have_account')}{' '}
-                <Text style={styles.loginLinkBold} allowFontScaling={false}>{t('auth.log_in')}</Text>
+                {step === 'details'
+                  ? t('auth.already_have_account')
+                  : t('auth.wrong_email')}{' '}
+                <Text style={styles.loginLinkBold} allowFontScaling={false}>
+                  {step === 'details' ? t('auth.log_in') : t('auth.edit_email')}
+                </Text>
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Bottom Section */}
+          {step === 'details' ? (
           <View style={[styles.bottomSection, { paddingBottom: spacing('md') + insets.bottom }]}>
             {/* Separator */}
             <View style={styles.separatorContainer}>
@@ -403,12 +523,14 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             <TouchableOpacity
               style={styles.googleButton}
               onPress={handleGoogleLogin}
+              disabled={loading}
               activeOpacity={0.7}
             >
               <GoogleIcon />
               <Text style={styles.googleButtonText} allowFontScaling={false}>{t('auth.continue_with_google')}</Text>
             </TouchableOpacity>
           </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>

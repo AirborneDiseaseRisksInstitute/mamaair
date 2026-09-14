@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { useTheme, spacing, radius } from '../../theme';
-import { ms, fs, vs } from '../../utils/responsive';
+import { vs } from '../../utils/responsive';
 
 interface BottomSheetOptionProps {
   label: string;

@@ -9,6 +9,8 @@ jest.mock('../../src/services/api/SymptomsService', () => ({
   SymptomsService: {
     getBabyChecklist: jest.fn(),
     getBabySelection: jest.fn(),
+    getMommyStatisticsClasses: jest.fn(),
+    getBabyStatisticsClasses: jest.fn(),
   },
 }));
 
@@ -76,18 +78,18 @@ describe('symptom history repository', () => {
     jest.clearAllMocks();
   });
 
-  it('combines selected API/local mommy symptoms with legacy baby data', async () => {
+  it('uses grouped mommy and baby symptom class statistics without exact events', async () => {
     (
       loadFeelingCheckInExperience as jest.Mock
     ).mockResolvedValue(experience());
-    (SymptomsService.getBabyChecklist as jest.Mock).mockResolvedValue({
-      symptoms: [
-        { id: 8, name: 'Reduced kicks' },
-        { id: 9, name: 'Excessive hiccups' },
+    (SymptomsService.getMommyStatisticsClasses as jest.Mock).mockResolvedValue({
+      classes: [
+        { symptom_class: 1, quantity: 2 },
+        { symptom_class: 2, quantity: 1 },
       ],
     });
-    (SymptomsService.getBabySelection as jest.Mock).mockResolvedValue({
-      symptom_ids: [8],
+    (SymptomsService.getBabyStatisticsClasses as jest.Mock).mockResolvedValue({
+      classes: [{ symptom_class: 3, quantity: 1 }],
     });
 
     const result = await loadSymptomHistoryDay(
@@ -95,17 +97,74 @@ describe('symptom history repository', () => {
       '2026-07-25',
     );
 
-    expect(result.physical.map(item => item.name)).toEqual([
-      'Headache',
-    ]);
-    expect(result.warning.map(item => item.name)).toEqual([
-      'Vaginal bleeding',
-    ]);
-    expect(result.baby.map(item => item.name)).toEqual([
-      'Reduced kicks',
+    expect(SymptomsService.getMommyStatisticsClasses).toHaveBeenCalledWith({
+      date: '2026-07-25',
+    });
+    expect(SymptomsService.getBabyStatisticsClasses).toHaveBeenCalledWith({
+      date: '2026-07-25',
+    });
+    expect(SymptomsService.getBabyChecklist).not.toHaveBeenCalled();
+    expect(SymptomsService.getBabySelection).not.toHaveBeenCalled();
+    expect(result.classes).toEqual([
+      {
+        key: 'class1',
+        level: 1,
+        mommyCount: 2,
+        babyCount: 0,
+        total: 2,
+      },
+      {
+        key: 'class2',
+        level: 2,
+        mommyCount: 1,
+        babyCount: 0,
+        total: 1,
+      },
+      {
+        key: 'class3',
+        level: 3,
+        mommyCount: 0,
+        babyCount: 1,
+        total: 1,
+      },
     ]);
     expect(result.recordState).toBe('recorded');
     expect(result.babyStatus).toBe('available');
+  });
+
+  it('falls back to local mommy selections as grouped classes only', async () => {
+    (
+      loadFeelingCheckInExperience as jest.Mock
+    ).mockResolvedValue(experience());
+    (SymptomsService.getMommyStatisticsClasses as jest.Mock).mockRejectedValue(
+      new Error('offline'),
+    );
+    (SymptomsService.getBabyStatisticsClasses as jest.Mock).mockRejectedValue(
+      new Error('offline'),
+    );
+
+    const result = await loadSymptomHistoryDay(
+      { backendUserId: 42 },
+      '2026-07-25',
+    );
+
+    expect(result.classes).toEqual([
+      {
+        key: 'class1',
+        level: 1,
+        mommyCount: 1,
+        babyCount: 0,
+        total: 1,
+      },
+      {
+        key: 'class2',
+        level: 2,
+        mommyCount: 1,
+        babyCount: 0,
+        total: 1,
+      },
+    ]);
+    expect(result.babyStatus).toBe('unavailable');
   });
 
   it('keeps ambiguous empty/failed sources explicit', async () => {
@@ -127,10 +186,10 @@ describe('symptom history repository', () => {
         },
       }),
     );
-    (SymptomsService.getBabyChecklist as jest.Mock).mockRejectedValue(
+    (SymptomsService.getMommyStatisticsClasses as jest.Mock).mockRejectedValue(
       new Error('offline'),
     );
-    (SymptomsService.getBabySelection as jest.Mock).mockRejectedValue(
+    (SymptomsService.getBabyStatisticsClasses as jest.Mock).mockRejectedValue(
       new Error('offline'),
     );
 
@@ -142,7 +201,6 @@ describe('symptom history repository', () => {
     expect(result.recordState).toBe('unknown');
     expect(result.mommyStatus).toBe('unavailable');
     expect(result.babyStatus).toBe('unavailable');
-    expect(result.physical).toEqual([]);
-    expect(result.warning).toEqual([]);
+    expect(result.classes).toEqual([]);
   });
 });

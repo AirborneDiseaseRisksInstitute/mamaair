@@ -14,7 +14,7 @@ import { useTheme, spacing, radius } from '../../theme';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { IconProp } from '@fortawesome/fontawesome-svg-core';
-import { ms, fs, vs } from '../../utils/responsive';
+import { ms, vs } from '../../utils/responsive';
 
 interface DatePickerProps {
   visible: boolean;

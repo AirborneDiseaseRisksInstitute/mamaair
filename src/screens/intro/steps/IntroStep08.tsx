@@ -5,16 +5,35 @@ import { useUserStore } from '../../../store/useUserStore';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RangeSlider, IntroTitleBox } from '../../../components/ui';
 import { useTranslation } from 'react-i18next';
 import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import {
+  clampDailyHours,
+  DEFAULT_ACTIVE_HOURS,
+  DEFAULT_SLEEP_HOURS,
+  MAX_ACTIVE_HOURS,
+  MAX_SLEEP_HOURS,
+  MIN_DAILY_HOURS,
+} from '../../../utils/lifestyleHours';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-interface IntroStep08Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
+interface IntroStep08Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; showSkip?: boolean; }
 
-export const IntroStep08: React.FC<IntroStep08Props> = ({ onNext, onBack, onSkip }) => {
+export const IntroStep08: React.FC<IntroStep08Props> = ({ onNext, onBack, onSkip, showSkip = true }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const [activeHours, setActiveHours] = useState(2);
-  const [sleepHours, setSleepHours] = useState(8);
+  const profile = useUserStore(state => state.profile);
+  const [activeHours, setActiveHours] = useState(() =>
+    clampDailyHours(
+      profile.activeHours || DEFAULT_ACTIVE_HOURS,
+      MAX_ACTIVE_HOURS,
+    ),
+  );
+  const [sleepHours, setSleepHours] = useState(() =>
+    clampDailyHours(
+      profile.sleepHours || DEFAULT_SLEEP_HOURS,
+      MAX_SLEEP_HOURS,
+    ),
+  );
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
   const { setSleepHours: setStoreSleepHours, setActiveHours: setStoreActiveHours } = useUserStore();
 
@@ -44,14 +63,14 @@ export const IntroStep08: React.FC<IntroStep08Props> = ({ onNext, onBack, onSkip
         <View style={styles.contentWrapper}>
           <IntroTitleBox title={t('intro.step08_title')} onLayout={setTitleBoxCenterY} />
           <Text style={styles.questionText} allowFontScaling={false}>{t('intro.step08_sleep')}</Text>
-          <View style={styles.sliderContainer}><RangeSlider min={1} max={24} value={sleepHours} onChange={setSleepHours} minLabel="1hrs" maxLabel="24hrs" /></View>
+          <View style={styles.sliderContainer}><RangeSlider min={MIN_DAILY_HOURS} max={MAX_SLEEP_HOURS} value={sleepHours} onChange={setSleepHours} minLabel="1hr" maxLabel={`${MAX_SLEEP_HOURS}hrs`} /></View>
           <Text style={styles.questionTextSecond} allowFontScaling={false}>{t('intro.step08_active')}</Text>
-          <View style={styles.sliderContainer}><RangeSlider min={1} max={24} value={activeHours} onChange={setActiveHours} minLabel="1hrs" maxLabel="24hrs" /></View>
+          <View style={styles.sliderContainer}><RangeSlider min={MIN_DAILY_HOURS} max={MAX_ACTIVE_HOURS} value={activeHours} onChange={setActiveHours} minLabel="1hr" maxLabel={`${MAX_ACTIVE_HOURS}hrs`} /></View>
         </View>
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable>
+          {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable> : null}
           <View style={styles.continueButtonWrapper}><Button title={t('common.continue')} onPress={handleNext} disabled={!isFormValid} /></View>
         </View>
       </FixedButtonContainer>

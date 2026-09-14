@@ -4,7 +4,7 @@ import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { useTheme, spacing, radius } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, useToast } from '../../../components/ui';
 import { useTranslation } from 'react-i18next';
-import { ms, fs, s, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { s, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const notifThumb = require('../../../assets/images/notifThumb.png');
@@ -23,7 +23,7 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
   useEffect(() => {
     const checkNotificationStatus = async () => {
       try {
-        const settings = await notifee.getNotificationSettings();
+        await notifee.getNotificationSettings();
         // Just check the status, don't auto-navigate
         // User should manually press the button to proceed
         setChecking(false);

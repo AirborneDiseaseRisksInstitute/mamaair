@@ -1,7 +1,7 @@
 import { countCompletedActionsByDomain } from '../src/utils/dailyTaskProgress';
 
 describe('countCompletedActionsByDomain', () => {
-  it('counts only completed tasks in each of the four domains', () => {
+  it('counts only completed tasks in each domain', () => {
     expect(
       countCompletedActionsByDomain({
         water: {
@@ -45,6 +45,7 @@ describe('countCompletedActionsByDomain', () => {
       activity: 0,
       behaviour: 1,
       wellbeing: 1,
+      service: 0,
     });
   });
 
@@ -62,6 +63,7 @@ describe('countCompletedActionsByDomain', () => {
       activity: 0,
       behaviour: 0,
       wellbeing: 0,
+      service: 0,
     });
   });
 
@@ -79,6 +81,7 @@ describe('countCompletedActionsByDomain', () => {
       activity: 0,
       behaviour: 0,
       wellbeing: 0,
+      service: 0,
     });
   });
 });

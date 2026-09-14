@@ -48,6 +48,7 @@ import { RemindersScreen } from '../screens/RemindersScreen';
 import { SymptomsHistoryScreen } from '../screens/SymptomsHistoryScreen';
 import { FeelingCheckInScreen } from '../screens/FeelingCheckInScreen';
 import { WeeklySummaryScreen } from '../screens/WeeklySummaryScreen';
+import { PlanProfileSetupScreen } from '../screens/PlanProfileSetupScreen';
 import { FloatingActionButton } from '../components/ui';
 
 import { AuthLoadingScreen } from '../screens/AuthLoadingScreen';
@@ -78,9 +79,10 @@ import {
 } from '../utils/symptomFabRoutes';
 import { resolveIntroCompletionRoute } from '../utils/introNavigation';
 import { resolveNextIntroStep } from '../utils/introFlow';
+import { resolvePlanInputReadiness } from '../utils/planReadiness';
 
 export type RootStackParamList = {
-  AuthLoading: undefined;
+  AuthLoading: { authenticatedEmail?: string } | undefined;
   IntroStep01: undefined;
   IntroStep02: undefined;
   IntroStep03: undefined;
@@ -111,6 +113,7 @@ export type RootStackParamList = {
         focus?: 'plan' | 'progress';
       }
     | undefined;
+  PlanProfileSetup: undefined;
   UserProfile: undefined;
   ProfileInformation: undefined;
   BabyTwin: undefined;
@@ -142,6 +145,109 @@ type AppScreenLayoutProps = ScreenLayoutArgs<
   NativeStackNavigationOptions,
   NativeStackNavigationProp<RootStackParamList, keyof RootStackParamList>
 >;
+
+type HomeTodayNavigationTarget =
+  | {
+      screen: 'FeelingCheckIn';
+      params: RootStackParamList['FeelingCheckIn'];
+    }
+  | {
+      screen: 'WeeklySummary';
+      params: NonNullable<RootStackParamList['WeeklySummary']>;
+    }
+  | {
+      screen: 'Today';
+      params: RootStackParamList['Today'];
+    };
+
+const resolveHomeTodayNavigationTarget =
+  async (): Promise<HomeTodayNavigationTarget> => {
+    const profile = useUserStore.getState().profile;
+    const identity = {
+      backendUserId: profile.backendUserId,
+      email: profile.email,
+    };
+    const date = formatLocalDate(new Date());
+    const store = useRecommendationExperienceStore.getState();
+    store.ensureOwner(identity);
+    const readiness = resolvePlanInputReadiness(
+      profile,
+      store.getCheckIn(date),
+      store.pendingMommySymptomSelections[date] ?? null,
+    );
+    if (!readiness.ready) {
+      return {
+        screen: 'Today',
+        params: { focus: 'plan' },
+      };
+    }
+    const [plan, checkIn] = await Promise.all([
+      loadDailyPlanExperience(identity, date, { inputReadiness: readiness })
+        .then(result =>
+          result.status === 'available' ? result.experience : null,
+        )
+        .catch(() => null),
+      loadFeelingCheckInExperience(identity, date).catch(() => null),
+    ]);
+    const step = resolveLongitudinalJourneyStep({
+      hasSavedCheckIn:
+        Boolean(
+          useRecommendationExperienceStore
+            .getState()
+            .getCheckIn(date),
+        ) || checkIn?.recordState === 'recorded',
+      plan,
+      reminders:
+        useRecommendationExperienceStore.getState().reminders[date] ?? {},
+      restTimers:
+        useRecommendationExperienceStore.getState().restTimers[date] ?? {},
+      weeklyCheckpointAvailable: isWeeklyCheckpointAvailable(date),
+    });
+
+    if (step.kind === 'checkIn') {
+      return {
+        screen: 'FeelingCheckIn',
+        params: {
+          source: 'home',
+          mode: 'full',
+        },
+      };
+    }
+
+    if (step.kind === 'weeklySummary') {
+      return {
+        screen: 'WeeklySummary',
+        params: {
+          mode: 'checkpoint',
+        },
+      };
+    }
+
+    return {
+      screen: 'Today',
+      params: {
+        actionKey: step.kind === 'action' ? step.actionKey : undefined,
+        focus: step.kind === 'dailyProgress' ? 'progress' : 'plan',
+      },
+    };
+  };
+
+const navigateToHomeTodayTarget = (
+  navigation: NativeStackNavigationProp<RootStackParamList>,
+  target: HomeTodayNavigationTarget,
+) => {
+  if (target.screen === 'FeelingCheckIn') {
+    navigation.navigate('FeelingCheckIn', target.params);
+    return;
+  }
+
+  if (target.screen === 'WeeklySummary') {
+    navigation.navigate('WeeklySummary', target.params);
+    return;
+  }
+
+  navigation.navigate('Today', target.params);
+};
 
 const AppScreenLayout = ({
   children,
@@ -295,8 +401,9 @@ export const Navigation: React.FC = () => {
         }}
       >
         <Stack.Screen name="AuthLoading">
-          {({ navigation }) => (
+          {({ navigation, route }) => (
             <AuthLoadingScreen
+              authenticatedEmail={route.params?.authenticatedEmail}
               onComplete={target => {
                 if (target === 'Home') {
                   navigation.reset({
@@ -588,59 +695,11 @@ export const Navigation: React.FC = () => {
         <Stack.Screen name="Home">
           {({ navigation }) => (
             <HomeScreen
-              onNavigateToToday={async () => {
-                const profile = useUserStore.getState().profile;
-                const identity = {
-                  backendUserId: profile.backendUserId,
-                  email: profile.email,
-                };
-                const date = formatLocalDate(new Date());
-                const store = useRecommendationExperienceStore.getState();
-                store.ensureOwner(identity);
-                const [plan, checkIn] = await Promise.all([
-                  loadDailyPlanExperience(identity, date)
-                    .then(result => result.experience)
-                    .catch(() => null),
-                  loadFeelingCheckInExperience(identity, date).catch(
-                    () => null,
-                  ),
-                ]);
-                const step = resolveLongitudinalJourneyStep({
-                  hasSavedCheckIn:
-                    Boolean(
-                      useRecommendationExperienceStore
-                        .getState()
-                        .getCheckIn(date),
-                    ) || checkIn?.recordState === 'recorded',
-                  plan,
-                  reminders:
-                    useRecommendationExperienceStore.getState().reminders[
-                      date
-                    ] ?? {},
-                  restTimers:
-                    useRecommendationExperienceStore.getState().restTimers[
-                      date
-                    ] ?? {},
-                  weeklyCheckpointAvailable: isWeeklyCheckpointAvailable(date),
-                });
-
-                if (step.kind === 'checkIn') {
-                  navigation.navigate('FeelingCheckIn', {
-                    source: 'home',
-                    mode: 'full',
-                  });
-                } else if (step.kind === 'weeklySummary') {
-                  navigation.navigate('WeeklySummary', {
-                    mode: 'checkpoint',
-                  });
-                } else {
-                  navigation.navigate('Today', {
-                    actionKey:
-                      step.kind === 'action' ? step.actionKey : undefined,
-                    focus: step.kind === 'dailyProgress' ? 'progress' : 'plan',
-                  });
-                }
+              onPrepareNavigateToToday={async () => {
+                const target = await resolveHomeTodayNavigationTarget();
+                return () => navigateToHomeTodayTarget(navigation, target);
               }}
+              onNavigateToToday={() => navigation.navigate('Today')}
               onNavigateToProfile={() => navigation.navigate('UserProfile')}
               onNavigateToBabyStatus={() => navigation.navigate('BabyStatus')}
               onNavigateToPlanBirthday={() =>
@@ -661,6 +720,15 @@ export const Navigation: React.FC = () => {
             <TodayScreen
               initialActionKey={route.params?.actionKey}
               initialFocus={route.params?.focus}
+              onCompletePlanProfile={() =>
+                navigation.navigate('PlanProfileSetup')
+              }
+              onCompletePlanCheckIn={() =>
+                navigation.navigate('FeelingCheckIn', {
+                  source: 'today',
+                  mode: 'full',
+                })
+              }
               onNavigateToProfile={() => navigation.navigate('UserProfile')}
               onNavigateToBabyStatus={() => navigation.navigate('BabyStatus')}
               onNavigateToSymptomsHistory={() =>
@@ -672,6 +740,37 @@ export const Navigation: React.FC = () => {
                 })
               }
               onBackPress={() => navigation.goBack()}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="PlanProfileSetup">
+          {({ navigation }) => (
+            <PlanProfileSetupScreen
+              onComplete={() => {
+                const profile = useUserStore.getState().profile;
+                const date = formatLocalDate(new Date());
+                const store = useRecommendationExperienceStore.getState();
+                const identity = {
+                  backendUserId: profile.backendUserId,
+                  email: profile.email,
+                };
+                store.ensureOwner(identity);
+                const readiness = resolvePlanInputReadiness(
+                  profile,
+                  store.getCheckIn(date),
+                  store.pendingMommySymptomSelections[date] ?? null,
+                );
+
+                if (readiness.checkInReady) {
+                  navigation.goBack();
+                  return;
+                }
+                navigation.replace('FeelingCheckIn', {
+                  source: 'today',
+                  mode: 'full',
+                });
+              }}
+              onCancel={() => navigation.goBack()}
             />
           )}
         </Stack.Screen>
@@ -759,6 +858,16 @@ export const Navigation: React.FC = () => {
               onNavigateToNotificationTime={() =>
                 navigation.navigate('NotificationTime')
               }
+              onAccountDeleted={() => {
+                navigation.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: DEV_LOCAL_SESSION ? 'AuthLoading' : 'SignIn',
+                    },
+                  ],
+                });
+              }}
             />
           )}
         </Stack.Screen>
@@ -789,7 +898,10 @@ export const Navigation: React.FC = () => {
         </Stack.Screen>
         <Stack.Screen name="Ads">
           {({ navigation }) => (
-            <AdsScreen onClose={() => navigation.navigate('Home')} />
+            <AdsScreen
+              placement="standalone"
+              onClose={() => navigation.navigate('Home')}
+            />
           )}
         </Stack.Screen>
         <Stack.Screen name="BabyStatus">
@@ -800,7 +912,11 @@ export const Navigation: React.FC = () => {
         <Stack.Screen name="SignIn">
           {({ navigation }) => (
             <SignInScreen
-              onLogin={() => navigation.replace('AuthLoading')}
+              onLogin={(email) =>
+                navigation.replace('AuthLoading', {
+                  authenticatedEmail: email,
+                })
+              }
               onForgotPassword={() => navigation.navigate('ForgotPassword')}
               onGoogleSignIn={() => {}}
               onSignUp={() => navigation.navigate('SignUp')}
@@ -810,7 +926,11 @@ export const Navigation: React.FC = () => {
         <Stack.Screen name="SignUp">
           {({ navigation }) => (
             <SignUpScreen
-              onSignUp={() => navigation.replace('AuthLoading')}
+              onSignUp={(email) =>
+                navigation.replace('AuthLoading', {
+                  authenticatedEmail: email,
+                })
+              }
               onLogin={() => navigation.navigate('SignIn')}
               onGoogleSignIn={() => {}}
             />

@@ -10,6 +10,7 @@ import {
   Animated,
   Easing,
   findNodeHandle,
+  Linking,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -33,6 +34,7 @@ import {
   faChevronRight,
   faCircleExclamation,
   faHeart,
+  faRotateRight,
   faShieldHeart,
   faTimes,
   faTriangleExclamation,
@@ -44,13 +46,17 @@ import { useTheme, radius, spacing } from '../theme';
 import { useUserStore } from '../store/useUserStore';
 import {
   BottomSheet,
+  AccessLocationBottomSheet,
   ExposureAccordion,
   SystemProgressIcon,
   TransitionLoader,
+  useToast,
   WaveCard,
 } from '../components/ui';
 import { DailyPlanView } from '../components/recommendations/DailyPlanView';
 import { ExploreMoreView } from '../components/recommendations/ExploreMoreView';
+import { ImprovePlanView } from '../components/recommendations/ImprovePlanView';
+import { PlanInputEmptyState } from '../components/recommendations/PlanInputEmptyState';
 import {
   TodayQuickCheckInSheet,
   type TodayQuickCheckInKind,
@@ -68,7 +74,9 @@ import { formatLocalDate } from '../utils/dateUtils';
 import { SVG_ICONS } from '../utils/svgIcons';
 import { WEEKS_DATA } from './HomeScreen';
 import {
+  completedRiskImpactValue,
   loadDailyPlanExperience,
+  riskImpactCompletionPercent,
   updateDailyPlanActionState,
 } from '../services/recommendationExperience/DailyPlanRepository';
 import { loadFeelingCheckInExperience } from '../services/recommendationExperience/FeelingCheckInRepository';
@@ -93,22 +101,28 @@ import { ExposureTrendView } from '../components/today/ExposureTrendView';
 import { loadExposureTrend } from '../services/recommendationExperience/ExposureTrendRepository';
 import { ProductAnalytics } from '../services/recommendationExperience/ProductAnalytics';
 import { getPersistentStreak } from '../services/recommendationExperience/ProgressionRepository';
+import { subscribeToMommySymptomSync } from '../services/recommendationExperience/MommySymptomSyncService';
+import {
+  locationTracker,
+  type LocationPermissionStatus,
+} from '../services/tracking/LocationTracker';
+import { resolvePlanInputReadiness } from '../utils/planReadiness';
 
-const getTodayDate = (): string =>
-  formatLocalDate(new Date());
+const getTodayDate = (): string => formatLocalDate(new Date());
 const EMPTY_DAILY_MOMENTS: Record<string, DailyMomentRecord> = {};
 
 const DASHBOARD_CAROUSEL_GAP = 12;
 const DASHBOARD_CAROUSEL_PEEK = 24;
 
+const isReleaseVisibleDailyPlanAction = (action: DailyPlanAction): boolean =>
+  action.domain !== 'service';
+
 type DashboardDetailSheet = 'snapshot' | 'risks' | null;
-type DashboardStatus =
-  | 'stable'
-  | 'attention'
-  | 'context'
-  | 'unavailable';
+type DashboardStatus = 'stable' | 'attention' | 'context' | 'unavailable';
 
 interface TodayScreenProps {
+  onCompletePlanProfile?: () => void;
+  onCompletePlanCheckIn?: () => void;
   onNavigateToProfile?: () => void;
   onNavigateToBabyStatus?: () => void;
   onNavigateToSymptomsHistory?: () => void;
@@ -126,9 +140,7 @@ const selectedItemSummary = (
   if (keys.length === 0) return emptyLabel;
   const first = items.find(item => keys.includes(item.key));
   if (!first) return emptyLabel;
-  return keys.length > 1
-    ? `${first.name} +${keys.length - 1}`
-    : first.name;
+  return keys.length > 1 ? `${first.name} +${keys.length - 1}` : first.name;
 };
 
 const statusColor = (status: DashboardStatus): string =>
@@ -142,7 +154,9 @@ const statusColor = (status: DashboardStatus): string =>
 
 export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
   ({
-    onNavigateToProfile: _onNavigateToProfile,
+    onCompletePlanProfile,
+    onCompletePlanCheckIn,
+    onNavigateToProfile,
     onNavigateToBabyStatus,
     onNavigateToSymptomsHistory,
     onNavigateToWeeklySummary,
@@ -152,47 +166,63 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
   }) => {
     const theme = useTheme();
     const { t, i18n } = useTranslation();
-    const locale = i18n.resolvedLanguage === 'fr'
-      ? 'fr-FR'
-      : i18n.resolvedLanguage === 'sw'
+    const { showToast } = useToast();
+    const locale =
+      i18n.resolvedLanguage === 'fr'
+        ? 'fr-FR'
+        : i18n.resolvedLanguage === 'sw'
         ? 'sw-KE'
         : 'en-US';
     const insets = useSafeAreaInsets();
     const { width: windowWidth } = useWindowDimensions();
     const { profile } = useUserStore();
-    const [summary, setSummary] =
-      useState<SummaryResponse | null>(null);
+    const [summary, setSummary] = useState<SummaryResponse | null>(null);
     const [lifestyle, setLifestyle] = useState<any | null>(null);
-    const [dailyPlan, setDailyPlan] =
-      useState<DailyPlanExperience | null>(null);
-    const [checkIn, setCheckIn] =
-      useState<FeelingCheckInExperience | null>(null);
-    const [airExposure, setAirExposure] =
-      useState<AirExposure | null>(null);
+    const [dailyPlan, setDailyPlan] = useState<DailyPlanExperience | null>(
+      null,
+    );
+    const [dailyPlanLoadStatus, setDailyPlanLoadStatus] = useState<
+      'loading' | 'available' | 'unavailable' | 'needsInput'
+    >('loading');
+    const [medicalSafetyAlerts, setMedicalSafetyAlerts] = useState<
+      DailyPlanExperience['medicalAttention']
+    >([]);
+    const [importantGuidanceItems, setImportantGuidanceItems] = useState<
+      DailyPlanExperience['importantGuidanceRecommendations']
+    >([]);
+    const [improvePlanPrompts, setImprovePlanPrompts] = useState<
+      DailyPlanExperience['optionalSupportRecommendations']
+    >([]);
+    const [checkIn, setCheckIn] = useState<FeelingCheckInExperience | null>(
+      null,
+    );
+    const [airExposure, setAirExposure] = useState<AirExposure | null>(null);
+    const [locationPermissionStatus, setLocationPermissionStatus] =
+      useState<LocationPermissionStatus | null>(() =>
+        locationTracker.isTracking() ? 'granted' : null,
+      );
+    const [showLocationSheet, setShowLocationSheet] = useState(false);
     const [
       isPresentationMotherBabyContext,
       setIsPresentationMotherBabyContext,
     ] = useState(false);
-    const [exposureTrend, setExposureTrend] = useState<
-      ExposureTrendPoint[]
-    >([]);
+    const [exposureTrend, setExposureTrend] = useState<ExposureTrendPoint[]>(
+      [],
+    );
     const [quickCheckInKind, setQuickCheckInKind] =
       useState<TodayQuickCheckInKind | null>(null);
-    const [detailSheet, setDetailSheet] =
-      useState<DashboardDetailSheet>(null);
+    const [detailSheet, setDetailSheet] = useState<DashboardDetailSheet>(null);
     const [showBabyAds, setShowBabyAds] = useState(false);
-    const [isNavigatingToBaby, setIsNavigatingToBaby] =
-      useState(false);
+    const [isNavigatingToBaby, setIsNavigatingToBaby] = useState(false);
     const [showDailyWin, setShowDailyWin] = useState(false);
     const [streakDays, setStreakDays] = useState(0);
     const [dashboardPage, setDashboardPage] = useState(0);
-    const [dashboardCardHeight, setDashboardCardHeight] =
-      useState(0);
+    const [dashboardCardHeight, setDashboardCardHeight] = useState(0);
     const hasFocusedOnce = useRef(false);
-    const waveAnimationProgress =
-      useRef(new Animated.Value(0)).current;
-    const lastSheetTrigger =
-      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const waveAnimationProgress = useRef(new Animated.Value(0)).current;
+    const lastSheetTrigger = useRef<React.ElementRef<typeof Pressable> | null>(
+      null,
+    );
     const dashboardCarouselRef = useRef<ScrollView | null>(null);
     const pageScrollRef = useRef<ScrollView | null>(null);
     const planSectionY = useRef(0);
@@ -202,14 +232,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       280,
       Math.min(windowWidth, 680) - spacing('md') * 2,
     );
-    const dashboardCardWidth =
-      dashboardViewportWidth - DASHBOARD_CAROUSEL_PEEK;
+    const dashboardCardWidth = dashboardViewportWidth - DASHBOARD_CAROUSEL_PEEK;
     const dashboardSecondOffset =
-      dashboardCardWidth +
-      DASHBOARD_CAROUSEL_GAP -
-      DASHBOARD_CAROUSEL_PEEK;
-    const dashboardCardInnerWidth =
-      dashboardCardWidth - spacing('md') * 2;
+      dashboardCardWidth + DASHBOARD_CAROUSEL_GAP - DASHBOARD_CAROUSEL_PEEK;
+    const dashboardCardInnerWidth = dashboardCardWidth - spacing('md') * 2;
     const dashboardCardStyle = useMemo(
       () => ({ width: dashboardCardWidth }),
       [dashboardCardWidth],
@@ -223,9 +249,26 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     );
 
     const date = useMemo(() => getTodayDate(), []);
+    const storedCheckIn = useRecommendationExperienceStore(
+      state => state.checkIns[date] ?? null,
+    );
+    const pendingMommySymptoms = useRecommendationExperienceStore(
+      state => state.pendingMommySymptomSelections[date] ?? null,
+    );
+    const planInputReadiness = useMemo(
+      () =>
+        resolvePlanInputReadiness(
+          profile,
+          storedCheckIn,
+          pendingMommySymptoms,
+        ),
+      [pendingMommySymptoms, profile, storedCheckIn],
+    );
+    const hasLocationPermission = locationPermissionStatus === 'granted';
+    const isLocationPermissionRequired =
+      locationPermissionStatus !== null && !hasLocationPermission;
     const dailyMoments = useRecommendationExperienceStore(
-      state =>
-        state.dailyMoments[date] ?? EMPTY_DAILY_MOMENTS,
+      state => state.dailyMoments[date] ?? EMPTY_DAILY_MOMENTS,
     );
     const identity = useMemo<RecommendationExperienceIdentity>(
       () => ({
@@ -254,25 +297,41 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     );
 
     const refreshToday = useCallback(async () => {
-      const [
-        planResult,
-        checkInExperience,
-        lifestyleData,
-        airExposureData,
-      ] = await Promise.all([
-        loadDailyPlanExperience(
-          identity,
-          date,
-          (key, fallback) => t(key, { defaultValue: fallback }),
-        ),
-        loadFeelingCheckInExperience(identity, date),
-        DEV_LOCAL_SESSION
-          ? Promise.resolve(null)
-          : LifestyleService.getLifestyle().catch(() => null),
-        DEV_LOCAL_SESSION
-          ? Promise.resolve(null)
-          : ExposureService.getAirExposure().catch(() => null),
-      ]);
+      if (!planInputReadiness.ready) {
+        setSummary(null);
+        setDailyPlan(null);
+        setDailyPlanLoadStatus('needsInput');
+        setMedicalSafetyAlerts([]);
+        setImportantGuidanceItems([]);
+        setImprovePlanPrompts([]);
+        setCheckIn(null);
+        setLifestyle(null);
+        setAirExposure(null);
+        setExposureTrend([]);
+        setIsPresentationMotherBabyContext(false);
+        return;
+      }
+
+      setDailyPlanLoadStatus(current =>
+        current === 'available' ? current : 'loading',
+      );
+      const [planResult, checkInExperience, lifestyleData, airExposureData] =
+        await Promise.all([
+          loadDailyPlanExperience(identity, date, {
+            inputReadiness: planInputReadiness,
+            translate: (key, fallback) =>
+              t(key, { defaultValue: fallback }),
+          }),
+          loadFeelingCheckInExperience(identity, date),
+          DEV_LOCAL_SESSION
+            ? Promise.resolve(null)
+            : LifestyleService.getLifestyle().catch(() => null),
+          !hasLocationPermission
+            ? Promise.resolve(null)
+            : DEV_LOCAL_SESSION
+            ? Promise.resolve(null)
+            : ExposureService.getAirExposure().catch(() => null),
+        ]);
 
       const pregnancyWeek =
         getCurrentPregnancyWeek(
@@ -292,25 +351,41 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       });
 
       setSummary(completedPresentation.summary);
-      setDailyPlan(planResult.experience);
+      setDailyPlan(
+        planResult.status === 'available' ? planResult.experience : null,
+      );
+      setDailyPlanLoadStatus(planResult.status);
+      setMedicalSafetyAlerts(planResult.experience.medicalAttention);
+      setImportantGuidanceItems(
+        planResult.experience.importantGuidanceRecommendations,
+      );
+      setImprovePlanPrompts([
+        ...planResult.experience.importantGuidanceRecommendations.slice(1),
+        ...planResult.experience.guidanceRecommendations,
+        ...planResult.experience.optionalSupportRecommendations,
+      ]);
       setCheckIn(completedPresentation.checkIn);
       setLifestyle(completedPresentation.lifestyle);
-      setAirExposure(completedPresentation.airExposure);
+      setAirExposure(
+        hasLocationPermission ? completedPresentation.airExposure : null,
+      );
       setIsPresentationMotherBabyContext(
         completedPresentation.sourceFlags.motherBabyContext,
       );
-      loadExposureTrend({
-        summary: completedPresentation.summary,
-        endDate: date,
-        pregnancyWeek,
-      })
-        .then(result => setExposureTrend(result.points))
-        .catch(() => setExposureTrend([]));
+      if (hasLocationPermission) {
+        loadExposureTrend({
+          summary: completedPresentation.summary,
+          endDate: date,
+          pregnancyWeek,
+        })
+          .then(result => setExposureTrend(result.points))
+          .catch(() => setExposureTrend([]));
+      } else {
+        setExposureTrend([]);
+      }
       const milestone =
         completedPresentation.summary.week_info?.text ??
-        t(
-          `home.week_desc_w${String(pregnancyWeek).padStart(2, '0')}`,
-        );
+        t(`home.week_desc_w${String(pregnancyWeek).padStart(2, '0')}`);
       setStreakDays(
         loadWeeklySummaryExperience({
           identity,
@@ -323,15 +398,66 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     }, [
       date,
       identity,
+      hasLocationPermission,
       t,
       profile.pregnancyWeek,
       profile.pregnancyWeekSetDate,
+      planInputReadiness,
     ]);
 
+    useFocusEffect(
+      useCallback(() => {
+        let mounted = true;
+        const statusRequest = locationTracker.isTracking()
+          ? Promise.resolve<LocationPermissionStatus>('granted')
+          : locationTracker.getPermissionStatus();
+
+        statusRequest
+          .then(status => {
+            if (mounted) {
+              setLocationPermissionStatus(status);
+            }
+          })
+          .catch(() => {
+            if (mounted) {
+              setLocationPermissionStatus('unavailable');
+            }
+          });
+
+        return () => {
+          mounted = false;
+        };
+      }, []),
+    );
+
+    const handleLocationAllow = useCallback(async () => {
+      setShowLocationSheet(false);
+      const status = await locationTracker
+        .requestAndStart()
+        .catch(() => 'unavailable' as const);
+      setLocationPermissionStatus(status);
+      if (status === 'blocked') {
+        Linking.openSettings().catch(() => {});
+      }
+    }, []);
+
     useEffect(() => {
-      refreshToday().catch(() => setDailyPlan(null));
-      DailyCheckinService.ensureCheckin(date);
-    }, [date, refreshToday]);
+      refreshToday().catch(() => {
+        setDailyPlan(null);
+        setDailyPlanLoadStatus('unavailable');
+      });
+      if (planInputReadiness.ready) {
+        DailyCheckinService.ensureCheckin(date);
+      }
+    }, [date, planInputReadiness.ready, refreshToday]);
+
+    useEffect(
+      () =>
+        subscribeToMommySymptomSync(() => {
+          refreshToday().catch(() => {});
+        }),
+      [refreshToday],
+    );
 
     useFocusEffect(
       useCallback(() => {
@@ -374,152 +500,146 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       }, 350);
     }, [isNavigatingToBaby, showBabyAds]);
 
-    const totalTasks = dailyPlan?.primaryActions.length ?? 0;
-    const doneTasks =
-      dailyPlan?.primaryActions.filter(action => action.completed)
-        .length ?? 0;
-    const protectionPct =
-      totalTasks > 0
-        ? Math.round((doneTasks / totalTasks) * 100)
-        : 0;
+    const visiblePrimaryActions =
+      dailyPlan?.primaryActions.filter(isReleaseVisibleDailyPlanAction) ?? [];
+    const totalTasks = visiblePrimaryActions.length;
+    const doneTasks = visiblePrimaryActions.filter(
+      action => action.completed,
+    ).length;
+    const impactCompletionPct = dailyPlan
+      ? riskImpactCompletionPercent(dailyPlan)
+      : 0;
+    const completedRiskImpact = dailyPlan
+      ? completedRiskImpactValue(dailyPlan)
+      : 0;
+    const totalRiskImpact = dailyPlan?.riskImpact?.totalValue ?? 0;
+    const hasRiskImpactProgress =
+      dailyPlan?.riskImpact !== undefined && totalRiskImpact !== 0;
+    const protectionPct = hasRiskImpactProgress
+      ? impactCompletionPct
+      : totalTasks > 0
+      ? Math.round((doneTasks / totalTasks) * 100)
+      : 0;
 
     const handleChangeActionState = useCallback(
-      (action: DailyPlanAction, state: DailyActionState) => {
-        if (!dailyPlan) return;
-        const hadCompletedAction = dailyPlan.primaryActions.some(
+      async (
+        action: DailyPlanAction,
+        state: DailyActionState,
+      ): Promise<boolean> => {
+        if (!dailyPlan) return false;
+        const visibleDailyPlanPrimaryActions = dailyPlan.primaryActions.filter(
+          isReleaseVisibleDailyPlanAction,
+        );
+        const hadCompletedAction = visibleDailyPlanPrimaryActions.some(
           item => item.completed,
         );
-        const isPrimary = dailyPlan.primaryActions.some(
+        const isPrimary = visibleDailyPlanPrimaryActions.some(
           item => item.key === action.key,
         );
-        const update = updateDailyPlanActionState(
-          identity,
-          dailyPlan,
-          action.key,
-          state,
-        );
-        setDailyPlan(update.experience);
-        if (state === 'completed' && !action.completed) {
-          ProductAnalytics.track(identity, 'task_complete', {
-            kind: isPrimary ? 'primary' : 'extra',
-            domain: action.domain,
-          });
-          ProductAnalytics.track(
+        try {
+          const update = await updateDailyPlanActionState(
             identity,
-            'domain_participation',
-            {
+            dailyPlan,
+            action.key,
+            state,
+          );
+          setDailyPlan(update.experience);
+          if (state === 'completed' && !action.completed) {
+            ProductAnalytics.track(identity, 'task_complete', {
+              kind: isPrimary ? 'primary' : 'extra',
+              domain: action.domain,
+            });
+            ProductAnalytics.track(identity, 'domain_participation', {
               domain: action.domain,
               completedCount: 1,
-            },
-          );
-          if (isPrimary) {
-            const streak = getPersistentStreak(
-              identity,
-              date,
-            );
-            ProductAnalytics.track(
-              identity,
-              'streak_progress',
-              {
+            });
+            if (isPrimary) {
+              const streak = getPersistentStreak(identity, date);
+              ProductAnalytics.track(identity, 'streak_progress', {
                 days: streak.days,
                 freezeAvailable: streak.freezeAvailable,
-              },
-            );
+              });
+            }
           }
-        }
 
-        if (
-          state === 'completed' &&
-          isPrimary &&
-          !hadCompletedAction &&
-          !useRecommendationExperienceStore
-            .getState()
-            .hasCelebratedDailyWin(date)
-        ) {
-          useRecommendationExperienceStore
-            .getState()
-            .markDailyWinCelebrated(date);
-          setShowDailyWin(true);
+          if (
+            state === 'completed' &&
+            isPrimary &&
+            !hadCompletedAction &&
+            !useRecommendationExperienceStore
+              .getState()
+              .hasCelebratedDailyWin(date)
+          ) {
+            useRecommendationExperienceStore
+              .getState()
+              .markDailyWinCelebrated(date);
+            setShowDailyWin(true);
+          }
+          const milestone = t(
+            `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
+          );
+          setStreakDays(
+            loadWeeklySummaryExperience({
+              identity,
+              pregnancyWeek: currentWeek,
+              endDate: date,
+              milestone,
+              backendSummary: summary,
+            }).streakDays,
+          );
+          return true;
+        } catch {
+          showToast({
+            type: 'error',
+            title: t('today.task_update_failed_title'),
+            message: t('today.task_update_failed_message'),
+          });
+          return false;
         }
-        const milestone = t(
-          `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
-        );
-        setStreakDays(
-          loadWeeklySummaryExperience({
-            identity,
-            pregnancyWeek: currentWeek,
-            endDate: date,
-            milestone,
-            backendSummary: summary,
-          }).streakDays,
-        );
-        update.sync.catch(() => {});
       },
-      [currentWeek, dailyPlan, date, identity, summary, t],
+      [currentWeek, dailyPlan, date, identity, showToast, summary, t],
     );
 
     const handleToggleAction = useCallback(
-      (action: DailyPlanAction, completed: boolean) => {
-        handleChangeActionState(
-          action,
-          completed ? 'completed' : 'pending',
-        );
-      },
+      (action: DailyPlanAction, completed: boolean): Promise<boolean> =>
+        handleChangeActionState(action, completed ? 'completed' : 'pending'),
       [handleChangeActionState],
     );
 
-    const criticalRecommendation = summary?.recommendations?.find(
-      recommendation => {
-        const severity = recommendation.severity
-          ?.trim()
-          .toLowerCase();
-        return (
-          ['critical', 'urgent', 'high'].includes(severity) &&
-          Boolean(
-            recommendation.alert ||
-              recommendation.message ||
-              recommendation.title,
-          )
-        );
-      },
-    );
+    const medicalAttention = medicalSafetyAlerts[0] ?? null;
+    const importantGuidance = importantGuidanceItems[0] ?? null;
 
     const motherDataAvailable = Boolean(
-      summary?.mom_exposure ||
-        summary?.risks_delta?.mom !== undefined,
+      summary?.mom_exposure || summary?.risks_delta?.mom !== undefined,
     );
     const babyDataAvailable = Boolean(
-      summary?.baby_exposure ||
-        summary?.risks_delta?.baby !== undefined,
+      summary?.baby_exposure || summary?.risks_delta?.baby !== undefined,
     );
     const motherStatus: DashboardStatus =
       isPresentationMotherBabyContext && !motherDataAvailable
-      ? 'context'
-      : !motherDataAvailable
-      ? 'unavailable'
-      : (summary?.risks_delta?.mom ?? 0) > 0
-      ? 'attention'
-      : 'stable';
+        ? 'context'
+        : !motherDataAvailable
+        ? 'unavailable'
+        : (summary?.risks_delta?.mom ?? 0) > 0
+        ? 'attention'
+        : 'stable';
     const babyStatus: DashboardStatus =
       isPresentationMotherBabyContext && !babyDataAvailable
-      ? 'context'
-      : !babyDataAvailable
-      ? 'unavailable'
-      : (summary?.risks_delta?.baby ?? 0) > 0
-      ? 'attention'
-      : 'stable';
-    const motherAndBabyAttention =
-      motherStatus === 'attention' ||
-      babyStatus === 'attention';
-    const motherAndBabyStatus: DashboardStatus =
-      motherAndBabyAttention
-        ? 'attention'
-        : motherStatus === 'context' &&
-          babyStatus === 'context'
         ? 'context'
-        : motherDataAvailable || babyDataAvailable
-        ? 'stable'
-        : 'unavailable';
+        : !babyDataAvailable
+        ? 'unavailable'
+        : (summary?.risks_delta?.baby ?? 0) > 0
+        ? 'attention'
+        : 'stable';
+    const motherAndBabyAttention =
+      motherStatus === 'attention' || babyStatus === 'attention';
+    const motherAndBabyStatus: DashboardStatus = motherAndBabyAttention
+      ? 'attention'
+      : motherStatus === 'context' && babyStatus === 'context'
+      ? 'context'
+      : motherDataAvailable || babyDataAvailable
+      ? 'stable'
+      : 'unavailable';
 
     const statusLabel = (status: DashboardStatus): string =>
       t(
@@ -547,23 +667,21 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         )
       : t('today.log_now');
     const hydrationTarget =
-      lifestyle?.hydration_target_ml_per_day ?? 2000;
+      lifestyle?.hydration_target_ml_per_day ?? checkIn?.waterGoalMl ?? 0;
     const waterProgress = Math.min(
       100,
-      Math.round(
-        ((checkIn?.waterDailyTotalMl ?? 0) /
-          hydrationTarget) *
-          100,
-      ),
+      hydrationTarget > 0
+        ? Math.round(
+            ((checkIn?.waterDailyTotalMl ?? 0) / hydrationTarget) * 100,
+          )
+        : 0,
     );
     const moodProgress =
       checkIn && checkIn.moods.length > 0
         ? Math.min(
             100,
             Math.round(
-              (checkIn.selection.moodKeys.length /
-                checkIn.moods.length) *
-                100,
+              (checkIn.selection.moodKeys.length / checkIn.moods.length) * 100,
             ),
           )
         : 0;
@@ -572,8 +690,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         ? Math.min(
             100,
             Math.round(
-              (checkIn.selection.feelingKeys.length /
-                checkIn.feelings.length) *
+              (checkIn.selection.feelingKeys.length / checkIn.feelings.length) *
                 100,
             ),
           )
@@ -589,8 +706,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       item => item.group === 'warning',
     );
     const symptomCount = selectedMommySymptoms.length;
-    const symptomRecordKnown =
-      checkIn?.recordState === 'recorded';
+    const symptomRecordKnown = checkIn?.recordState === 'recorded';
     const symptomSummary =
       warningSymptoms.length > 0
         ? t('today.warning_symptoms_recorded', {
@@ -645,14 +761,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     }, [currentWeek]);
 
     const getSystemLabel = (iconPath?: string): string => {
-      const rawKey = (iconPath || 'heartSystem.svg').replace(
-        '.svg',
-        '',
-      );
-      const translated = t(
-        `baby.system_${rawKey}` as any,
-        { defaultValue: '' },
-      );
+      const rawKey = (iconPath || 'heartSystem.svg').replace('.svg', '');
+      const translated = t(`baby.system_${rawKey}` as any, {
+        defaultValue: '',
+      });
       return (
         translated ||
         rawKey
@@ -696,22 +808,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       restoreSheetTriggerFocus();
     };
 
-    const waterRef =
-      useRef<React.ElementRef<typeof Pressable> | null>(null);
-    const moodRef =
-      useRef<React.ElementRef<typeof Pressable> | null>(null);
-    const feelingRef =
-      useRef<React.ElementRef<typeof Pressable> | null>(null);
-    const snapshotRef =
-      useRef<React.ElementRef<typeof Pressable> | null>(null);
-    const symptomRef =
-      useRef<React.ElementRef<typeof Pressable> | null>(null);
-    const restRef =
-      useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const waterRef = useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const moodRef = useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const feelingRef = useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const snapshotRef = useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const symptomRef = useRef<React.ElementRef<typeof Pressable> | null>(null);
+    const restRef = useRef<React.ElementRef<typeof Pressable> | null>(null);
 
-    const formatRiskDelta = (
-      delta: number | undefined,
-    ): string => {
+    const formatRiskDelta = (delta: number | undefined): string => {
       if (delta === undefined) {
         return t('today.status_unavailable');
       }
@@ -720,28 +824,20 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         delta < 0 ? 'today.decrease' : 'today.increase',
       )}`;
     };
+    const formatSignedPercent = (value: number): string =>
+      `${value < 0 ? '-' : '+'}${Math.abs(value).toFixed(1)}%`;
 
-    const handleDashboardCardLayout = useCallback(
-      (event: any) => {
-        const nextHeight = Math.ceil(
-          event.nativeEvent.layout.height,
-        );
-        setDashboardCardHeight(previousHeight =>
-          Math.abs(previousHeight - nextHeight) > 1
-            ? nextHeight
-            : previousHeight,
-        );
-      },
-      [],
-    );
+    const handleDashboardCardLayout = useCallback((event: any) => {
+      const nextHeight = Math.ceil(event.nativeEvent.layout.height);
+      setDashboardCardHeight(previousHeight =>
+        Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight,
+      );
+    }, []);
 
     const handleDashboardScrollEnd = useCallback(
-      (
-        event: NativeSyntheticEvent<NativeScrollEvent>,
-      ) => {
+      (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const nextPage =
-          event.nativeEvent.contentOffset.x >=
-          dashboardSecondOffset / 2
+          event.nativeEvent.contentOffset.x >= dashboardSecondOffset / 2
             ? 1
             : 0;
         setDashboardPage(nextPage);
@@ -753,10 +849,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       (page: number) => {
         const nextPage = page === 1 ? 1 : 0;
         dashboardCarouselRef.current?.scrollTo({
-          x:
-            nextPage === 1
-              ? dashboardSecondOffset
-              : 0,
+          x: nextPage === 1 ? dashboardSecondOffset : 0,
           animated: true,
         });
         setDashboardPage(nextPage);
@@ -827,6 +920,29 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           warningBody: {
             marginTop: spacing('xs'),
             color: '#6E2B2B',
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 13,
+            lineHeight: 19,
+          },
+          importantGuidance: {
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            padding: spacing('md'),
+            marginTop: spacing('md'),
+            borderRadius: radius('lg'),
+            borderWidth: 1,
+            borderColor: '#F0C78A',
+            backgroundColor: '#FFF8EA',
+            gap: spacing('sm'),
+          },
+          importantGuidanceTitle: {
+            color: theme.colors.orange800,
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 15,
+          },
+          importantGuidanceBody: {
+            marginTop: spacing('xs'),
+            color: theme.colors.textSecondary,
             fontFamily: theme.typography.fontFamily.regular,
             fontSize: 13,
             lineHeight: 19,
@@ -1180,6 +1296,24 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             color: theme.colors.textSecondary,
             fontFamily: theme.typography.fontFamily.medium,
             fontSize: 14,
+            lineHeight: 20,
+            textAlign: 'center',
+          },
+          retryPlanButton: {
+            minHeight: 36,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: spacing('md'),
+            paddingHorizontal: spacing('md'),
+            borderRadius: 18,
+            backgroundColor: theme.colors.orange500,
+            gap: spacing('xs'),
+          },
+          retryPlanButtonText: {
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 12,
           },
           riskCard: {
             overflow: 'hidden',
@@ -1508,10 +1642,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
 
     const renderSheetHeader = (title: string) => (
       <View style={styles.sheetHeader}>
-        <Text
-          accessibilityRole="header"
-          style={styles.sheetTitle}
-        >
+        <Text accessibilityRole="header" style={styles.sheetTitle}>
           {title}
         </Text>
         <Pressable
@@ -1550,10 +1681,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
               color={theme.colors.textPrimary}
             />
           </Pressable>
-          <Text
-            accessibilityRole="header"
-            style={styles.navTitle}
-          >
+          <Text accessibilityRole="header" style={styles.navTitle}>
             {t('today.title')}
           </Text>
           {dailyPlan ? (
@@ -1570,11 +1698,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {criticalRecommendation ? (
-            <View
-              accessibilityRole="alert"
-              style={styles.warning}
-            >
+          {medicalAttention ? (
+            <View accessibilityRole="alert" style={styles.warning}>
               <FontAwesomeIcon
                 icon={faTriangleExclamation}
                 size={19}
@@ -1582,13 +1707,30 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
               />
               <View style={styles.warningCopy}>
                 <Text style={styles.warningTitle}>
-                  {criticalRecommendation.title ||
-                    t('today.attention_required')}
+                  {medicalAttention.title || t('today.attention_required')}
                 </Text>
                 <Text style={styles.warningBody}>
-                  {criticalRecommendation.alert ||
-                    criticalRecommendation.message}
+                  {medicalAttention.alert || medicalAttention.message}
                 </Text>
+              </View>
+            </View>
+          ) : null}
+          {importantGuidance ? (
+            <View style={styles.importantGuidance}>
+              <FontAwesomeIcon
+                icon={faCircleExclamation}
+                size={18}
+                color={theme.colors.orange700}
+              />
+              <View style={styles.warningCopy}>
+                <Text style={styles.importantGuidanceTitle}>
+                  {importantGuidance.title}
+                </Text>
+                {importantGuidance.alert || importantGuidance.message ? (
+                  <Text style={styles.importantGuidanceBody}>
+                    {importantGuidance.alert || importantGuidance.message}
+                  </Text>
+                ) : null}
               </View>
             </View>
           ) : null}
@@ -1605,16 +1747,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={handleDashboardScrollEnd}
               style={styles.dashboardCarousel}
-              contentContainerStyle={
-                styles.dashboardCarouselContent
-              }
+              contentContainerStyle={styles.dashboardCarouselContent}
             >
-              <View
-                style={[
-                  styles.dashboardSlide,
-                  dashboardCardStyle,
-                ]}
-              >
+              <View style={[styles.dashboardSlide, dashboardCardStyle]}>
                 <View
                   onLayout={handleDashboardCardLayout}
                   style={styles.liveCard}
@@ -1631,7 +1766,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                           week: currentWeek,
                         })
                           .split('/')[0]
-                        .trim()} · ${currentDateLabel}`}
+                          .trim()} · ${currentDateLabel}`}
                       </Text>
                     </View>
                   </View>
@@ -1640,10 +1775,12 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   <ExposureAccordion
                     airExposure={airExposure}
                     embedded
-                    ventilation={profile.ventilation}
-                    onOpenHistory={() =>
-                      openDetailSheet('risks', null)
+                    locationPermissionGranted={
+                      !isLocationPermissionRequired
                     }
+                    onRequestLocation={() => setShowLocationSheet(true)}
+                    ventilation={profile.ventilation}
+                    onOpenHistory={() => openDetailSheet('risks', null)}
                   />
                   <View style={styles.liveDivider} />
 
@@ -1659,16 +1796,12 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                       accessibilityLabel={t(
                         'today.water_checkin_accessibility',
                         {
-                          amount:
-                            checkIn?.waterDailyTotalMl ?? 0,
+                          amount: checkIn?.waterDailyTotalMl ?? 0,
                           target: hydrationTarget,
                         },
                       )}
                       onPress={() =>
-                        openQuickCheckIn(
-                          'water',
-                          waterRef.current,
-                        )
+                        openQuickCheckIn('water', waterRef.current)
                       }
                       style={styles.checkInItem}
                     >
@@ -1676,45 +1809,30 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                         type="water"
                         percentage={waterProgress}
                         label={t('today.water')}
-                        animationProgress={
-                          waveAnimationProgress
-                        }
+                        animationProgress={waveAnimationProgress}
                         value={`${
                           checkIn?.waterDailyTotalMl ?? 0
                         }/${hydrationTarget} ml`}
                         compact
-                        availableWidth={
-                          dashboardCardInnerWidth
-                        }
+                        availableWidth={dashboardCardInnerWidth}
                       />
                     </Pressable>
 
                     <Pressable
                       ref={moodRef}
                       accessibilityRole="button"
-                      accessibilityLabel={`${t(
-                        'today.mood',
-                      )}. ${moodSummary}`}
-                      onPress={() =>
-                        openQuickCheckIn(
-                          'mood',
-                          moodRef.current,
-                        )
-                      }
+                      accessibilityLabel={`${t('today.mood')}. ${moodSummary}`}
+                      onPress={() => openQuickCheckIn('mood', moodRef.current)}
                       style={styles.checkInItem}
                     >
                       <WaveCard
                         type="mood"
                         percentage={moodProgress}
                         label={t('today.mood')}
-                        animationProgress={
-                          waveAnimationProgress
-                        }
+                        animationProgress={waveAnimationProgress}
                         value={moodSummary}
                         compact
-                        availableWidth={
-                          dashboardCardInnerWidth
-                        }
+                        availableWidth={dashboardCardInnerWidth}
                       />
                     </Pressable>
 
@@ -1725,10 +1843,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                         'today.feeling',
                       )}. ${feelingSummary}`}
                       onPress={() =>
-                        openQuickCheckIn(
-                          'feeling',
-                          feelingRef.current,
-                        )
+                        openQuickCheckIn('feeling', feelingRef.current)
                       }
                       style={styles.checkInItem}
                     >
@@ -1736,14 +1851,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                         type="feeling"
                         percentage={feelingProgress}
                         label={t('today.feeling')}
-                        animationProgress={
-                          waveAnimationProgress
-                        }
+                        animationProgress={waveAnimationProgress}
                         value={feelingSummary}
                         compact
-                        availableWidth={
-                          dashboardCardInnerWidth
-                        }
+                        availableWidth={dashboardCardInnerWidth}
                       />
                     </Pressable>
                   </View>
@@ -1754,10 +1865,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                       accessibilityRole="button"
                       accessibilityLabel={symptomSummary}
                       onPress={() =>
-                        openQuickCheckIn(
-                          'symptom',
-                          symptomRef.current,
-                        )
+                        openQuickCheckIn('symptom', symptomRef.current)
                       }
                       style={styles.checkInUtilityItem}
                     >
@@ -1811,12 +1919,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                       ref={restRef}
                       accessibilityRole="button"
                       accessibilityLabel={restSummary}
-                      onPress={() =>
-                        openQuickCheckIn(
-                          'rest',
-                          restRef.current,
-                        )
-                      }
+                      onPress={() => openQuickCheckIn('rest', restRef.current)}
                       style={styles.checkInUtilityItem}
                     >
                       <View
@@ -1826,11 +1929,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                         ]}
                       >
                         <FontAwesomeIcon
-                          icon={
-                            quickRest?.completed
-                              ? faCheck
-                              : faBed
-                          }
+                          icon={quickRest?.completed ? faCheck : faBed}
                           size={12}
                           color="#70428F"
                         />
@@ -1861,14 +1960,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                     accessibilityLabel={t(
                       'today.mother_and_baby_status_accessibility',
                     )}
-                    accessibilityHint={t(
-                      'today.opens_mother_baby_details',
-                    )}
+                    accessibilityHint={t('today.opens_mother_baby_details')}
                     onPress={() =>
-                      openDetailSheet(
-                        'snapshot',
-                        snapshotRef.current,
-                      )
+                      openDetailSheet('snapshot', snapshotRef.current)
                     }
                     style={styles.careStatusRow}
                   >
@@ -1880,19 +1974,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                             : faShieldHeart
                         }
                         size={14}
-                        color={statusColor(
-                          motherAndBabyStatus,
-                        )}
+                        color={statusColor(motherAndBabyStatus)}
                       />
                     </View>
                     <View style={styles.careStatusCopy}>
                       <Text style={styles.careStatusLabel}>
                         {t('today.mother_and_baby_status')}
                       </Text>
-                      <Text
-                        numberOfLines={1}
-                        style={styles.careStatusValue}
-                      >
+                      <Text numberOfLines={1} style={styles.careStatusValue}>
                         {statusLabel(motherAndBabyStatus)}
                       </Text>
                     </View>
@@ -1900,8 +1989,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                       style={[
                         styles.statusDot,
                         {
-                          backgroundColor:
-                            statusColor(motherAndBabyStatus),
+                          backgroundColor: statusColor(motherAndBabyStatus),
                         },
                       ]}
                     />
@@ -1914,18 +2002,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                 </View>
               </View>
 
-              <View
-                style={[
-                  styles.dashboardSlide,
-                  dashboardCardStyle,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.weekCard,
-                    weekCardHeightStyle,
-                  ]}
-                >
+              <View style={[styles.dashboardSlide, dashboardCardStyle]}>
+                <View style={[styles.weekCard, weekCardHeightStyle]}>
                   <LinearGradient
                     pointerEvents="none"
                     colors={['#70428F', '#C87898', '#FF8A48']}
@@ -1933,10 +2011,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                     end={{ x: 1, y: 0 }}
                     style={styles.weekAccent}
                   />
-                  <View
-                    pointerEvents="none"
-                    style={styles.weekGlow}
-                  />
+                  <View pointerEvents="none" style={styles.weekGlow} />
 
                   <View style={styles.weekHeader}>
                     <View style={styles.weekHeaderIcon}>
@@ -1960,12 +2035,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                     </View>
                   </View>
 
-                  <Text
-                    numberOfLines={3}
-                    style={styles.weekSummary}
-                  >
-                    {summary?.week_info?.text ||
-                      t('today.week_default_text')}
+                  <Text numberOfLines={3} style={styles.weekSummary}>
+                    {summary?.week_info?.text || t('today.week_default_text')}
                   </Text>
 
                   <Text style={styles.systemsLabel}>
@@ -1973,26 +2044,19 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   </Text>
                   <View style={styles.systemsList}>
                     {growingSystems.map((system, index) => {
-                      const iconPath =
-                        system.iconPath ||
-                        'heartSystem.svg';
+                      const iconPath = system.iconPath || 'heartSystem.svg';
                       const svg =
-                        SVG_ICONS[iconPath] ||
-                        SVG_ICONS['heartSystem.svg'];
+                        SVG_ICONS[iconPath] || SVG_ICONS['heartSystem.svg'];
                       const percentage = Math.min(
                         100,
-                        Math.max(
-                          0,
-                          system.percentage ?? 0,
-                        ),
+                        Math.max(0, system.percentage ?? 0),
                       );
                       return (
                         <View
                           key={`${system.index}-${iconPath}`}
                           style={[
                             styles.systemRow,
-                            index ===
-                              growingSystems.length - 1 &&
+                            index === growingSystems.length - 1 &&
                               styles.systemRowLast,
                           ]}
                         >
@@ -2006,22 +2070,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                             />
                           </View>
                           <View style={styles.systemCopy}>
-                            <Text
-                              numberOfLines={1}
-                              style={styles.systemName}
-                            >
+                            <Text numberOfLines={1} style={styles.systemName}>
                               {getSystemLabel(iconPath)}
                             </Text>
-                            <View
-                              style={
-                                styles.systemProgressRow
-                              }
-                            >
-                              <View
-                                style={
-                                  styles.systemProgressTrack
-                                }
-                              >
+                            <View style={styles.systemProgressRow}>
+                              <View style={styles.systemProgressTrack}>
                                 <View
                                   style={[
                                     styles.systemProgressFill,
@@ -2031,11 +2084,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                                   ]}
                                 />
                               </View>
-                              <Text
-                                style={
-                                  styles.systemPercentage
-                                }
-                              >
+                              <Text style={styles.systemPercentage}>
                                 {percentage}%
                               </Text>
                             </View>
@@ -2048,8 +2097,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   <Pressable
                     accessibilityRole="button"
                     onPress={
-                      onNavigateToWeeklySummary ??
-                      handleNavigateToBabyStatus
+                      onNavigateToWeeklySummary ?? handleNavigateToBabyStatus
                     }
                     style={styles.weekAction}
                   >
@@ -2076,9 +2124,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   key={page}
                   accessibilityRole="button"
                   accessibilityLabel={`${
-                    page === 0
-                      ? t('today.exposure')
-                      : t('today.this_week')
+                    page === 0 ? t('today.exposure') : t('today.this_week')
                   } ${page + 1}/2`}
                   accessibilityState={{
                     selected: dashboardPage === page,
@@ -2089,8 +2135,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   <View
                     style={[
                       styles.pageIndicator,
-                      dashboardPage === page &&
-                        styles.pageIndicatorActive,
+                      dashboardPage === page && styles.pageIndicatorActive,
                     ]}
                   />
                 </Pressable>
@@ -2098,27 +2143,40 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             </View>
           </View>
 
-          {dailyPlan ? (
+          {dailyPlanLoadStatus === 'needsInput' ? (
             <View
               onLayout={event => {
-                planSectionY.current =
-                  event.nativeEvent.layout.y;
-                const focusKey =
-                  initialActionKey ??
-                  initialFocus ??
-                  null;
+                planSectionY.current = event.nativeEvent.layout.y;
                 if (
-                  focusKey &&
-                  appliedFocusKey.current !== focusKey
+                  initialFocus === 'plan' &&
+                  appliedFocusKey.current !== 'plan-inputs'
                 ) {
+                  appliedFocusKey.current = 'plan-inputs';
+                  requestAnimationFrame(() => {
+                    pageScrollRef.current?.scrollTo({
+                      y: Math.max(0, planSectionY.current - spacing('sm')),
+                      animated: true,
+                    });
+                  });
+                }
+              }}
+            >
+              <PlanInputEmptyState
+                readiness={planInputReadiness}
+                onCompleteProfile={onCompletePlanProfile}
+                onCompleteCheckIn={onCompletePlanCheckIn}
+              />
+            </View>
+          ) : dailyPlan ? (
+            <View
+              onLayout={event => {
+                planSectionY.current = event.nativeEvent.layout.y;
+                const focusKey = initialActionKey ?? initialFocus ?? null;
+                if (focusKey && appliedFocusKey.current !== focusKey) {
                   appliedFocusKey.current = focusKey;
                   requestAnimationFrame(() => {
                     pageScrollRef.current?.scrollTo({
-                      y: Math.max(
-                        0,
-                        planSectionY.current -
-                          spacing('sm'),
-                      ),
+                      y: Math.max(0, planSectionY.current - spacing('sm')),
                       animated: true,
                     });
                   });
@@ -2141,15 +2199,40 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                     pageScrollRef.current?.scrollTo({
                       y: Math.max(
                         0,
-                        planSectionY.current +
-                          offsetY -
-                          spacing('lg'),
+                        planSectionY.current + offsetY - spacing('lg'),
                       ),
                       animated: true,
                     });
                   });
                 }}
               />
+            </View>
+          ) : dailyPlanLoadStatus === 'unavailable' ? (
+            <View style={styles.preparingPlan}>
+              <Text style={styles.preparingText}>
+                {t('today.plan_unavailable')}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('feeling_checkin.try_again')}
+                onPress={() => {
+                  setDailyPlanLoadStatus('loading');
+                  refreshToday().catch(() => {
+                    setDailyPlan(null);
+                    setDailyPlanLoadStatus('unavailable');
+                  });
+                }}
+                style={styles.retryPlanButton}
+              >
+                <FontAwesomeIcon
+                  icon={faRotateRight}
+                  size={12}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.retryPlanButtonText}>
+                  {t('feeling_checkin.try_again')}
+                </Text>
+              </Pressable>
             </View>
           ) : (
             <View style={styles.preparingPlan}>
@@ -2159,25 +2242,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             </View>
           )}
 
-          <EveningWindDown
-            date={date}
-            identity={identity}
-            onChanged={() => {
-              const milestone = t(
-                `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
-              );
-              setStreakDays(
-                loadWeeklySummaryExperience({
-                  identity,
-                  pregnancyWeek: currentWeek,
-                  endDate: date,
-                  milestone,
-                  backendSummary: summary,
-                }).streakDays,
-              );
-            }}
-          />
+          {dailyPlanLoadStatus !== 'needsInput' ? (
+            <ImprovePlanView
+              prompts={improvePlanPrompts}
+              onOpenProfile={onNavigateToProfile}
+            />
+          ) : null}
 
+          <EveningWindDown date={date} identity={identity} />
         </ScrollView>
 
         <TodayQuickCheckInSheet
@@ -2246,10 +2318,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   </View>
                   {selectedMommySymptoms.length > 0 ? (
                     selectedMommySymptoms.map(item => (
-                      <Text
-                        key={item.key}
-                        style={styles.recordedSymptomRow}
-                      >
+                      <Text key={item.key} style={styles.recordedSymptomRow}>
                         • {item.name}
                       </Text>
                     ))
@@ -2268,10 +2337,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                       accessibilityRole="button"
                       onPress={() => {
                         setDetailSheet(null);
-                        setTimeout(
-                          () => onNavigateToSymptomsHistory(),
-                          180,
-                        );
+                        setTimeout(() => onNavigateToSymptomsHistory(), 180);
                       }}
                       style={styles.historyButton}
                     >
@@ -2289,86 +2355,83 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
               ) : null}
               {detailSheet === 'snapshot' ? (
                 <>
-              <View style={styles.detailRow}>
-                <View style={styles.detailIcon}>
-                  <FontAwesomeIcon
-                    icon={faHeart}
-                    size={17}
-                    color={statusColor(motherStatus)}
-                  />
-                </View>
-                <View style={styles.detailCopy}>
-                  <Text style={styles.detailLabel}>
-                    {t('today.mother')}
-                  </Text>
-                  <Text style={styles.detailText}>
-                    {t(
-                      isPresentationMotherBabyContext
-                        ? 'today.mother_context'
-                        : 'today.mother_risk_change',
-                    )}
-                  </Text>
-                </View>
-                {!isPresentationMotherBabyContext ? (
-                  <Text style={styles.detailValue}>
-                    {formatRiskDelta(
-                      summary?.risks_delta?.mom,
-                    )}
-                  </Text>
-                ) : null}
-              </View>
-              <View style={styles.detailRow}>
-                <View style={styles.detailIcon}>
-                  <FontAwesomeIcon
-                    icon={faBaby}
-                    size={18}
-                    color={statusColor(babyStatus)}
-                  />
-                </View>
-                <View style={styles.detailCopy}>
-                  <Text style={styles.detailLabel}>
-                    {t('today.baby')}
-                  </Text>
-                  <Text style={styles.detailText}>
-                    {t(
-                      isPresentationMotherBabyContext
-                        ? 'today.baby_context'
-                        : 'today.baby_risk_change',
-                      { week: currentWeek },
-                    )}
-                  </Text>
-                </View>
-                {!isPresentationMotherBabyContext ? (
-                  <Text style={styles.detailValue}>
-                    {formatRiskDelta(
-                      summary?.risks_delta?.baby,
-                    )}
-                  </Text>
-                ) : null}
-              </View>
-              <View style={styles.detailRow}>
-                <View style={styles.detailIcon}>
-                  <FontAwesomeIcon
-                    icon={faCheck}
-                    size={15}
-                    color="#2D7B46"
-                  />
-                </View>
-                <View style={styles.detailCopy}>
-                  <Text style={styles.detailLabel}>
-                    {t('today.protection_progress_title')}
-                  </Text>
-                  <Text style={styles.detailText}>
-                    {t('today.actions_completed_summary', {
-                      completed: doneTasks,
-                      total: totalTasks,
-                    })}
-                  </Text>
-                </View>
-                <Text style={styles.detailValue}>
-                  {protectionPct}%
-                </Text>
-              </View>
+                  <View style={styles.detailRow}>
+                    <View style={styles.detailIcon}>
+                      <FontAwesomeIcon
+                        icon={faHeart}
+                        size={17}
+                        color={statusColor(motherStatus)}
+                      />
+                    </View>
+                    <View style={styles.detailCopy}>
+                      <Text style={styles.detailLabel}>
+                        {t('today.mother')}
+                      </Text>
+                      <Text style={styles.detailText}>
+                        {t(
+                          isPresentationMotherBabyContext
+                            ? 'today.mother_context'
+                            : 'today.mother_risk_change',
+                        )}
+                      </Text>
+                    </View>
+                    {!isPresentationMotherBabyContext ? (
+                      <Text style={styles.detailValue}>
+                        {formatRiskDelta(summary?.risks_delta?.mom)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.detailRow}>
+                    <View style={styles.detailIcon}>
+                      <FontAwesomeIcon
+                        icon={faBaby}
+                        size={18}
+                        color={statusColor(babyStatus)}
+                      />
+                    </View>
+                    <View style={styles.detailCopy}>
+                      <Text style={styles.detailLabel}>{t('today.baby')}</Text>
+                      <Text style={styles.detailText}>
+                        {t(
+                          isPresentationMotherBabyContext
+                            ? 'today.baby_context'
+                            : 'today.baby_risk_change',
+                          { week: currentWeek },
+                        )}
+                      </Text>
+                    </View>
+                    {!isPresentationMotherBabyContext ? (
+                      <Text style={styles.detailValue}>
+                        {formatRiskDelta(summary?.risks_delta?.baby)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.detailRow}>
+                    <View style={styles.detailIcon}>
+                      <FontAwesomeIcon
+                        icon={faCheck}
+                        size={15}
+                        color="#2D7B46"
+                      />
+                    </View>
+                    <View style={styles.detailCopy}>
+                      <Text style={styles.detailLabel}>
+                        {t('today.protection_progress_title')}
+                      </Text>
+                      <Text style={styles.detailText}>
+                        {hasRiskImpactProgress
+                          ? t('today.risk_impact_progress_detail', {
+                              applied: formatSignedPercent(completedRiskImpact),
+                              total: formatSignedPercent(totalRiskImpact),
+                            })
+                          : t('today.actions_completed_summary', {
+                              completed: doneTasks,
+                              total: totalTasks,
+                            })}
+                      </Text>
+                    </View>
+                    <Text style={styles.detailValue}>{protectionPct}%</Text>
+                  </View>
                 </>
               ) : null}
               {detailSheet === 'risks' ? (
@@ -2378,6 +2441,13 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           </View>
         </BottomSheet>
 
+        <AccessLocationBottomSheet
+          visible={showLocationSheet}
+          onClose={() => setShowLocationSheet(false)}
+          onAllow={handleLocationAllow}
+          onNotNow={() => setShowLocationSheet(false)}
+        />
+
         <TransitionLoader visible={isNavigatingToBaby} />
 
         <Modal
@@ -2386,6 +2456,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           onRequestClose={() => {}}
         >
           <AdsScreen
+            placement="today-to-baby-status"
             onClose={() => {
               setShowBabyAds(false);
               onNavigateToBabyStatus?.();

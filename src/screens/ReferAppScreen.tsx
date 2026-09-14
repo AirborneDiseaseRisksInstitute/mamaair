@@ -9,13 +9,18 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  Linking,
+  Share,
 } from 'react-native';
 import { useTheme, spacing } from '../theme';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faTimes, faLink, faShare2 } from '@fortawesome/free-solid-svg-icons';
+import { faTimes, faLink, faShare } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
+import { useToast } from '../components/ui';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const MAMAAIR_WEBSITE_URL = 'https://mamaair.africa/';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface ReferAppScreenProps {
   onBack?: () => void;
@@ -24,9 +29,60 @@ interface ReferAppScreenProps {
 export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
   const theme = useTheme();
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const [emailInput, setEmailInput] = React.useState('');
 
   const referImage = require('../assets/images/referApp.png');
+
+  const showShareError = () => {
+    showToast({
+      type: 'error',
+      title: t('refer.share_failed_title'),
+      message: t('refer.share_failed_message'),
+    });
+  };
+
+  const handleEmailInvite = async () => {
+    const email = emailInput.trim();
+    if (!EMAIL_PATTERN.test(email)) {
+      showToast({
+        type: 'error',
+        title: t('refer.invalid_email_title'),
+        message: t('validation.invalid_email'),
+      });
+      return;
+    }
+
+    const subject = encodeURIComponent(t('refer.email_subject'));
+    const body = encodeURIComponent(
+      t('refer.email_body', { url: MAMAAIR_WEBSITE_URL }),
+    );
+
+    try {
+      await Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
+      setEmailInput('');
+    } catch {
+      showShareError();
+    }
+  };
+
+  const handleOpenWebsite = async () => {
+    try {
+      await Linking.openURL(MAMAAIR_WEBSITE_URL);
+    } catch {
+      showShareError();
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: t('refer.share_message', { url: MAMAAIR_WEBSITE_URL }),
+      });
+    } catch {
+      showShareError();
+    }
+  };
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -50,8 +106,8 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
       height: 24,
       justifyContent: 'center',
       alignItems: 'center',
-      marginTop:32,
-      marginRight:24,
+      marginTop: 32,
+      marginRight: 24,
     },
     scrollContent: {
       flexGrow: 1,
@@ -167,10 +223,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
       >
         {/* Illustration Image */}
         <View style={styles.imageContainer}>
-          <Image
-            source={referImage}
-            style={styles.image}
-          />
+          <Image source={referImage} style={styles.image} />
         </View>
 
         {/* Title */}
@@ -187,7 +240,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
         <View style={styles.emailInputContainer}>
           <TextInput
             style={styles.emailInput}
-            placeholder={t('refer.email_or_username')}
+            placeholder={t('refer.email')}
             placeholderTextColor={theme.colors.neutral400}
             value={emailInput}
             onChangeText={setEmailInput}
@@ -198,13 +251,11 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
           <TouchableOpacity
             style={styles.sendButton}
             activeOpacity={0.7}
-            onPress={() => {
-              // Handle send invite
-              console.log('Send invite to:', emailInput);
-              setEmailInput('');
-            }}
+            onPress={handleEmailInvite}
           >
-            <Text style={styles.sendButtonText} allowFontScaling={false}>{t('refer.send_invite')}</Text>
+            <Text style={styles.sendButtonText} allowFontScaling={false}>
+              {t('refer.send_invite')}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -213,33 +264,31 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
           <TouchableOpacity
             style={styles.actionButton}
             activeOpacity={0.7}
-            onPress={() => {
-              // Handle copy link
-              console.log('Copy link pressed');
-            }}
+            onPress={handleOpenWebsite}
           >
             <FontAwesomeIcon
               icon={faLink}
               size={16}
               style={styles.actionIcon}
             />
-            <Text style={styles.actionButtonText} allowFontScaling={false}>{t('refer.copy_link')}</Text>
+            <Text style={styles.actionButtonText} allowFontScaling={false}>
+              {t('refer.open_website')}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.actionButton}
             activeOpacity={0.7}
-            onPress={() => {
-              // Handle share
-              console.log('Share pressed');
-            }}
+            onPress={handleShare}
           >
             <FontAwesomeIcon
-              icon={faShare2}
+              icon={faShare}
               size={16}
               style={styles.actionIcon}
             />
-            <Text style={styles.actionButtonText} allowFontScaling={false}>{t('refer.share_on')}</Text>
+            <Text style={styles.actionButtonText} allowFontScaling={false}>
+              {t('refer.share')}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

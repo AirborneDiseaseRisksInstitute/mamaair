@@ -1,8 +1,4 @@
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   Modal,
@@ -24,20 +20,12 @@ import {
 import { SvgXml } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import {
-  ILLUSTRATIVE_PROGRESS_ENABLED,
-  ILLUSTRATIVE_PROGRESS_VALUE,
-} from '../../config/recommendationExperience';
-import {
   BEHAVIOUR_SVG,
   CONGRATS_SVG,
   DIET_SVG,
   RUNNING_SVG,
 } from '../../utils/svgIcons';
-import {
-  Button,
-  ReminderTimePicker,
-  useToast,
-} from '../ui';
+import { Button, ReminderTimePicker, useToast } from '../ui';
 import { radius, spacing, useTheme } from '../../theme';
 import type {
   ActionReminderRecord,
@@ -57,19 +45,25 @@ import {
   scheduleRestTimerNotification,
 } from '../../services/NotificationService';
 import { getPersistentStreak } from '../../services/recommendationExperience/ProgressionRepository';
+import { completedRiskImpactValue } from '../../services/recommendationExperience/DailyPlanRepository';
+import {
+  shouldShowTaskActions,
+  supportsRestTimer,
+} from '../../services/recommendationExperience/DailyPlanInteractionPresenter';
 const EMPTY_REMINDERS: Record<string, ActionReminderRecord> = {};
 const EMPTY_REST_TIMERS: Record<string, RestTimerRecord> = {};
+const INLINE_ADDITIONAL_ACTIONS_ENABLED = false;
 
 interface DailyPlanViewProps {
   experience: DailyPlanExperience;
   onToggleAction: (
     action: DailyPlanAction,
     completed: boolean,
-  ) => void;
+  ) => void | Promise<boolean>;
   onChangeActionState: (
     action: DailyPlanAction,
     state: DailyActionState,
-  ) => void;
+  ) => void | Promise<boolean>;
   dailyWinVisible: boolean;
   onCloseDailyWin: () => void;
   streakDays: number;
@@ -84,6 +78,9 @@ const DOMAIN_ORDER: DailyActionDomain[] = [
   'activity',
   'behaviour',
   'wellbeing',
+  // Service/treatment escalation is disabled for the current release.
+  // Restore this entry when the backend-supported experience is approved.
+  // 'service',
 ];
 
 const DOMAIN_CONFIG: Record<
@@ -117,6 +114,11 @@ const DOMAIN_CONFIG: Record<
     color: '#70428F',
     background: '#F8F3FB',
     iconBackground: '#EADDF3',
+  },
+  service: {
+    color: '#48607A',
+    background: '#F3F7FA',
+    iconBackground: '#DDE8F0',
   },
 };
 
@@ -152,8 +154,9 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
   const theme = useTheme();
   const { t } = useTranslation();
   const { showToast } = useToast();
-  const [reminderAction, setReminderAction] =
-    useState<DailyPlanAction | null>(null);
+  const [reminderAction, setReminderAction] = useState<DailyPlanAction | null>(
+    null,
+  );
   const [now, setNow] = useState(Date.now());
   const [streakProgress, setStreakProgress] = useState(() => ({
     days: streakDays,
@@ -161,33 +164,62 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
     freezeUsed: false,
   }));
   const reminders = useRecommendationExperienceStore(
-    state =>
-      state.reminders[experience.date] ?? EMPTY_REMINDERS,
+    state => state.reminders[experience.date] ?? EMPTY_REMINDERS,
   );
   const restTimers = useRecommendationExperienceStore(
-    state =>
-      state.restTimers[experience.date] ?? EMPTY_REST_TIMERS,
+    state => state.restTimers[experience.date] ?? EMPTY_REST_TIMERS,
   );
   const actionCompletions = useRecommendationExperienceStore(
     state => state.actionCompletions,
   );
 
-  const completedCount = experience.primaryActions.filter(
+  const visiblePrimaryActions = useMemo(
+    () =>
+      experience.primaryActions.filter(action => action.domain !== 'service'),
+    [experience.primaryActions],
+  );
+  const completedCount = visiblePrimaryActions.filter(
     action => action.completed,
   ).length;
   const hasDailyWin = completedCount > 0;
-  const plannedCount = experience.primaryActions.filter(
+  const completedRiskImpact = completedRiskImpactValue(experience);
+  const hasAppliedRiskImpact = completedRiskImpact !== 0;
+  const plannedCount = visiblePrimaryActions.filter(
     action => action.state === 'planned',
   ).length;
-  const groupedActions = useMemo(
+  const groupedActions = useMemo(() => {
+    const rankedDomains = visiblePrimaryActions.reduce<DailyActionDomain[]>(
+      (domains, action) =>
+        domains.includes(action.domain) ? domains : [...domains, action.domain],
+      [],
+    );
+    return rankedDomains.map(domain => ({
+      domain,
+      actions: visiblePrimaryActions.filter(action => action.domain === domain),
+    }));
+  }, [visiblePrimaryActions]);
+  const sharedPlanContexts = useMemo(() => {
+    const counts = visiblePrimaryActions.reduce<Record<string, number>>(
+      (result, action) => {
+        const label = action.contextLabel?.trim();
+        if (label) result[label] = (result[label] ?? 0) + 1;
+        return result;
+      },
+      {},
+    );
+    return Object.keys(counts).filter(label => counts[label] > 1);
+  }, [visiblePrimaryActions]);
+  const sharedPlanContextSet = useMemo(
+    () => new Set(sharedPlanContexts),
+    [sharedPlanContexts],
+  );
+  const groupedAdditionalActions = useMemo(
     () =>
       DOMAIN_ORDER.map(domain => ({
         domain,
-        actions: experience.primaryActions.filter(
-          action => action.domain === domain,
-        ),
+        actions: experience.additionalActions[domain] ?? [],
       })).filter(group => group.actions.length > 0),
-    [experience.primaryActions],
+    [experience.additionalActions],
   );
 
   const hasRunningTimer = Object.values(restTimers).some(
@@ -201,14 +233,8 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
   }, [hasRunningTimer]);
 
   useEffect(() => {
-    setStreakProgress(
-      getPersistentStreak(identity, experience.date),
-    );
-  }, [
-    actionCompletions,
-    experience.date,
-    identity,
-  ]);
+    setStreakProgress(getPersistentStreak(identity, experience.date));
+  }, [actionCompletions, experience.date, identity]);
 
   useEffect(() => {
     Object.values(restTimers).forEach(timer => {
@@ -216,13 +242,11 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
         timer.status === 'running' &&
         new Date(timer.endsAt).getTime() <= now
       ) {
-        useRecommendationExperienceStore
-          .getState()
-          .saveRestTimer({
-            ...timer,
-            status: 'ready',
-            updatedAt: new Date().toISOString(),
-          });
+        useRecommendationExperienceStore.getState().saveRestTimer({
+          ...timer,
+          status: 'ready',
+          updatedAt: new Date().toISOString(),
+        });
       }
     });
   }, [now, restTimers]);
@@ -260,18 +284,13 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 11,
         },
-        progressSummaryCard: {
-          overflow: 'hidden',
+        planOverview: {
           marginTop: spacing('xs'),
-          borderRadius: radius('md'),
+          overflow: 'hidden',
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: '#F0E2D6',
-          backgroundColor: '#FFFFFF',
-          shadowColor: '#8A4B2D',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.06,
-          shadowRadius: 9,
-          elevation: 2,
+          borderColor: theme.colors.orange200,
+          borderRadius: 8,
+          backgroundColor: theme.colors.orange50,
         },
         progressTrack: {
           height: 4,
@@ -287,7 +306,6 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: spacing('md'),
-          backgroundColor: '#FFFBF7',
         },
         statusIcon: {
           width: 26,
@@ -334,8 +352,31 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           alignItems: 'center',
           paddingHorizontal: spacing('md'),
           borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: '#F0E2D6',
-          backgroundColor: '#FFFFFF',
+          borderTopColor: theme.colors.orange100,
+        },
+        focusRow: {
+          minHeight: 38,
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          paddingHorizontal: spacing('md'),
+          paddingVertical: spacing('xs'),
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: theme.colors.orange100,
+        },
+        focusLabel: {
+          marginRight: spacing('xs'),
+          color: theme.colors.orange700,
+          fontFamily: theme.typography.fontFamily.bold,
+          fontSize: 9,
+          lineHeight: 15,
+          textTransform: 'uppercase',
+        },
+        focusText: {
+          flex: 1,
+          color: theme.colors.textSecondary,
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 10,
+          lineHeight: 15,
         },
         rhythmCopy: {
           flex: 1,
@@ -473,6 +514,22 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: 10,
         },
+        sectionSubheading: {
+          marginTop: spacing('md'),
+          marginBottom: spacing('xs'),
+          color: theme.colors.textSecondary,
+          fontFamily: theme.typography.fontFamily.bold,
+          fontSize: 11,
+          letterSpacing: 0.4,
+          textTransform: 'uppercase',
+        },
+        taskMetadata: {
+          marginTop: 4,
+          color: theme.colors.neutral600,
+          fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 10,
+          lineHeight: 15,
+        },
         completionButton: {
           width: 32,
           height: 32,
@@ -556,20 +613,46 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
     [theme],
   );
 
-  const toggleAction = (action: DailyPlanAction) => {
-    if (!action.completed) {
+  const toggleAction = async (action: DailyPlanAction) => {
+    if (
+      action.completed &&
+      action.backendReference?.kind === 'recommendation'
+    ) {
+      return;
+    }
+    const completing = !action.completed;
+    const changed = await onToggleAction(action, completing);
+    if (changed === false) return;
+
+    if (completing) {
       const reminder = reminders[action.key];
       if (reminder) {
-        cancelActionReminder(reminder.notificationId).catch(
-          () => {},
-        );
+        cancelActionReminder(reminder.notificationId).catch(() => {});
         useRecommendationExperienceStore
           .getState()
           .removeReminder(experience.date, action.key);
       }
+      const restTimer = restTimers[action.key];
+      if (restTimer?.status === 'running') {
+        cancelRestTimerNotification(experience.date, action.key).catch(
+          () => {},
+        );
+        useRecommendationExperienceStore
+          .getState()
+          .removeRestTimer(experience.date, action.key);
+      } else if (restTimer?.status === 'ready') {
+        useRecommendationExperienceStore.getState().saveRestTimer({
+          ...restTimer,
+          status: 'completed',
+          updatedAt: new Date().toISOString(),
+        });
+      }
       cancelEveningCareReminder(experience.date).catch(() => {});
+    } else if (restTimers[action.key]?.status === 'completed') {
+      useRecommendationExperienceStore
+        .getState()
+        .removeRestTimer(experience.date, action.key);
     }
-    onToggleAction(action, !action.completed);
     AccessibilityInfo.announceForAccessibility(
       action.completed
         ? t('today.action_marked_incomplete')
@@ -577,10 +660,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
     );
   };
 
-  const handleReminderConfirm = async (
-    hour: number,
-    minute: number,
-  ) => {
+  const handleReminderConfirm = async (hour: number, minute: number) => {
     const action = reminderAction;
     if (!action) return;
     const title = action.title;
@@ -612,8 +692,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
       hour,
       minute,
       scheduledFor: result.scheduledFor,
-      status:
-        result.status === 'scheduled' ? 'scheduled' : 'planned',
+      status: result.status === 'scheduled' ? 'scheduled' : 'planned',
       updatedAt: new Date().toISOString(),
     });
     if (action.state === 'pending') {
@@ -643,10 +722,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
         .getState()
         .removeReminder(experience.date, action.key);
     }
-    if (
-      action.state === 'planned' &&
-      !restTimers[action.key]
-    ) {
+    if (action.state === 'planned' && !restTimers[action.key]) {
       onChangeActionState(action, 'pending');
     }
     showToast({
@@ -672,21 +748,25 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
     });
   };
 
-  const handleRestTimer = (action: DailyPlanAction) => {
+  const handleRestTimer = async (action: DailyPlanAction) => {
     const timer = restTimers[action.key];
     if (timer?.status === 'ready') {
-      useRecommendationExperienceStore
-        .getState()
-        .saveRestTimer({
-          ...timer,
-          status: 'completed',
-          updatedAt: new Date().toISOString(),
-        });
-      cancelRestTimerNotification(
-        experience.date,
-        action.key,
-      ).catch(() => {});
-      onChangeActionState(action, 'completed');
+      const changed = await onChangeActionState(action, 'completed');
+      if (changed === false) return;
+      useRecommendationExperienceStore.getState().saveRestTimer({
+        ...timer,
+        status: 'completed',
+        updatedAt: new Date().toISOString(),
+      });
+      cancelRestTimerNotification(experience.date, action.key).catch(() => {});
+      const reminder = reminders[action.key];
+      if (reminder) {
+        cancelActionReminder(reminder.notificationId).catch(() => {});
+        useRecommendationExperienceStore
+          .getState()
+          .removeReminder(experience.date, action.key);
+      }
+      cancelEveningCareReminder(experience.date).catch(() => {});
       return;
     }
     if (timer?.status === 'running' || timer?.status === 'completed') return;
@@ -718,14 +798,221 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
     });
   };
 
+  const metadataLabel = (action: DailyPlanAction): string | null => {
+    const metadata = [
+      action.timingLabel,
+      action.durationMinutes !== undefined
+        ? `${action.durationMinutes} min`
+        : action.durationLabel,
+      action.contextLabel && !sharedPlanContextSet.has(action.contextLabel)
+        ? action.contextLabel
+        : undefined,
+    ].filter(
+      (value): value is string =>
+        typeof value === 'string' && value.trim().length > 0,
+    );
+    return metadata.length ? metadata.join(' · ') : null;
+  };
+
+  const formatRiskImpact = (value: number): string =>
+    `${value < 0 ? '-' : '+'}${Math.abs(value).toFixed(1)}%`;
+
+  const renderActionRow = (
+    action: DailyPlanAction,
+    index: number,
+    interactive = true,
+  ) => {
+    const config = DOMAIN_CONFIG[action.domain];
+    const metadata = metadataLabel(action);
+    const recommendationCompletionIsFinal =
+      action.completed && action.backendReference?.kind === 'recommendation';
+    const isHighlighted = action.key === highlightedActionKey;
+    return (
+      <View
+        key={action.key}
+        onLayout={
+          isHighlighted
+            ? event => onHighlightedActionLayout?.(event.nativeEvent.layout.y)
+            : undefined
+        }
+        style={[
+          styles.taskRow,
+          index % 2 === 1 && styles.taskRowAlternate,
+          isHighlighted && styles.taskRowHighlighted,
+          isHighlighted && {
+            backgroundColor: config.background,
+            borderLeftColor: config.color,
+          },
+        ]}
+      >
+        {interactive ? (
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{
+              checked: action.completed,
+              disabled: recommendationCompletionIsFinal,
+            }}
+            accessibilityLabel={
+              recommendationCompletionIsFinal
+                ? t('today.action_completed_announcement')
+                : action.completed
+                ? t('today.mark_not_complete')
+                : t('today.action_completion_label', {
+                    action: action.title,
+                  })
+            }
+            disabled={recommendationCompletionIsFinal}
+            hitSlop={6}
+            onPress={() => toggleAction(action)}
+            style={styles.completionButton}
+          >
+            <View
+              style={[
+                styles.completionIndicator,
+                action.completed
+                  ? styles.completionIndicatorDone
+                  : action.state === 'planned'
+                  ? styles.completionIndicatorPlanned
+                  : styles.completionIndicatorPending,
+                action.completed
+                  ? { backgroundColor: config.color }
+                  : action.state === 'planned'
+                  ? {
+                      borderColor: config.color,
+                      backgroundColor: config.background,
+                    }
+                  : {
+                      borderColor: config.iconBackground,
+                    },
+              ]}
+            >
+              {action.completed ? (
+                <FontAwesomeIcon icon={faCheck} size={10} color="#FFFFFF" />
+              ) : action.state === 'planned' ? (
+                <FontAwesomeIcon
+                  icon={faCalendarCheck}
+                  size={9}
+                  color={config.color}
+                />
+              ) : null}
+            </View>
+          </Pressable>
+        ) : (
+          <View style={styles.completionButton}>
+            <View
+              style={[
+                styles.completionIndicator,
+                styles.completionIndicatorPending,
+              ]}
+            >
+              <DomainIcon domain={action.domain} size={12} />
+            </View>
+          </View>
+        )}
+        <View style={styles.taskCopy}>
+          <Text
+            style={[
+              styles.taskTitle,
+              action.state === 'planned' && styles.taskTitlePlanned,
+              action.state === 'planned' && { color: config.color },
+            ]}
+          >
+            {action.title}
+          </Text>
+          {metadata ? (
+            <Text style={styles.taskMetadata}>{metadata}</Text>
+          ) : null}
+          {action.purpose ? (
+            <Text style={styles.taskPurpose}>{action.purpose}</Text>
+          ) : null}
+          {shouldShowTaskActions(action, interactive) ? (
+            <View style={styles.actionButtons}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${t(
+                  reminders[action.key]
+                    ? 'today.edit_reminder'
+                    : 'today.set_reminder',
+                )}: ${action.title}`}
+                onPress={() => setReminderAction(action)}
+                style={[
+                  styles.reminderButton,
+                  reminders[action.key] && styles.reminderButtonActive,
+                  {
+                    borderColor: reminders[action.key]
+                      ? config.color
+                      : config.iconBackground,
+                    backgroundColor: config.background,
+                  },
+                ]}
+              >
+                <FontAwesomeIcon
+                  icon={faBell}
+                  size={10}
+                  color={config.color}
+                />
+                <Text
+                  style={[styles.reminderButtonText, { color: config.color }]}
+                >
+                  {reminders[action.key]
+                    ? `${reminders[action.key].hour
+                        .toString()
+                        .padStart(2, '0')}:${reminders[action.key].minute
+                        .toString()
+                        .padStart(2, '0')}`
+                    : t('today.set_reminder')}
+                </Text>
+              </Pressable>
+              {supportsRestTimer(action) ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => handleRestTimer(action)}
+                  style={[
+                    styles.timerButton,
+                    (restTimers[action.key]?.status === 'ready' ||
+                      restTimers[action.key]?.status === 'completed') &&
+                      styles.timerButtonReady,
+                  ]}
+                >
+                  <FontAwesomeIcon
+                    icon={
+                      restTimers[action.key]?.status === 'ready' ||
+                      restTimers[action.key]?.status === 'completed'
+                        ? faCheck
+                        : faClock
+                    }
+                    size={10}
+                    color={
+                      restTimers[action.key]?.status === 'ready' ||
+                      restTimers[action.key]?.status === 'completed'
+                        ? '#2D7B46'
+                        : config.color
+                    }
+                  />
+                  <Text style={[styles.timerButtonText, { color: config.color }]}>
+                    {timerLabel(action)}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {action.state === 'planned' &&
+              !reminders[action.key] &&
+              !restTimers[action.key] ? (
+                <Text style={[styles.plannedLabel, { color: config.color }]}>
+                  {t('today.planned')}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.planSection}>
         <View style={styles.headingRow}>
-          <Text
-            accessibilityRole="header"
-            style={styles.heading}
-          >
+          <Text accessibilityRole="header" style={styles.heading}>
             {t('today.todays_plan')}
           </Text>
           <Text
@@ -739,29 +1026,24 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           >
             {t('today.completed_of_total', {
               completed: completedCount,
-              total: experience.primaryActions.length,
+              total: visiblePrimaryActions.length,
             })}
           </Text>
         </View>
 
-        <View style={styles.progressSummaryCard}>
+        <View style={styles.planOverview}>
           <View style={styles.progressTrack}>
             <View
-              accessibilityLabel={t(
-                'today.plan_progress_label',
-                {
-                  completed: completedCount,
-                  total: experience.primaryActions.length,
-                },
-              )}
+              accessibilityLabel={t('today.plan_progress_label', {
+                completed: completedCount,
+                total: visiblePrimaryActions.length,
+              })}
               style={[
                 styles.progressFill,
                 {
                   width: `${
-                    experience.primaryActions.length > 0
-                      ? (completedCount /
-                          experience.primaryActions.length) *
-                        100
+                    visiblePrimaryActions.length > 0
+                      ? (completedCount / visiblePrimaryActions.length) * 100
                       : 0
                   }%`,
                 },
@@ -780,9 +1062,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
             <View style={styles.statusCopy}>
               <Text style={styles.statusTitle}>
                 {t(
-                  hasDailyWin
-                    ? 'today.daily_win'
-                    : 'today.your_plan_is_ready',
+                  hasDailyWin ? 'today.daily_win' : 'today.your_plan_is_ready',
                 )}
               </Text>
               {!hasDailyWin ? (
@@ -795,28 +1075,29 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                 </Text>
               ) : null}
             </View>
-            {hasDailyWin &&
-            ILLUSTRATIVE_PROGRESS_ENABLED ? (
+            {hasAppliedRiskImpact ? (
               <Text style={styles.progressValue}>
-                {t('today.illustrative_progress', {
-                  value: ILLUSTRATIVE_PROGRESS_VALUE,
+                {t('today.risk_impact_applied', {
+                  value: formatRiskImpact(completedRiskImpact),
                 })}
               </Text>
             ) : null}
           </View>
+          {sharedPlanContexts.length > 0 ? (
+            <View style={styles.focusRow}>
+              <Text style={styles.focusLabel}>{t('today.plan_focus')}</Text>
+              <Text style={styles.focusText}>
+                {sharedPlanContexts.join(' · ')}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.rhythmRow}>
             <View style={styles.rhythmCopy}>
               <FontAwesomeIcon
-                icon={
-                  streakProgress.freezeUsed
-                    ? faSnowflake
-                    : faCalendarCheck
-                }
+                icon={streakProgress.freezeUsed ? faSnowflake : faCalendarCheck}
                 size={11}
                 color={
-                  streakProgress.freezeUsed
-                    ? '#4C79A8'
-                    : theme.colors.orange600
+                  streakProgress.freezeUsed ? '#4C79A8' : theme.colors.orange600
                 }
               />
               <Text style={styles.rhythmText}>
@@ -863,173 +1144,78 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                   >
                     <DomainIcon domain={domain} size={14} />
                   </View>
-                  <Text
-                    style={[
-                      styles.domainName,
-                      { color: config.color },
-                    ]}
-                  >
+                  <Text style={[styles.domainName, { color: config.color }]}>
                     {t(`today.domain_${domain}`)}
                   </Text>
                 </View>
 
-                {actions.map((action, index) => (
-                  <View
-                    key={action.key}
-                    onLayout={
-                      action.key === highlightedActionKey
-                        ? event =>
-                            onHighlightedActionLayout?.(
-                              event.nativeEvent.layout.y,
-                            )
-                        : undefined
-                    }
-                    style={[
-                      styles.taskRow,
-                      index % 2 === 1 &&
-                        styles.taskRowAlternate,
-                      action.key === highlightedActionKey &&
-                        styles.taskRowHighlighted,
-                    ]}
-                  >
-                    <Pressable
-                      accessibilityRole="checkbox"
-                      accessibilityState={{
-                        checked: action.completed,
-                      }}
-                      accessibilityLabel={
-                        action.completed
-                          ? t('today.mark_not_complete')
-                          : t(
-                              'today.action_completion_label',
-                              { action: action.title },
-                            )
-                      }
-                      hitSlop={6}
-                      onPress={() => toggleAction(action)}
-                      style={styles.completionButton}
-                    >
-                      <View
-                        style={[
-                          styles.completionIndicator,
-                          action.completed
-                            ? styles.completionIndicatorDone
-                            : action.state === 'planned'
-                            ? styles.completionIndicatorPlanned
-                            : styles.completionIndicatorPending,
-                        ]}
-                      >
-                        {action.completed ? (
-                          <FontAwesomeIcon
-                            icon={faCheck}
-                            size={10}
-                            color="#FFFFFF"
-                          />
-                        ) : action.state === 'planned' ? (
-                          <FontAwesomeIcon
-                            icon={faCalendarCheck}
-                            size={9}
-                            color={theme.colors.orange600}
-                          />
-                        ) : null}
-                      </View>
-                    </Pressable>
-                    <View style={styles.taskCopy}>
-                      <Text
-                        style={[
-                          styles.taskTitle,
-                          action.state === 'planned' &&
-                            styles.taskTitlePlanned,
-                        ]}
-                      >
-                        {action.title}
-                      </Text>
-                      <Text style={styles.taskPurpose}>
-                        {action.purpose}
-                      </Text>
-                      <View style={styles.actionButtons}>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`${t(
-                            reminders[action.key]
-                              ? 'today.edit_reminder'
-                              : 'today.set_reminder',
-                          )}: ${action.title}`}
-                          onPress={() => setReminderAction(action)}
-                          style={[
-                            styles.reminderButton,
-                            reminders[action.key] &&
-                              styles.reminderButtonActive,
-                          ]}
-                        >
-                          <FontAwesomeIcon
-                            icon={faBell}
-                            size={10}
-                            color={theme.colors.orange500}
-                          />
-                          <Text style={styles.reminderButtonText}>
-                            {reminders[action.key]
-                              ? `${reminders[action.key].hour
-                                  .toString()
-                                  .padStart(2, '0')}:${reminders[
-                                  action.key
-                                ].minute
-                                  .toString()
-                                  .padStart(2, '0')}`
-                              : t('today.set_reminder')}
-                          </Text>
-                        </Pressable>
-                        {action.domain === 'activity' ? (
-                          <Pressable
-                            accessibilityRole="button"
-                            onPress={() => handleRestTimer(action)}
-                            style={[
-                              styles.timerButton,
-                              (restTimers[action.key]?.status ===
-                                'ready' ||
-                                restTimers[action.key]?.status ===
-                                  'completed') &&
-                                styles.timerButtonReady,
-                            ]}
-                          >
-                            <FontAwesomeIcon
-                              icon={
-                                restTimers[action.key]?.status ===
-                                  'ready' ||
-                                restTimers[action.key]?.status ===
-                                  'completed'
-                                  ? faCheck
-                                  : faClock
-                              }
-                              size={10}
-                              color={
-                                restTimers[action.key]?.status ===
-                                  'ready' ||
-                                restTimers[action.key]?.status ===
-                                  'completed'
-                                  ? '#2D7B46'
-                                  : '#70428F'
-                              }
-                            />
-                            <Text style={styles.timerButtonText}>
-                              {timerLabel(action)}
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                        {action.state === 'planned' &&
-                        !reminders[action.key] &&
-                        !restTimers[action.key] ? (
-                          <Text style={styles.plannedLabel}>
-                            {t('today.planned')}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-                ))}
+                {actions.map((action, index) => renderActionRow(action, index))}
               </View>
             );
           })}
+          {INLINE_ADDITIONAL_ACTIONS_ENABLED &&
+          groupedAdditionalActions.length > 0 ? (
+            <>
+              <Text style={styles.sectionSubheading}>
+                {t('today.additional_actions')}
+              </Text>
+              {groupedAdditionalActions.map(
+                ({ domain, actions }, groupIndex) => {
+                  const config = DOMAIN_CONFIG[domain];
+                  return (
+                    <View
+                      key={`additional:${domain}`}
+                      style={[
+                        styles.domainSection,
+                        groupIndex > 0 && styles.domainSectionSpaced,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.domainHeader,
+                          {
+                            backgroundColor: config.background,
+                            borderLeftColor: config.color,
+                          },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.domainIcon,
+                            {
+                              backgroundColor: config.iconBackground,
+                            },
+                          ]}
+                        >
+                          <DomainIcon domain={domain} size={14} />
+                        </View>
+                        <Text
+                          style={[styles.domainName, { color: config.color }]}
+                        >
+                          {t(`today.domain_${domain}`)}
+                        </Text>
+                      </View>
+                      {actions.map((action, index) =>
+                        renderActionRow(action, index),
+                      )}
+                    </View>
+                  );
+                },
+              )}
+            </>
+          ) : null}
+          {/* Service/treatment escalation is disabled for the current release.
+              Keep support action rendering here so it is easy to restore. */}
+          {/* {experience.supportActions.length > 0 ? (
+            <>
+              <Text style={styles.sectionSubheading}>
+                {t('today.support_actions')}
+              </Text>
+              {experience.supportActions.map((action, index) =>
+                renderActionRow(action, index, false),
+              )}
+            </>
+          ) : null} */}
         </View>
       </View>
 
@@ -1043,14 +1229,10 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
             : undefined
         }
         initialHour={
-          reminderAction
-            ? reminders[reminderAction.key]?.hour
-            : undefined
+          reminderAction ? reminders[reminderAction.key]?.hour : undefined
         }
         initialMinute={
-          reminderAction
-            ? reminders[reminderAction.key]?.minute
-            : undefined
+          reminderAction ? reminders[reminderAction.key]?.minute : undefined
         }
         taskTitle={reminderAction?.title}
       />
@@ -1063,23 +1245,14 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
       >
         <View
           accessibilityViewIsModal
-          accessibilityLabel={t(
-            'today.daily_win_modal_title',
-          )}
+          accessibilityLabel={t('today.daily_win_modal_title')}
           style={styles.modalOverlay}
         >
           <View style={styles.modalCard}>
             <View style={styles.modalIllustration}>
-              <SvgXml
-                xml={CONGRATS_SVG}
-                width={150}
-                height={150}
-              />
+              <SvgXml xml={CONGRATS_SVG} width={150} height={150} />
             </View>
-            <Text
-              accessibilityRole="header"
-              style={styles.modalTitle}
-            >
+            <Text accessibilityRole="header" style={styles.modalTitle}>
               {t('today.daily_win_modal_title')}
             </Text>
             <Text style={styles.modalBody}>

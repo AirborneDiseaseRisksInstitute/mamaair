@@ -6,7 +6,7 @@ import { KENYA_FLAG_SVG, YORUBA_FLAG_SVG, OTHERS_FLAG_SVG } from '../../../utils
 import { useUserStore } from '../../../store/useUserStore';
 import { useMetaChoices } from '../../../hooks/useMetaChoices';
 import { useTranslation } from 'react-i18next';
-import { fs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 

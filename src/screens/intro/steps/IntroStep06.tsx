@@ -8,11 +8,11 @@ import { s, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/re
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-interface IntroStep06Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
+interface IntroStep06Props { onNext?: () => void; onBack?: () => void; onSkip?: () => void; showSkip?: boolean; }
 type TimeSpentType = 'indoors' | 'outdoors' | 'both';
 type TimeOfDayType = 'mornings' | 'afternoon' | 'evening' | 'change';
 
-export const IntroStep06: React.FC<IntroStep06Props> = ({ onNext, onBack, onSkip }) => {
+export const IntroStep06: React.FC<IntroStep06Props> = ({ onNext, onBack, onSkip, showSkip = true }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { setTimeSpent, setTimeOfDay, profile } = useUserStore();
@@ -67,7 +67,7 @@ export const IntroStep06: React.FC<IntroStep06Props> = ({ onNext, onBack, onSkip
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable>
+          {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable> : null}
           <View style={styles.continueButtonWrapper}><Button title={t('common.continue')} onPress={() => { if (isFormValid) { setTimeSpent(selectedTimeSpent); setTimeOfDay(selectedTimeOfDay); onNext?.(); } }} disabled={!isFormValid} /></View>
         </View>
       </FixedButtonContainer>

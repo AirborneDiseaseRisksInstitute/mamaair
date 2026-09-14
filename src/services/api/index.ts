@@ -10,6 +10,7 @@ export * from './LanguageService';
 export * from './SummaryService';
 export * from './SymptomsService';
 export * from './DailyTasksService';
+export * from './DailyPlanService';
 export * from './WellbeingService';
 export * from './TaskCompletionService';
 export * from './DailyCheckinService';

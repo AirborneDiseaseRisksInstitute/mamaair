@@ -18,7 +18,7 @@ const savedLanguage = storedLanguage && isSupportedLanguage(storedLanguage)
   : 'en';
 
 i18n.use(initReactI18next).init({
-  compatibilityJSON: 'v3',
+  compatibilityJSON: 'v4',
   resources: { en: { translation: en }, fr: { translation: fr }, sw: { translation: sw } },
   supportedLngs: [...SUPPORTED_LANGUAGES],
   lng: savedLanguage,

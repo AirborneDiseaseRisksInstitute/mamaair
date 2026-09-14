@@ -1,12 +1,12 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, Image, Animated, SafeAreaView, ScrollView } from 'react-native';
 import Svg, { Defs, Path, LinearGradient, Stop } from 'react-native-svg';
 import { SvgXml } from 'react-native-svg';
-import { useTheme, spacing } from '../../../theme';
+import { useTheme } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo } from '../../../components/ui';
 import { useTranslation } from 'react-i18next';
 import { BUBBLE2_SVG } from '../../../utils/svgIcons';
-import { s, vs, ms, fs, FIXED_BUTTON_AREA_HEIGHT } from '../../../utils/responsive';
+import { s, vs, ms, FIXED_BUTTON_AREA_HEIGHT } from '../../../utils/responsive';
 
 
 interface IntroStep01Props {
@@ -216,7 +216,7 @@ export const IntroStep01: React.FC<IntroStep01Props> = ({ onNext, skipAnimation 
           </Animated.View>
 
           <Animated.View style={[styles.imageCircle, styles.imageCircleBottom, { transform: [{ scale: scale2Image }] }]}>
-            <Image source={require('../../../assets/images/babyIntro.png')} style={styles.image} />
+            <Image source={require('../../../assets/weeks/week10.png')} style={styles.image} />
           </Animated.View>
         </View>
       </ScrollView>

@@ -133,7 +133,7 @@ export const FeelingCheckInScreen: React.FC<
     setSubmitting(true);
 
     try {
-      await submitFeelingCheckIn(
+      const result = await submitFeelingCheckIn(
         identity,
         date,
         experience,
@@ -142,19 +142,28 @@ export const FeelingCheckInScreen: React.FC<
           ? { writeScope: 'symptoms' }
           : undefined,
       );
-      showToast({
-        type: 'success',
-        title: t(
-          quickSymptomMode
-            ? 'feeling_checkin.symptoms_saved_title'
-            : 'feeling_checkin.ready_title',
-        ),
-        message: t(
-          quickSymptomMode
-            ? 'feeling_checkin.symptoms_saved_message'
-            : 'feeling_checkin.ready_message',
-        ),
-      });
+      showToast(
+        result.symptomsPendingSync
+          ? {
+              type: 'info',
+              title: t('feeling_checkin.offline_saved_title'),
+              message: t('feeling_checkin.offline_saved_message'),
+              duration: 4500,
+            }
+          : {
+              type: 'success',
+              title: t(
+                quickSymptomMode
+                  ? 'feeling_checkin.symptoms_saved_title'
+                  : 'feeling_checkin.ready_title',
+              ),
+              message: t(
+                quickSymptomMode
+                  ? 'feeling_checkin.symptoms_saved_message'
+                  : 'feeling_checkin.ready_message',
+              ),
+            },
+      );
       ProductAnalytics.track(identity, 'daily_flow_complete', {
         durationSeconds: Math.max(
           1,

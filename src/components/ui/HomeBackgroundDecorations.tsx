@@ -10,7 +10,7 @@ import Animated, {
 import { SvgXml } from 'react-native-svg';
 import { SUN_SVG, CLOUD_SVG } from '../../utils/svgIcons';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const SUN_SIZE = 72;
 const CLOUD_SIZE = 48;

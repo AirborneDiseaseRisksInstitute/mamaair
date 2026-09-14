@@ -8,13 +8,14 @@ import { useTranslation } from 'react-i18next';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-interface IntroStep10PregnancyProps { onNext?: () => void; onBack?: () => void; onSkip?: () => void; }
+interface IntroStep10PregnancyProps { onNext?: () => void; onBack?: () => void; onSkip?: () => void; showSkip?: boolean; }
 type PregnancyNumber = 'first' | 'second' | 'third' | 'moreThan3';
 
-export const IntroStep10Pregnancy: React.FC<IntroStep10PregnancyProps> = ({ onNext, onBack, onSkip }) => {
+export const IntroStep10Pregnancy: React.FC<IntroStep10PregnancyProps> = ({ onNext, onBack, onSkip, showSkip = true }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const [selected, setSelected] = useState<PregnancyNumber | null>(null);
+  const profile = useUserStore(state => state.profile);
+  const [selected, setSelected] = useState<PregnancyNumber | null>(profile.pregnancyNumber as PregnancyNumber | null);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
   const { setPregnancyNumber } = useUserStore();
 
@@ -58,7 +59,7 @@ export const IntroStep10Pregnancy: React.FC<IntroStep10PregnancyProps> = ({ onNe
       </ScrollView>
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
-          <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable>
+          {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable> : null}
           <View style={styles.continueButtonWrapper}><Button title={t('common.continue')} onPress={handleNext} disabled={!selected} /></View>
         </View>
       </FixedButtonContainer>

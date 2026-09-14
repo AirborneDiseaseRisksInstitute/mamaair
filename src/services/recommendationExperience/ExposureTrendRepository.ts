@@ -5,7 +5,6 @@ import type {
 } from '../../types/recommendationExperience';
 import { ExposureService, type AirExposure } from '../api/ExposureService';
 import type { SummaryResponse } from '../api/SummaryService';
-import { selectPresentationExposureHistory } from './PresentationDataProvider';
 
 export interface ExposureTrendExperience {
   points: ExposureTrendPoint[];
@@ -62,8 +61,8 @@ const summaryHistory = (
 
 export const loadExposureTrend = async ({
   summary,
-  endDate,
-  pregnancyWeek,
+  endDate: _endDate,
+  pregnancyWeek: _pregnancyWeek,
 }: {
   summary: SummaryResponse | null;
   endDate: string;
@@ -85,20 +84,20 @@ export const loadExposureTrend = async ({
       }
       const pointsFromSummary = summaryHistory(summary);
       return {
-        points: pointsFromSummary.length
-          ? pointsFromSummary
-          : selectPresentationExposureHistory(pregnancyWeek, endDate),
+        points: pointsFromSummary,
         status: 'available',
-        source: pointsFromSummary.length ? 'summary' : 'presentation',
+        // Presentation exposure history was investor-demo-only. Keep source
+        // support in the type for future restoration, but do not show scenario
+        // environment values when backend/summary history is missing.
+        source: pointsFromSummary.length ? 'summary' : 'none',
       };
     } catch {
       const points = summaryHistory(summary);
       return {
-        points: points.length
-          ? points
-          : selectPresentationExposureHistory(pregnancyWeek, endDate),
+        points,
         status: 'unavailable',
-        source: points.length ? 'summary' : 'presentation',
+        // Do not fall back to presentation exposure values in production Today.
+        source: points.length ? 'summary' : 'none',
       };
     }
   }
@@ -113,8 +112,10 @@ export const loadExposureTrend = async ({
   }
 
   return {
-    points: selectPresentationExposureHistory(pregnancyWeek, endDate),
+    // Presentation exposure history is disabled for production-facing Today.
+    // Restore only if demo mode is explicitly reintroduced for this surface.
+    points: [],
     status: explicitStatus,
-    source: 'presentation',
+    source: 'none',
   };
 };

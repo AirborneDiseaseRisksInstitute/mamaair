@@ -11,6 +11,7 @@ import type {
 } from '../../types/recommendationExperience';
 import { getWeekKey, getWeeklyBadges, resolvePregnancyProgression } from './ProgressionRepository';
 import { ProductAnalytics } from './ProductAnalytics';
+import { buildWeeklyRiskSummaryViewModel } from './WeeklyRiskSummaryPresenter';
 
 export interface WeeklyReportEntitlement {
   status: 'nativeShareAvailable';
@@ -29,6 +30,44 @@ export const getWeeklyReportEntitlement =
 const dateRange = (summary: WeeklySummaryExperience): string =>
   `${summary.startDate} to ${summary.endDate}`;
 
+const formatPercent = (value: number): string =>
+  `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
+
+const riskSummaryText = (summary: WeeklySummaryExperience): string | null => {
+  const riskSummary = summary.riskSummary;
+  if (!riskSummary) return null;
+  const viewModel = buildWeeklyRiskSummaryViewModel(riskSummary);
+  const changeLines = viewModel.changes.map(change => {
+    const label = change.audience === 'mother' ? 'Mother' : 'Child';
+    const changeText =
+      change.direction === 'stable'
+        ? 'no change'
+        : `${formatPercent(change.value)} ${change.direction}`;
+    return `${label} estimate: ${changeText}`;
+  });
+  const careLine =
+    viewModel.completedCareReduction !== null
+      ? `Completed care actions were linked to an estimated ${formatPercent(
+          viewModel.completedCareReduction,
+        )} reduction.`
+      : viewModel.hasCompletedCareImpact
+      ? 'Completed care actions were included in this estimate.'
+      : null;
+  const factorLine =
+    changeLines.length === 0 &&
+    careLine === null &&
+    viewModel.trackedFactorCount > 0
+      ? `${viewModel.trackedFactorCount} environmental health ${
+          viewModel.trackedFactorCount === 1 ? 'factor was' : 'factors were'
+        } identified in the latest reading.`
+      : null;
+  const lines = [...changeLines, careLine, factorLine].filter(
+    (line): line is string => Boolean(line),
+  );
+
+  return lines.length > 0 ? lines.join('\n') : null;
+};
+
 export const buildWeeklyReport = (
   summary: WeeklySummaryExperience,
 ): WeeklyReportModel => {
@@ -44,6 +83,15 @@ export const buildWeeklyReport = (
         )
         .join(', ')
     : 'A steady start';
+  const environmentalHealthSummary = riskSummaryText(summary);
+  const optionalLines = [
+    environmentalHealthSummary
+      ? `Environmental health\n${environmentalHealthSummary}\nEstimates reflect environmental exposure and are not a medical diagnosis.`
+      : null,
+    summary.symptomTrend
+      ? `Feeling pattern statistics: ${summary.symptomTrend}`
+      : null,
+  ].filter((line): line is string => line !== null);
   const shareText = [
     `MamaAir weekly report — pregnancy week ${summary.week}`,
     progression.chapterLabel,
@@ -53,9 +101,7 @@ export const buildWeeklyReport = (
     `Rest sessions: ${summary.restSessions}`,
     `Sleep check-ins: ${summary.sleepNights}`,
     `Achievements: ${badgeText}`,
-    `Mother: ${summary.motherProgress}`,
-    `Baby: ${summary.babyProgress}`,
-    `Check-in trend: ${summary.symptomTrend}`,
+    ...optionalLines,
   ].join('\n');
 
   return {
@@ -63,7 +109,7 @@ export const buildWeeklyReport = (
     pregnancyWeek: summary.week,
     trimesterLabel: progression.chapterLabel,
     dateRange: dateRange(summary),
-    motherRecap: summary.motherProgress,
+    motherRecap: environmentalHealthSummary ?? '',
     babyRecap: summary.babyProgress,
     symptomTrend: summary.symptomTrend,
     participation: {

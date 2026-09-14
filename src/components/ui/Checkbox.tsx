@@ -2,8 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faCheck } from '@fortawesome/free-solid-svg-icons';
-import { useTheme, spacing, radius } from '../../theme';
-import { ms, fs } from '../../utils/responsive';
+import { spacing, radius } from '../../theme';
+import { fs, ms } from '../../utils/responsive';
 
 interface CheckboxProps {
   label: string;
@@ -22,7 +22,6 @@ export const Checkbox: React.FC<CheckboxProps> = ({
   icon,
   backgroundColor,
 }) => {
-  const theme = useTheme();
   const bgColor = backgroundColor || '#4285F4';
   const lightBlue = 'rgba(66, 133, 244, 0.1)';
   const darkBlue = bgColor;
@@ -33,38 +32,58 @@ export const Checkbox: React.FC<CheckboxProps> = ({
   const borderColor = darkBlue;
 
   return (
-    <Pressable onPress={onPress} style={styles.container}>
-      <View style={[
-        styles.checkbox, 
-        { 
-          backgroundColor: boxBackgroundColor,
-          borderWidth: 1,
-          borderColor: borderColor,
-        }
-      ]}>
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      onPress={onPress}
+      style={styles.container}
+    >
+      <View
+        style={[
+          styles.checkbox,
+          {
+            backgroundColor: boxBackgroundColor,
+            borderWidth: 1,
+            borderColor: borderColor,
+          },
+        ]}
+      >
         {/* Icon on the left */}
-        {icon && (
+        {React.isValidElement<{ color?: string }>(icon) && (
           <View style={styles.iconContainer}>
-            {React.cloneElement(icon as React.ReactElement, { color: iconColor })}
+            {React.cloneElement(icon, { color: iconColor })}
           </View>
         )}
-        
+
         {/* Text content */}
         <View style={styles.textContainer}>
-          <Text style={[styles.label, { color: textColor }]} allowFontScaling={false}>{label}</Text>
+          <Text
+            style={[styles.label, { color: textColor }]}
+            allowFontScaling={false}
+          >
+            {label}
+          </Text>
           {subtitle && (
-            <Text style={[styles.subtitle, { color: textColor, opacity: checked ? 0.9 : 0.8 }]} allowFontScaling={false}>
+            <Text
+              style={[
+                styles.subtitle,
+                { color: textColor, opacity: checked ? 0.9 : 0.8 },
+              ]}
+              allowFontScaling={false}
+            >
               {subtitle}
             </Text>
           )}
         </View>
 
         {/* Checkbox circle on the right */}
-        <View style={[
-          styles.checkCircle, 
-          { borderColor: textColor },
-          checked && styles.checkCircleChecked
-        ]}>
+        <View
+          style={[
+            styles.checkCircle,
+            { borderColor: textColor },
+            checked && styles.checkCircleChecked,
+          ]}
+        >
           {checked && (
             <FontAwesomeIcon icon={faCheck} size={ms(14)} color={darkBlue} />
           )}
@@ -80,25 +99,31 @@ const styles = StyleSheet.create({
   },
   checkbox: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: spacing('md'),
     borderRadius: radius('md'),
-    minHeight: ms(70),
+    minHeight: ms(88),
   },
   iconContainer: {
-    marginRight: spacing('md'),
+    width: ms(32),
+    alignItems: 'center',
+    marginRight: spacing('sm'),
+    marginTop: ms(3),
   },
   textContainer: {
     flex: 1,
+    paddingRight: spacing('sm'),
   },
   label: {
-    fontSize: 16,
+    fontSize: fs(16),
     fontFamily: 'MPLUSRounded1c-Bold',
+    lineHeight: fs(22),
     marginBottom: spacing('xs'),
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: fs(14),
     fontFamily: 'MPLUSRounded1c-Regular',
+    lineHeight: fs(21),
   },
   checkCircle: {
     width: ms(24),
@@ -108,6 +133,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
+    flexShrink: 0,
+    marginTop: ms(3),
   },
   checkCircleChecked: {
     backgroundColor: '#fff',

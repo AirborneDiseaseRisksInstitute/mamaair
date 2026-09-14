@@ -9,7 +9,9 @@ import { SvgXml } from 'react-native-svg';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import {
   faChevronDown,
+  faChevronRight,
   faChevronUp,
+  faLocationDot,
   faWind,
   faThermometerHalf,
   faSun,
@@ -23,6 +25,8 @@ interface ExposureAccordionProps {
   airExposure?: AirExposure | null;
   embedded?: boolean;
   onOpenHistory?: () => void;
+  locationPermissionGranted?: boolean;
+  onRequestLocation?: () => void;
   ventilation?: string | null;
 }
 
@@ -67,6 +71,8 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
   airExposure,
   embedded = false,
   onOpenHistory,
+  locationPermissionGranted = true,
+  onRequestLocation,
   ventilation,
 }) => {
   const theme = useTheme();
@@ -77,6 +83,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       ? 'sw-KE'
       : 'en-US';
   const [isExpanded, setIsExpanded] = useState(false);
+  const isLocationLocked = !locationPermissionGranted;
 
   const aqiInfo = airExposure
     ? getAqiInfo(airExposure.aqi)
@@ -91,8 +98,12 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       : airExposure.pm25 <= 55
       ? '#FF9800'
       : '#F44B4B';
-  const headerColor = aqiInfo?.color ?? pm25Color ?? '#9E9E9E';
-  const statusLabel = aqiInfo
+  const headerColor = isLocationLocked
+    ? theme.colors.orange500
+    : aqiInfo?.color ?? pm25Color ?? '#9E9E9E';
+  const statusLabel = isLocationLocked
+    ? t('location.permission_title')
+    : aqiInfo
     ? `${t(`exposure.${aqiInfo.key}`)} · AQI ${
         airExposure!.aqi
       }`
@@ -112,7 +123,9 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
           : null,
       ].filter((item): item is string => Boolean(item))
     : [];
-  const contextLabel = contextParts.length
+  const contextLabel = isLocationLocked
+    ? t('location.permission_body')
+    : contextParts.length
     ? contextParts.join(' · ')
     : t('exposure.no_data_body');
   const exposureTime = airExposure
@@ -183,7 +196,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       fontSize: 17,
       fontFamily: theme.typography.fontFamily.extraBold,
       color:
-        airExposure
+        airExposure || isLocationLocked
           ? headerColor
           : theme.colors.textPrimary,
     },
@@ -259,36 +272,61 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       fontFamily: theme.typography.fontFamily.bold,
       fontSize: 11,
     },
-  }), [airExposure, embedded, headerColor, theme]);
+  }), [airExposure, embedded, headerColor, isLocationLocked, theme]);
 
   return (
     <View style={styles.container}>
       <TouchableOpacity
         accessibilityRole="button"
-        accessibilityState={{ disabled: !airExposure, expanded: isExpanded }}
-        accessibilityLabel={t(
-          airExposure
+        accessibilityState={{
+          disabled: !airExposure && !isLocationLocked,
+          expanded: isLocationLocked ? false : isExpanded,
+        }}
+        accessibilityLabel={
+          isLocationLocked
+            ? `${t('location.permission_title')}. ${t(
+                'location.permission_body',
+              )}`
+            : t(
+                airExposure
             ? 'exposure.header'
             : 'exposure.header_no_data',
-          airExposure
-            ? {
-                level: aqiInfo
-                  ? t(`exposure.${aqiInfo.key}`)
-                  : statusLabel,
-                aqi: airExposure.aqi ?? '',
-              }
-            : undefined,
-        )}
+                airExposure
+                  ? {
+                      level: aqiInfo
+                        ? t(`exposure.${aqiInfo.key}`)
+                        : statusLabel,
+                      aqi: airExposure.aqi ?? '',
+                    }
+                  : undefined,
+              )
+        }
         style={[
           styles.header,
           isExpanded && styles.headerExpanded,
         ]}
-        onPress={() => airExposure && setIsExpanded(!isExpanded)}
+        onPress={() => {
+          if (isLocationLocked) {
+            onRequestLocation?.();
+            return;
+          }
+          if (airExposure) {
+            setIsExpanded(!isExpanded);
+          }
+        }}
         activeOpacity={0.8}
-        disabled={!airExposure}
+        disabled={!airExposure && !isLocationLocked}
       >
         <View style={styles.iconContainer}>
-          <SvgXml xml={WEATHER_SVG} width={42} height={42} />
+          {isLocationLocked ? (
+            <FontAwesomeIcon
+              icon={faLocationDot as any}
+              size={22}
+              color={headerColor}
+            />
+          ) : (
+            <SvgXml xml={WEATHER_SVG} width={42} height={42} />
+          )}
         </View>
         <View style={styles.accent} />
         <View style={styles.headerCopy}>
@@ -309,7 +347,15 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
             {contextLabel}
           </Text>
         </View>
-        {airExposure && (
+        {isLocationLocked ? (
+          <View style={styles.chevronButton}>
+            <FontAwesomeIcon
+              icon={faChevronRight as any}
+              size={14}
+              color={headerColor}
+            />
+          </View>
+        ) : airExposure ? (
           <View style={styles.chevronButton}>
             <FontAwesomeIcon
               icon={(isExpanded ? faChevronUp : faChevronDown) as any}
@@ -317,7 +363,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
               color={headerColor}
             />
           </View>
-        )}
+        ) : null}
       </TouchableOpacity>
 
       {isExpanded && airExposure && (

@@ -35,6 +35,11 @@ import {
   type ProfileEditValues,
 } from '../../utils/profileEdit';
 import { ms, vs } from '../../utils/responsive';
+import {
+  clampDailyHours,
+  MAX_ACTIVE_HOURS,
+  MAX_SLEEP_HOURS,
+} from '../../utils/lifestyleHours';
 
 interface ProfileEditSheetProps {
   visible: boolean;
@@ -116,7 +121,22 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
 
   useEffect(() => {
     if (!visible) return;
-    setDraft(getProfileEditValues(useUserStore.getState().profile));
+    const nextDraft = getProfileEditValues(useUserStore.getState().profile);
+    if (section === 'sleepActivity') {
+      if (nextDraft.sleepHours !== null) {
+        nextDraft.sleepHours = clampDailyHours(
+          nextDraft.sleepHours,
+          MAX_SLEEP_HOURS,
+        );
+      }
+      if (nextDraft.activeHours !== null) {
+        nextDraft.activeHours = clampDailyHours(
+          nextDraft.activeHours,
+          MAX_ACTIVE_HOURS,
+        );
+      }
+    }
+    setDraft(nextDraft);
     setActiveChoiceField(null);
     setIsHeightWeightPickerVisible(false);
     setIsBirthdayPickerVisible(false);
@@ -174,11 +194,11 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
         { value: 'moderate', label: t('profile.ventilation_moderate') },
         { value: 'poor', label: t('profile.ventilation_poor') },
       ],
-      sleepHours: Array.from({ length: 24 }, (_, index) => ({
+      sleepHours: Array.from({ length: MAX_SLEEP_HOURS }, (_, index) => ({
         value: index + 1,
         label: t('profile.hours_value', { count: index + 1 }),
       })),
-      activeHours: Array.from({ length: 24 }, (_, index) => ({
+      activeHours: Array.from({ length: MAX_ACTIVE_HOURS }, (_, index) => ({
         value: index + 1,
         label: t('profile.hours_value', { count: index + 1 }),
       })),
