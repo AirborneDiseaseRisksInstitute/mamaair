@@ -45,11 +45,13 @@ import {
   type SummaryResponse,
 } from '../api/SummaryService';
 import { TaskCompletionService } from '../api/TaskCompletionService';
+import { isApiConnectionError } from '../../utils/apiErrors';
 
 interface CapabilityLoad<T> {
   configuredStatus: ConfiguredCapabilityStatus;
   status: CapabilityStatus;
   data: T | null;
+  connectionError: boolean;
 }
 
 interface ComposeDailyPlanInput {
@@ -77,6 +79,7 @@ export interface DailyPlanLoadResult {
   experience: DailyPlanExperience;
   summary: SummaryResponse | null;
   advice: AdviceResponse | null;
+  connectionError: boolean;
 }
 
 interface DailyPlanLoadOptions {
@@ -133,6 +136,7 @@ const loadConfiguredCapability = async <T>(
       configuredStatus,
       status: explicitStatus,
       data: null,
+      connectionError: false,
     };
   }
 
@@ -141,12 +145,14 @@ const loadConfiguredCapability = async <T>(
       configuredStatus,
       status: 'available',
       data: await loader(),
+      connectionError: false,
     };
-  } catch {
+  } catch (error) {
     return {
       configuredStatus,
       status: 'unavailable',
       data: null,
+      connectionError: isApiConnectionError(error),
     };
   }
 };
@@ -1080,6 +1086,7 @@ export const loadDailyPlanExperience = async (
       status: 'needsInput',
       summary: null,
       advice: null,
+      connectionError: false,
       experience: {
         date,
         primaryActions: [],
@@ -1113,6 +1120,12 @@ export const loadDailyPlanExperience = async (
       )
     : null;
   const currentStore = useRecommendationExperienceStore.getState();
+  const connectionError = Boolean(
+    summaryLoad.connectionError ||
+      adviceLoad.connectionError ||
+      dailyPlanLoad.connectionError ||
+      recommendationCompletionLoad?.connectionError,
+  );
 
   if ((dailyPlanLoad.status === 'available' && dailyPlanLoad.data) || advice) {
     const dailyPlanAvailable =
@@ -1147,6 +1160,7 @@ export const loadDailyPlanExperience = async (
         status: 'available',
         summary,
         advice,
+        connectionError,
         experience,
       };
     }
@@ -1160,6 +1174,7 @@ export const loadDailyPlanExperience = async (
       status: 'unavailable',
       summary,
       advice,
+      connectionError,
       experience: {
         date,
         primaryActions: [],
@@ -1200,6 +1215,10 @@ export const loadDailyPlanExperience = async (
     status: 'available',
     summary,
     advice,
+    connectionError:
+      connectionError ||
+      dailyTasksLoad.connectionError ||
+      completedTasksLoad.connectionError,
     experience,
   };
 };

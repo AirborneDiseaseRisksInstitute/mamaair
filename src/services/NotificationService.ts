@@ -728,3 +728,9 @@ export async function cancelReminders(): Promise<void> {
   );
   await cancelNotificationsWithPrefix(CARE_CADENCE_PREFIX);
 }
+
+export async function clearUserNotifications(): Promise<void> {
+  notificationNavigationStorage.remove(PENDING_ACTION_REMINDER_KEY);
+  notificationNavigationStorage.remove(CATEGORY_REMINDERS_KEY);
+  await notifee.cancelAllNotifications().catch(() => {});
+}

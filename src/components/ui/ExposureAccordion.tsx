@@ -27,6 +27,8 @@ interface ExposureAccordionProps {
   onOpenHistory?: () => void;
   locationPermissionGranted?: boolean;
   onRequestLocation?: () => void;
+  onRetry?: () => void;
+  loading?: boolean;
   ventilation?: string | null;
 }
 
@@ -73,6 +75,8 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
   onOpenHistory,
   locationPermissionGranted = true,
   onRequestLocation,
+  onRetry,
+  loading = false,
   ventilation,
 }) => {
   const theme = useTheme();
@@ -109,7 +113,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       }`
     : airExposure?.pm25 !== undefined
     ? `PM2.5 ${airExposure.pm25} µg/m³`
-    : t('today.status_unavailable');
+    : t(loading ? 'today.status_updating' : 'today.status_unavailable');
   const contextParts = airExposure
     ? [
         airExposure.temperature !== undefined
@@ -127,7 +131,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
     ? t('location.permission_body')
     : contextParts.length
     ? contextParts.join(' · ')
-    : t('exposure.no_data_body');
+    : t(loading ? 'today.exposure_updating' : 'exposure.no_data_body');
   const exposureTime = airExposure
     ? new Date(airExposure.timestamp)
     : null;
@@ -279,7 +283,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityState={{
-          disabled: !airExposure && !isLocationLocked,
+          disabled: !airExposure && !isLocationLocked && !onRetry,
           expanded: isLocationLocked ? false : isExpanded,
         }}
         accessibilityLabel={
@@ -312,10 +316,12 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
           }
           if (airExposure) {
             setIsExpanded(!isExpanded);
+            return;
           }
+          onRetry?.();
         }}
         activeOpacity={0.8}
-        disabled={!airExposure && !isLocationLocked}
+        disabled={!airExposure && !isLocationLocked && !onRetry}
       >
         <View style={styles.iconContainer}>
           {isLocationLocked ? (
@@ -359,6 +365,14 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
           <View style={styles.chevronButton}>
             <FontAwesomeIcon
               icon={(isExpanded ? faChevronUp : faChevronDown) as any}
+              size={14}
+              color={headerColor}
+            />
+          </View>
+        ) : onRetry ? (
+          <View style={styles.chevronButton}>
+            <FontAwesomeIcon
+              icon={faChevronRight as any}
               size={14}
               color={headerColor}
             />

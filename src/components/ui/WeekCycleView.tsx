@@ -10,11 +10,13 @@ import {
   faHeart,
   faShoppingBasket,
   faRunning,
+  faBrain,
   faFaceSadTear,
   faLock,
   faPlay,
 } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
+import { HOME_CARE_ICONS, type HomeCareIcon } from '../../utils/homeDayState';
 
 const MAIN_CIRCLE_DIAMETER = responsiveUtils.getWeekCycleMainCircleDiameter();
 const MAIN_RADIUS = MAIN_CIRCLE_DIAMETER / 2;
@@ -23,6 +25,7 @@ const DOT_SIZE = responsiveUtils.getWeekCycleDotSize();
 const DOT_RADIUS = DOT_SIZE / 2;
 const ICON_SIZE = responsiveUtils.getWeekCycleIconSize();
 const ICON_STROKE_WIDTH = 1.5;
+const WEEK_DAY_ROW_WIDTH = 120;
 
 // Helper function to increase stroke-width in SVG
 const increaseStrokeWidth = (svgXml: string, strokeWidth: number): string => {
@@ -339,9 +342,9 @@ const IconWithWave: React.FC<{
 
 interface WeekDay {
   day: string;
-  icons: Array<'heart' | 'basket' | 'running'>;
+  icons: readonly HomeCareIcon[];
   isActive?: boolean;
-  activeIcons?: Array<'heart' | 'basket' | 'running'>; // Which icons are active
+  activeIcons?: readonly HomeCareIcon[]; // Which icons are active
   isMissed?: boolean; // Day is completely missed
   isStartDay?: boolean; // Day can be started
 }
@@ -351,6 +354,7 @@ const ICON_COLORS = {
   heart: { bg: '#FFF5E0', icon: '#F5B800' },      // Yellow
   basket: { bg: '#E8F5E9', icon: '#4CAF50' },     // Green
   running: { bg: '#E3F2FD', icon: '#2196F3' },    // Blue
+  mental: { bg: '#F2E8F7', icon: '#70428F' },     // Purple
 };
 
 interface WeekCycleViewProps {
@@ -369,13 +373,13 @@ interface WeekCycleViewProps {
 }
 
 const DEFAULT_WEEK_DAYS: WeekDay[] = [
-  { day: 'Mon', icons: ['heart', 'basket', 'running'] },
-  { day: 'Tue', icons: ['heart', 'basket', 'running'] },
-  { day: 'Wed', icons: ['heart', 'basket', 'running'] },
-  { day: 'Thu', icons: ['heart', 'basket', 'running'] },
-  { day: 'Fri', icons: ['heart', 'basket', 'running'] },
-  { day: 'Sat', icons: ['heart', 'basket', 'running'] },
-  { day: 'Sun', icons: ['heart', 'basket', 'running'] },
+  { day: 'Mon', icons: HOME_CARE_ICONS },
+  { day: 'Tue', icons: HOME_CARE_ICONS },
+  { day: 'Wed', icons: HOME_CARE_ICONS },
+  { day: 'Thu', icons: HOME_CARE_ICONS },
+  { day: 'Fri', icons: HOME_CARE_ICONS },
+  { day: 'Sat', icons: HOME_CARE_ICONS },
+  { day: 'Sun', icons: HOME_CARE_ICONS },
 ];
 
 
@@ -396,8 +400,16 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
 
   const theme = useTheme();
   const { t } = useTranslation();
-  const screenWidth = Dimensions.get('window').width;
-  const weekSectionMarginRight = reversed ? Math.round(screenWidth * 0.22) : 0;
+  const [weekSectionWidth, setWeekSectionWidth] = React.useState(
+    Dimensions.get('window').width / 2,
+  );
+
+  const handleWeekSectionLayout = React.useCallback((event: any) => {
+    const width = event?.nativeEvent?.layout?.width ?? 0;
+    if (width > 0) {
+      setWeekSectionWidth(current => current === width ? current : width);
+    }
+  }, []);
 
   // Create map from circleIcons for fast access
   const iconMap = React.useMemo(() => {
@@ -520,7 +532,8 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
     const iconMap: Record<string, any> = { 
       heart: faHeart, 
       basket: faShoppingBasket, 
-      running: faRunning 
+      running: faRunning,
+      mental: faBrain,
     };
 
     // Equal spacing between days
@@ -575,23 +588,12 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
           // Horizontal position based on arc: reversed so Monday at bottom, Sunday at top
           const angle = endAngle - angleStep * index;
           const radian = (angle * Math.PI) / 180;
-          let x = arcRadius * Math.cos(radian);
+          const x = arcRadius * Math.cos(radian);
           
           // Horizontal position relative to container
-          const containerWidth = 200;
-          let relativeX;
-          if (reversed) {
-            // In reversed: Monday and Sunday should be on the right
-            // x for Monday and Sunday = 0, so we need to add offset
-            // Middle days have positive x, need to be inverted so arc goes to the left
-            // Use formula: offset + invert x to create arc to the left
-            const maxX = arcRadius; // Maximum x (for middle days)
-            x = maxX - x; // Invert x to create arc to the left
-            relativeX = containerWidth - 120 + x; // Monday and Sunday on the right
-          } else {
-            // In normal: Monday and Sunday on the left (x = 0)
-            relativeX = x - 60; // 60 = half width of weekDayRow
-          }
+          const relativeX = reversed
+            ? weekSectionWidth - x - WEEK_DAY_ROW_WIDTH / 2
+            : x - WEEK_DAY_ROW_WIDTH / 2;
 
           const isActive = weekDay.isActive || false;
           const isMissed = weekDay.isMissed || false;
@@ -785,10 +787,10 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
 
           </View>
 
-          <View style={[
-            styles.weekSection,
-            reversed && { marginRight: weekSectionMarginRight }
-          ]}>
+          <View
+            style={styles.weekSection}
+            onLayout={handleWeekSectionLayout}
+          >
             {renderWeekDays()}
           </View>
           
@@ -904,8 +906,6 @@ const styles = StyleSheet.create({
   },
   mainContainerReversed: {
     flexDirection: 'row-reverse',
-    paddingLeft: 12,
-    paddingRight: 4, // Extra padding on right side for reversed mode
   },
   
   circleSection: {
@@ -949,15 +949,15 @@ const styles = StyleSheet.create({
   },
   weekDayRow: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 6,
     borderRadius: 12,
     alignSelf: 'flex-start',
-    minWidth: 120,
+    width: WEEK_DAY_ROW_WIDTH,
   },
   weekDayContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   weekDayRowActive: {
     backgroundColor: '#fff',
@@ -1065,16 +1065,17 @@ const styles = StyleSheet.create({
   weekDayText: {
     fontSize: responsiveUtils.getDayLabelFontSize(),
     fontWeight: '600',
-    marginRight: 8,
+    width: 28,
+    marginRight: 4,
   },
   iconsRow: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 2,
   },
   iconCircle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1150,9 +1151,48 @@ const styles = StyleSheet.create({
   },
 });
 
-// Memoize component to prevent unnecessary re-renders
+const circleIconsEqual = (
+  previous: CircleIcon[] | undefined,
+  next: CircleIcon[] | undefined,
+): boolean => {
+  if (previous === next) return true;
+  if (!previous || !next || previous.length !== next.length) return false;
+
+  return previous.every((icon, index) => {
+    const nextIcon = next[index];
+    return (
+      icon.index === nextIcon.index &&
+      icon.iconPath === nextIcon.iconPath &&
+      icon.percentage === nextIcon.percentage
+    );
+  });
+};
+
+const weekDaysEqual = (
+  previous: WeekDay[] | undefined,
+  next: WeekDay[] | undefined,
+): boolean => {
+  if (previous === next) return true;
+  if (!previous || !next || previous.length !== next.length) return false;
+
+  return previous.every((day, index) => {
+    const nextDay = next[index];
+    return (
+      day.day === nextDay.day &&
+      day.isActive === nextDay.isActive &&
+      day.isMissed === nextDay.isMissed &&
+      day.isStartDay === nextDay.isStartDay &&
+      day.icons.length === nextDay.icons.length &&
+      day.icons.every((icon, iconIndex) => icon === nextDay.icons[iconIndex]) &&
+      (day.activeIcons?.length ?? 0) === (nextDay.activeIcons?.length ?? 0) &&
+      (day.activeIcons?.every(
+        (icon, iconIndex) => icon === nextDay.activeIcons?.[iconIndex],
+      ) ?? true)
+    );
+  });
+};
+
 export const WeekCycleView = React.memo(WeekCycleViewComponent, (prevProps, nextProps) => {
-  // Custom comparison function for better performance
   return (
     prevProps.reversed === nextProps.reversed &&
     prevProps.title === nextProps.title &&
@@ -1163,8 +1203,8 @@ export const WeekCycleView = React.memo(WeekCycleViewComponent, (prevProps, next
     prevProps.weekState === nextProps.weekState &&
     prevProps.chapterLabel === nextProps.chapterLabel &&
     prevProps.progressPercent === nextProps.progressPercent &&
-    JSON.stringify(prevProps.circleIcons) === JSON.stringify(nextProps.circleIcons) &&
-    JSON.stringify(prevProps.weekDays) === JSON.stringify(nextProps.weekDays) &&
+    circleIconsEqual(prevProps.circleIcons, nextProps.circleIcons) &&
+    weekDaysEqual(prevProps.weekDays, nextProps.weekDays) &&
     prevProps.centerImage === nextProps.centerImage
   );
 });

@@ -44,6 +44,7 @@ export const IntroStep06: React.FC<IntroStep06Props> = ({ onNext, onBack, onSkip
     skipButton: { paddingVertical: spacing('md'), paddingHorizontal: spacing('lg'), marginLeft: spacing('lg') },
     skipText: { fontSize: 18, fontFamily: theme.typography.fontFamily.extraBold, color: theme.colors.orange500 },
     continueButtonWrapper: { width: s(200), marginLeft: spacing('md') },
+    continueButtonWrapperFull: { flex: 1, width: '100%', marginLeft: 0 },
   }), [theme]);
 
   const isFormValid = selectedTimeSpent !== null && selectedTimeOfDay !== null;
@@ -68,7 +69,7 @@ export const IntroStep06: React.FC<IntroStep06Props> = ({ onNext, onBack, onSkip
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
           {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable> : null}
-          <View style={styles.continueButtonWrapper}><Button title={t('common.continue')} onPress={() => { if (isFormValid) { setTimeSpent(selectedTimeSpent); setTimeOfDay(selectedTimeOfDay); onNext?.(); } }} disabled={!isFormValid} /></View>
+          <View style={[styles.continueButtonWrapper, !showSkip && styles.continueButtonWrapperFull]}><Button title={t('common.continue')} onPress={() => { if (isFormValid) { setTimeSpent(selectedTimeSpent); setTimeOfDay(selectedTimeOfDay); onNext?.(); } }} disabled={!isFormValid} /></View>
         </View>
       </FixedButtonContainer>
       <BottomSheet visible={timeOfDaySheetVisible} onClose={() => setTimeOfDaySheetVisible(false)}>

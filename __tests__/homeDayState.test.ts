@@ -1,7 +1,23 @@
 import {
+  HOME_CARE_ICONS,
   resolveHomeActiveWeek,
+  resolveHomeCareIcons,
   resolveHomeDayState,
 } from '../src/utils/homeDayState';
+
+describe('Home care domains', () => {
+  it('shows all four care categories in every day row', () => {
+    expect(HOME_CARE_ICONS).toEqual(['heart', 'basket', 'running', 'mental']);
+  });
+
+  it('keeps mental wellbeing separate from behaviour completion', () => {
+    expect(resolveHomeCareIcons(['behaviour'])).toEqual(['heart']);
+    expect(resolveHomeCareIcons(['wellbeing'])).toEqual(['mental']);
+    expect(
+      resolveHomeCareIcons(['diet', 'activity', 'behaviour', 'wellbeing']),
+    ).toEqual(['heart', 'basket', 'running', 'mental']);
+  });
+});
 
 describe('Home active pregnancy week', () => {
   it('uses an explicitly edited profile week instead of stale API data', () => {

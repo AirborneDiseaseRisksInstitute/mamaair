@@ -21,6 +21,7 @@ export interface IntroFlowProfile {
   birthday?: string | null;
   height?: number | null;
   weight?: number | null;
+  language?: string | null;
   country?: string | null;
   area?: string | null;
   timezone?: string | null;
@@ -49,7 +50,11 @@ interface IntroFlowStep {
  * the API can return a default week that the user never selected.
  */
 export const INTRO_STEP_FLOW: IntroFlowStep[] = [
-  { fromIndex: 4, screen: 'IntroStep04', isComplete: () => false },
+  {
+    fromIndex: 4,
+    screen: 'IntroStep04',
+    isComplete: profile => Boolean(profile.language),
+  },
   {
     fromIndex: 2,
     screen: 'IntroStep02',
@@ -129,4 +134,21 @@ export const resolveNextIntroStep = (
     remainingSteps.find(step => !step.isComplete(profile))?.screen ??
     'IntroStep14'
   );
+};
+
+export const resolveIntroEntryStep = (
+  profile: IntroFlowProfile,
+): IntroFlowScreen | 'IntroStep01' => {
+  const hasSavedOnboardingData = Boolean(
+    profile.name ||
+      profile.birthday ||
+      profile.country ||
+      profile.pregnancyWeek ||
+      profile.timeSpent ||
+      profile.cookingMethod,
+  );
+
+  return hasSavedOnboardingData
+    ? resolveNextIntroStep(1, profile)
+    : 'IntroStep01';
 };

@@ -68,6 +68,7 @@ interface RecommendationExperienceStore {
   shareHistory: WeeklyShareRecord[];
   pendingMommySymptomSelections: Record<string, PendingMommySymptomSelection>;
   environmentalRiskObservations: Record<string, EnvironmentalRiskObservation>;
+  clearCurrentOwnerData: () => void;
   ensureOwner: (identity: RecommendationExperienceIdentity) => void;
   getCheckIn: (date: string) => FeelingCheckInRecord | null;
   saveCheckIn: (record: FeelingCheckInRecord) => void;
@@ -339,6 +340,29 @@ export const useRecommendationExperienceStore =
       initialPersistedState.pendingMommySymptomSelections,
     environmentalRiskObservations:
       initialPersistedState.environmentalRiskObservations,
+    clearCurrentOwnerData: () => {
+      const owner = get().owner;
+      const emptyState = emptyPersistedState();
+      recommendationExperienceStorage.remove(dataKey(owner));
+      set({
+        checkIns: emptyState.checkIns,
+        actionCompletions: emptyState.actionCompletions,
+        reminders: emptyState.reminders,
+        restTimers: emptyState.restTimers,
+        dailyMoments: emptyState.dailyMoments,
+        celebratedDates: emptyState.celebratedDates,
+        presentationDays: emptyState.presentationDays,
+        presentedActions: emptyState.presentedActions,
+        focusBoosts: emptyState.focusBoosts,
+        streakFreezes: emptyState.streakFreezes,
+        weeklyCheckpoints: emptyState.weeklyCheckpoints,
+        shareHistory: emptyState.shareHistory,
+        pendingMommySymptomSelections:
+          emptyState.pendingMommySymptomSelections,
+        environmentalRiskObservations:
+          emptyState.environmentalRiskObservations,
+      });
+    },
     ensureOwner: identity => {
       const nextOwner = resolveOwnerNamespace(identity);
       const previousOwner = get().owner;

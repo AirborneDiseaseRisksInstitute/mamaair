@@ -141,10 +141,4 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
-android/gradlew
-android/build.gradle
-package-lock.json
-android/build.gradle
-android/gradlew
-android/settings.gradle
 android/gradle/init.gradle

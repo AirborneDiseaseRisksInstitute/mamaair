@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Dimensions,
   Modal,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
@@ -22,6 +23,7 @@ import {
   faChevronRight,
   faGift,
   faRightFromBracket,
+  faTrashCan,
   faTimes,
   faShield,
   faCheck,
@@ -38,6 +40,7 @@ import {
   BottomSheetOption,
   Button,
   FixedButtonContainer,
+  useToast,
 } from '../components/ui';
 import {
   ProfileEditSheet,
@@ -49,7 +52,6 @@ import { FIXED_BUTTON_AREA_HEIGHT, ms } from '../utils/responsive';
 import { formatLocalDate } from '../utils/dateUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { useMetaChoices } from '../hooks/useMetaChoices';
-import { AdsScreen } from './AdsScreen';
 import { useTranslation } from 'react-i18next';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
 import { loadWeeklySummaryExperience } from '../services/recommendationExperience/PresentationJourneyRepository';
@@ -60,6 +62,7 @@ import {
   type SummaryResponse,
 } from '../services/api/SummaryService';
 import { DEV_LOCAL_SESSION } from '../config/dev';
+import { AccountDeletionService } from '../services/account/AccountDeletionService';
 import { HEALTHCARE_SERVICE_REQUESTS_ENABLED } from '../config/recommendationExperience';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -95,6 +98,7 @@ interface UserProfileScreenProps {
   onNavigateToPlanBirthday?: () => void;
   onNavigateToSymptomsHistory?: () => void;
   onLogout?: () => void;
+  onAccountDeleted?: () => void;
 }
 
 export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
@@ -109,9 +113,11 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   onNavigateToPlanBirthday,
   onNavigateToSymptomsHistory,
   onLogout,
+  onAccountDeleted,
 }) => {
   const theme = useTheme();
   const { t, i18n } = useTranslation();
+  const { showToast } = useToast();
   const locale =
     i18n.resolvedLanguage === 'fr'
       ? 'fr-FR'
@@ -131,8 +137,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     state => state.dailyMoments,
   );
   const { logout } = useAuthStore();
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const { countries, languages } = useMetaChoices();
-  const [showBabyTwinAds, setShowBabyTwinAds] = useState(false);
   const [isProfileEditMenuVisible, setIsProfileEditMenuVisible] =
     useState(false);
   const [activeProfileEditSection, setActiveProfileEditSection] =
@@ -151,6 +157,61 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
   // Photo picker sheet
   const [isPhotoSheetVisible, setIsPhotoSheetVisible] = useState(false);
+
+  const confirmLogout = () => {
+    Alert.alert(t('profile.logout_confirm_title'), t('profile.logout_confirm_message'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('profile.menu_logout'),
+        style: 'destructive',
+        onPress: () => {
+          logout();
+          onLogout?.();
+        },
+      },
+    ]);
+  };
+
+  const deleteAccount = async () => {
+    if (isDeletingAccount) return;
+    setIsDeletingAccount(true);
+    try {
+      const status = await AccountDeletionService.deleteCurrentAccount();
+      if (status === 'unconfirmed') {
+        showToast({
+          type: 'info',
+          title: t('settings.delete_account_unconfirmed_title'),
+          message: t('settings.delete_account_unconfirmed_message'),
+          duration: 5000,
+        });
+      }
+      onAccountDeleted?.();
+    } catch {
+      showToast({
+        type: 'error',
+        title: t('settings.delete_account_failed_title'),
+        message: t('settings.delete_account_failed_message'),
+      });
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const confirmDeleteAccount = () => {
+    if (isDeletingAccount) return;
+    Alert.alert(
+      t('settings.delete_account_confirm_title'),
+      t('settings.delete_account_confirm_message'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('settings.delete_account_confirm_action'),
+          style: 'destructive',
+          onPress: deleteAccount,
+        },
+      ],
+    );
+  };
 
   const handlePickPhotoCamera = () => {
     setIsPhotoSheetVisible(false);
@@ -1133,7 +1194,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           <TouchableOpacity
             style={styles.babyTwinCard}
             activeOpacity={0.7}
-            onPress={() => setShowBabyTwinAds(true)}
+            onPress={onNavigateToBabyTwin}
           >
             <View style={styles.digitalTwinHeader}>
               <View style={styles.digitalTwinImageContainer}>
@@ -1375,10 +1436,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             <TouchableOpacity
               style={styles.menuItem}
               activeOpacity={0.7}
-              onPress={() => {
-                logout();
-                onLogout?.();
-              }}
+              onPress={confirmLogout}
             >
               <View style={styles.menuIcon}>
                 <FontAwesomeIcon
@@ -1392,6 +1450,26 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 allowFontScaling={false}
               >
                 {t('profile.menu_logout')}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              activeOpacity={0.7}
+              onPress={confirmDeleteAccount}
+              disabled={isDeletingAccount}
+            >
+              <View style={styles.menuIcon}>
+                <FontAwesomeIcon
+                  icon={faTrashCan as any}
+                  size={20}
+                  color={'#FF4444'}
+                />
+              </View>
+              <Text style={[styles.menuText, { color: '#FF4444' }]} allowFontScaling={false}>
+                {t(isDeletingAccount ? 'settings.deleting_account' : 'settings.delete_account')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1984,19 +2062,6 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           </TouchableOpacity>
         </Modal>
 
-        <Modal
-          visible={showBabyTwinAds}
-          animationType="fade"
-          onRequestClose={() => {}}
-        >
-          <AdsScreen
-            placement="profile-to-baby-twin"
-            onClose={() => {
-              setShowBabyTwinAds(false);
-              onNavigateToBabyTwin?.();
-            }}
-          />
-        </Modal>
       </SafeAreaView>
     </React.Fragment>
   );

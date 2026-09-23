@@ -8,6 +8,8 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm run lint && npm test -- --runInBand",
     "ios_pods": "bundle exec pod install"
   },
   "dependencies": {

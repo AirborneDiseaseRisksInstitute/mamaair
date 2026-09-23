@@ -1,3 +1,14 @@
+import type { DailyActionDomain } from '../types/recommendationExperience';
+
+export type HomeCareIcon = 'heart' | 'basket' | 'running' | 'mental';
+
+export const HOME_CARE_ICONS: readonly HomeCareIcon[] = [
+  'heart',
+  'basket',
+  'running',
+  'mental',
+];
+
 interface ResolveHomeDayStateParams {
   weekNumber: number;
   activeWeek: number;
@@ -55,4 +66,17 @@ export const resolveHomeDayState = ({
     isStartDay,
     isMissed: isBeforeToday && !isActive,
   };
+};
+
+export const resolveHomeCareIcons = (
+  domains: readonly DailyActionDomain[],
+): HomeCareIcon[] => {
+  const icons: HomeCareIcon[] = [];
+
+  if (domains.includes('behaviour')) icons.push('heart');
+  if (domains.includes('diet')) icons.push('basket');
+  if (domains.includes('activity')) icons.push('running');
+  if (domains.includes('wellbeing')) icons.push('mental');
+
+  return icons;
 };

@@ -28,6 +28,7 @@ import {
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faGlobe } from '@fortawesome/free-solid-svg-icons';
 import { consumeInitialLanguagePrompt } from '../../utils/initialLanguagePrompt';
+import type { LegalDocumentKind } from '../../content/legalDocuments';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -36,6 +37,7 @@ interface SignInScreenProps {
   onForgotPassword?: () => void;
   onGoogleSignIn?: () => void;
   onSignUp?: () => void;
+  onOpenLegal?: (document: LegalDocumentKind) => void;
 }
 
 export const SignInScreen: React.FC<SignInScreenProps> = ({
@@ -43,6 +45,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
   onForgotPassword,
   onGoogleSignIn: _onGoogleSignIn,
   onSignUp,
+  onOpenLegal,
 }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -240,6 +243,26 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
       color: theme.colors.textPrimary,
       marginLeft: spacing('md'),
     },
+    googleLegalNotice: {
+      fontSize: 12,
+      lineHeight: 18,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+      marginTop: spacing('md'),
+    },
+    googleLegalLinks: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      marginTop: spacing('xs'),
+    },
+    googleLegalLink: { paddingVertical: spacing('sm'), paddingHorizontal: spacing('sm') },
+    googleLegalLinkText: {
+      fontSize: 12,
+      color: theme.colors.orange500,
+      fontFamily: theme.typography.fontFamily.bold,
+      textDecorationLine: 'underline',
+    },
     signUpContainer: {
       alignItems: 'center',
       marginTop: spacing('sm'),
@@ -420,6 +443,19 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
               <GoogleIcon />
               <Text style={styles.googleButtonText} allowFontScaling={false}>{t('auth.continue_with_google')}</Text>
             </TouchableOpacity>
+            <Text style={styles.googleLegalNotice}>{t('legal.signin_notice')}</Text>
+            <View style={styles.googleLegalLinks}>
+              {(['terms', 'privacy'] as const).map(document => (
+                <TouchableOpacity
+                  key={document}
+                  accessibilityRole="link"
+                  onPress={() => onOpenLegal?.(document)}
+                  style={styles.googleLegalLink}
+                >
+                  <Text style={styles.googleLegalLinkText}>{t(`legal.${document}`)}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         </View>
       </ScrollView>

@@ -11,7 +11,6 @@ import {
   Easing,
   findNodeHandle,
   Linking,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -49,7 +48,6 @@ import {
   AccessLocationBottomSheet,
   ExposureAccordion,
   SystemProgressIcon,
-  TransitionLoader,
   useToast,
   WaveCard,
 } from '../components/ui';
@@ -61,8 +59,12 @@ import {
   TodayQuickCheckInSheet,
   type TodayQuickCheckInKind,
 } from '../components/today/TodayQuickCheckInSheet';
-import { AdsScreen } from './AdsScreen';
-import { type SummaryResponse } from '../services/api/SummaryService';
+import { InlineAd } from '../components/ads/InlineAd';
+import { shouldShowPostPlanAd } from '../data/ads';
+import {
+  SummaryService,
+  type SummaryResponse,
+} from '../services/api/SummaryService';
 import { LifestyleService } from '../services/api/LifestyleService';
 import { DailyCheckinService } from '../services/api/DailyCheckinService';
 import {
@@ -102,11 +104,10 @@ import { loadExposureTrend } from '../services/recommendationExperience/Exposure
 import { ProductAnalytics } from '../services/recommendationExperience/ProductAnalytics';
 import { getPersistentStreak } from '../services/recommendationExperience/ProgressionRepository';
 import { subscribeToMommySymptomSync } from '../services/recommendationExperience/MommySymptomSyncService';
-import {
-  locationTracker,
-  type LocationPermissionStatus,
-} from '../services/tracking/LocationTracker';
+import { type LocationPermissionStatus } from '../services/tracking/LocationTracker';
+import { locationAccessCoordinator } from '../services/tracking/LocationAccessCoordinator';
 import { resolvePlanInputReadiness } from '../utils/planReadiness';
+import { isApiConnectionError } from '../utils/apiErrors';
 
 const getTodayDate = (): string => formatLocalDate(new Date());
 const EMPTY_DAILY_MOMENTS: Record<string, DailyMomentRecord> = {};
@@ -199,9 +200,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     const [airExposure, setAirExposure] = useState<AirExposure | null>(null);
     const [locationPermissionStatus, setLocationPermissionStatus] =
       useState<LocationPermissionStatus | null>(() =>
-        locationTracker.isTracking() ? 'granted' : null,
+        locationAccessCoordinator.isTracking() ? 'granted' : null,
       );
     const [showLocationSheet, setShowLocationSheet] = useState(false);
+    const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+    const [showConnectionSheet, setShowConnectionSheet] = useState(false);
     const [
       isPresentationMotherBabyContext,
       setIsPresentationMotherBabyContext,
@@ -212,8 +215,6 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     const [quickCheckInKind, setQuickCheckInKind] =
       useState<TodayQuickCheckInKind | null>(null);
     const [detailSheet, setDetailSheet] = useState<DashboardDetailSheet>(null);
-    const [showBabyAds, setShowBabyAds] = useState(false);
-    const [isNavigatingToBaby, setIsNavigatingToBaby] = useState(false);
     const [showDailyWin, setShowDailyWin] = useState(false);
     const [streakDays, setStreakDays] = useState(0);
     const [dashboardPage, setDashboardPage] = useState(0);
@@ -257,11 +258,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     );
     const planInputReadiness = useMemo(
       () =>
-        resolvePlanInputReadiness(
-          profile,
-          storedCheckIn,
-          pendingMommySymptoms,
-        ),
+        resolvePlanInputReadiness(profile, storedCheckIn, pendingMommySymptoms),
       [pendingMommySymptoms, profile, storedCheckIn],
     );
     const hasLocationPermission = locationPermissionStatus === 'granted';
@@ -297,84 +294,109 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     );
 
     const refreshToday = useCallback(async () => {
-      if (!planInputReadiness.ready) {
-        setSummary(null);
+      setIsDashboardLoading(true);
+      if (planInputReadiness.ready) {
+        setDailyPlanLoadStatus(current =>
+          current === 'available' ? current : 'loading',
+        );
+      } else {
         setDailyPlan(null);
         setDailyPlanLoadStatus('needsInput');
         setMedicalSafetyAlerts([]);
         setImportantGuidanceItems([]);
         setImprovePlanPrompts([]);
-        setCheckIn(null);
-        setLifestyle(null);
-        setAirExposure(null);
-        setExposureTrend([]);
-        setIsPresentationMotherBabyContext(false);
-        return;
       }
 
-      setDailyPlanLoadStatus(current =>
-        current === 'available' ? current : 'loading',
-      );
-      const [planResult, checkInExperience, lifestyleData, airExposureData] =
-        await Promise.all([
-          loadDailyPlanExperience(identity, date, {
-            inputReadiness: planInputReadiness,
-            translate: (key, fallback) =>
-              t(key, { defaultValue: fallback }),
-          }),
+      const [planLoad, summaryLoad, checkInLoad, lifestyleLoad, exposureLoad] =
+        await Promise.allSettled([
+          planInputReadiness.ready
+            ? loadDailyPlanExperience(identity, date, {
+                inputReadiness: planInputReadiness,
+                translate: (key, fallback) =>
+                  t(key, { defaultValue: fallback }),
+              })
+            : Promise.resolve(null),
+          planInputReadiness.ready || DEV_LOCAL_SESSION
+            ? Promise.resolve(null)
+            : SummaryService.getSummary(),
           loadFeelingCheckInExperience(identity, date),
           DEV_LOCAL_SESSION
             ? Promise.resolve(null)
-            : LifestyleService.getLifestyle().catch(() => null),
-          !hasLocationPermission
+            : LifestyleService.getLifestyle(),
+          !hasLocationPermission || DEV_LOCAL_SESSION
             ? Promise.resolve(null)
-            : DEV_LOCAL_SESSION
-            ? Promise.resolve(null)
-            : ExposureService.getAirExposure().catch(() => null),
+            : ExposureService.getAirExposure(),
         ]);
+
+      const planResult =
+        planLoad.status === 'fulfilled' ? planLoad.value : null;
+      const directSummary =
+        summaryLoad.status === 'fulfilled' ? summaryLoad.value : null;
+      const checkInExperience =
+        checkInLoad.status === 'fulfilled' ? checkInLoad.value : null;
+      const lifestyleData =
+        lifestyleLoad.status === 'fulfilled' ? lifestyleLoad.value : null;
+      const airExposureData =
+        exposureLoad.status === 'fulfilled' ? exposureLoad.value : null;
+      const hasConnectionError =
+        Boolean(planResult?.connectionError) ||
+        [planLoad, summaryLoad, lifestyleLoad, exposureLoad].some(
+          result =>
+            result.status === 'rejected' &&
+            isApiConnectionError(result.reason),
+        );
+
+      setShowConnectionSheet(hasConnectionError);
 
       const pregnancyWeek =
         getCurrentPregnancyWeek(
           profile.pregnancyWeek,
           profile.pregnancyWeekSetDate,
         ) ??
-        planResult.summary?.week_info?.week ??
+        planResult?.summary?.week_info?.week ??
+        directSummary?.week_info?.week ??
         19;
-      const completedPresentation = completeTodayPresentation({
-        identity,
-        date,
-        pregnancyWeek,
-        summary: planResult.summary,
-        airExposure: airExposureData,
-        lifestyle: lifestyleData,
-        checkIn: checkInExperience,
-      });
+      const completedPresentation = checkInExperience
+        ? completeTodayPresentation({
+            identity,
+            date,
+            pregnancyWeek,
+            summary: planResult?.summary ?? directSummary,
+            airExposure: airExposureData,
+            lifestyle: lifestyleData,
+            checkIn: checkInExperience,
+          })
+        : null;
 
-      setSummary(completedPresentation.summary);
-      setDailyPlan(
-        planResult.status === 'available' ? planResult.experience : null,
-      );
-      setDailyPlanLoadStatus(planResult.status);
-      setMedicalSafetyAlerts(planResult.experience.medicalAttention);
-      setImportantGuidanceItems(
-        planResult.experience.importantGuidanceRecommendations,
-      );
-      setImprovePlanPrompts([
-        ...planResult.experience.importantGuidanceRecommendations.slice(1),
-        ...planResult.experience.guidanceRecommendations,
-        ...planResult.experience.optionalSupportRecommendations,
-      ]);
-      setCheckIn(completedPresentation.checkIn);
-      setLifestyle(completedPresentation.lifestyle);
+      setSummary(completedPresentation?.summary ?? directSummary);
+      if (planResult) {
+        setDailyPlan(
+          planResult.status === 'available' ? planResult.experience : null,
+        );
+        setDailyPlanLoadStatus(planResult.status);
+        setMedicalSafetyAlerts(planResult.experience.medicalAttention);
+        setImportantGuidanceItems(
+          planResult.experience.importantGuidanceRecommendations,
+        );
+        setImprovePlanPrompts([
+          ...planResult.experience.importantGuidanceRecommendations.slice(1),
+          ...planResult.experience.guidanceRecommendations,
+          ...planResult.experience.optionalSupportRecommendations,
+        ]);
+      }
+      setCheckIn(completedPresentation?.checkIn ?? checkInExperience);
+      setLifestyle(completedPresentation?.lifestyle ?? lifestyleData);
       setAirExposure(
-        hasLocationPermission ? completedPresentation.airExposure : null,
+        hasLocationPermission
+          ? completedPresentation?.airExposure ?? airExposureData
+          : null,
       );
       setIsPresentationMotherBabyContext(
-        completedPresentation.sourceFlags.motherBabyContext,
+        completedPresentation?.sourceFlags.motherBabyContext ?? false,
       );
       if (hasLocationPermission) {
         loadExposureTrend({
-          summary: completedPresentation.summary,
+          summary: completedPresentation?.summary ?? directSummary,
           endDate: date,
           pregnancyWeek,
         })
@@ -384,7 +406,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         setExposureTrend([]);
       }
       const milestone =
-        completedPresentation.summary.week_info?.text ??
+        completedPresentation?.summary.week_info?.text ??
+        directSummary?.week_info?.text ??
         t(`home.week_desc_w${String(pregnancyWeek).padStart(2, '0')}`);
       setStreakDays(
         loadWeeklySummaryExperience({
@@ -392,9 +415,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           pregnancyWeek,
           endDate: date,
           milestone,
-          backendSummary: completedPresentation.summary,
+          backendSummary: completedPresentation?.summary ?? directSummary,
         }).streakDays,
       );
+      setIsDashboardLoading(false);
     }, [
       date,
       identity,
@@ -408,9 +432,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     useFocusEffect(
       useCallback(() => {
         let mounted = true;
-        const statusRequest = locationTracker.isTracking()
+        const statusRequest = locationAccessCoordinator.isTracking()
           ? Promise.resolve<LocationPermissionStatus>('granted')
-          : locationTracker.getPermissionStatus();
+          : locationAccessCoordinator.getTrackingStatus();
 
         statusRequest
           .then(status => {
@@ -432,8 +456,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
 
     const handleLocationAllow = useCallback(async () => {
       setShowLocationSheet(false);
-      const status = await locationTracker
-        .requestAndStart()
+      const status = await locationAccessCoordinator
+        .enable()
         .catch(() => 'unavailable' as const);
       setLocationPermissionStatus(status);
       if (status === 'blocked') {
@@ -441,10 +465,18 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       }
     }, []);
 
+    const handleLocationDecline = useCallback(() => {
+      setShowLocationSheet(false);
+      locationAccessCoordinator.decline();
+      setLocationPermissionStatus('denied');
+    }, []);
+
     useEffect(() => {
       refreshToday().catch(() => {
         setDailyPlan(null);
         setDailyPlanLoadStatus('unavailable');
+        setIsDashboardLoading(false);
+        setShowConnectionSheet(true);
       });
       if (planInputReadiness.ready) {
         DailyCheckinService.ensureCheckin(date);
@@ -454,7 +486,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     useEffect(
       () =>
         subscribeToMommySymptomSync(() => {
-          refreshToday().catch(() => {});
+          refreshToday().catch(() => {
+            setIsDashboardLoading(false);
+          });
         }),
       [refreshToday],
     );
@@ -465,7 +499,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           hasFocusedOnce.current = true;
           return undefined;
         }
-        refreshToday().catch(() => {});
+        refreshToday().catch(() => {
+          setIsDashboardLoading(false);
+        });
         return undefined;
       }, [refreshToday]),
     );
@@ -490,15 +526,6 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         };
       }, [waveAnimationProgress]),
     );
-
-    const handleNavigateToBabyStatus = useCallback(() => {
-      if (showBabyAds || isNavigatingToBaby) return;
-      setIsNavigatingToBaby(true);
-      setTimeout(() => {
-        setIsNavigatingToBaby(false);
-        setShowBabyAds(true);
-      }, 350);
-    }, [isNavigatingToBaby, showBabyAds]);
 
     const visiblePrimaryActions =
       dailyPlan?.primaryActions.filter(isReleaseVisibleDailyPlanAction) ?? [];
@@ -649,6 +676,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           ? 'today.status_attention'
           : status === 'context'
           ? 'today.status_care_context'
+          : isDashboardLoading
+          ? 'today.status_updating'
           : 'today.status_unavailable',
       );
 
@@ -868,10 +897,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             ...StyleSheet.absoluteFillObject,
           },
           navHeader: {
-            minHeight: 54,
+            minHeight: 64,
             flexDirection: 'row',
             alignItems: 'center',
             paddingHorizontal: spacing('sm'),
+            paddingVertical: spacing('xs'),
             borderBottomWidth: StyleSheet.hairlineWidth,
             borderBottomColor: theme.colors.neutral200,
             backgroundColor: 'rgba(255, 255, 255, 0.97)',
@@ -896,7 +926,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             maxWidth: 680,
             alignSelf: 'center',
             paddingHorizontal: spacing('md'),
-            paddingBottom: spacing('xl') + 16,
+            paddingBottom: spacing('xl') + 96,
           },
           warning: {
             flexDirection: 'row',
@@ -1525,6 +1555,49 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             maxHeight: 620,
             paddingBottom: insets.bottom + spacing('xs'),
           },
+          connectionSheet: {
+            paddingHorizontal: spacing('md'),
+            paddingBottom: insets.bottom + spacing('md'),
+          },
+          connectionTitle: {
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.extraBold,
+            fontSize: 21,
+            lineHeight: 28,
+          },
+          connectionBody: {
+            marginTop: spacing('sm'),
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 14,
+            lineHeight: 21,
+          },
+          connectionRetry: {
+            minHeight: 48,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: spacing('xs'),
+            marginTop: spacing('lg'),
+            borderRadius: radius('md'),
+            backgroundColor: theme.colors.orange500,
+          },
+          connectionRetryText: {
+            color: '#FFFFFF',
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 15,
+          },
+          connectionClose: {
+            minHeight: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: spacing('xs'),
+          },
+          connectionCloseText: {
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.medium,
+            fontSize: 14,
+          },
           sheetHeader: {
             minHeight: 48,
             flexDirection: 'row',
@@ -1775,10 +1848,18 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   <ExposureAccordion
                     airExposure={airExposure}
                     embedded
-                    locationPermissionGranted={
-                      !isLocationPermissionRequired
-                    }
+                    locationPermissionGranted={!isLocationPermissionRequired}
                     onRequestLocation={() => setShowLocationSheet(true)}
+                    loading={isDashboardLoading && hasLocationPermission}
+                    onRetry={
+                      isDashboardLoading || !hasLocationPermission
+                        ? undefined
+                        : () => {
+                            refreshToday().catch(() => {
+                              setIsDashboardLoading(false);
+                            });
+                          }
+                    }
                     ventilation={profile.ventilation}
                     onOpenHistory={() => openDetailSheet('risks', null)}
                   />
@@ -2097,7 +2178,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
                   <Pressable
                     accessibilityRole="button"
                     onPress={
-                      onNavigateToWeeklySummary ?? handleNavigateToBabyStatus
+                      onNavigateToWeeklySummary ?? onNavigateToBabyStatus
                     }
                     style={styles.weekAction}
                   >
@@ -2250,6 +2331,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           ) : null}
 
           <EveningWindDown date={date} identity={identity} />
+          {shouldShowPostPlanAd({
+            totalTasks,
+            doneTasks,
+            dailyWinVisible: showDailyWin,
+            hasMedicalAlert: medicalSafetyAlerts.length > 0,
+          }) ? (
+            <InlineAd date={date} identity={identity} />
+          ) : null}
         </ScrollView>
 
         <TodayQuickCheckInSheet
@@ -2441,28 +2530,57 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           </View>
         </BottomSheet>
 
+        <BottomSheet
+          visible={showConnectionSheet}
+          onClose={() => setShowConnectionSheet(false)}
+          showHandle
+        >
+          <View accessibilityViewIsModal style={styles.connectionSheet}>
+            <Text style={styles.connectionTitle}>
+              {t('today.connection_issue_title')}
+            </Text>
+            <Text style={styles.connectionBody}>
+              {t('today.connection_issue_body')}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setShowConnectionSheet(false);
+                refreshToday().catch(() => {
+                  setIsDashboardLoading(false);
+                  setShowConnectionSheet(true);
+                });
+              }}
+              style={styles.connectionRetry}
+            >
+              <FontAwesomeIcon
+                icon={faRotateRight}
+                size={14}
+                color="#FFFFFF"
+              />
+              <Text style={styles.connectionRetryText}>
+                {t('feeling_checkin.try_again')}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setShowConnectionSheet(false)}
+              style={styles.connectionClose}
+            >
+              <Text style={styles.connectionCloseText}>
+                {t('common.close')}
+              </Text>
+            </Pressable>
+          </View>
+        </BottomSheet>
+
         <AccessLocationBottomSheet
           visible={showLocationSheet}
-          onClose={() => setShowLocationSheet(false)}
+          onClose={handleLocationDecline}
           onAllow={handleLocationAllow}
-          onNotNow={() => setShowLocationSheet(false)}
+          onNotNow={handleLocationDecline}
         />
 
-        <TransitionLoader visible={isNavigatingToBaby} />
-
-        <Modal
-          visible={showBabyAds}
-          animationType="fade"
-          onRequestClose={() => {}}
-        >
-          <AdsScreen
-            placement="today-to-baby-status"
-            onClose={() => {
-              setShowBabyAds(false);
-              onNavigateToBabyStatus?.();
-            }}
-          />
-        </Modal>
       </SafeAreaView>
     );
   },

@@ -17,13 +17,13 @@ import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { useTheme, spacing, radius } from '../theme';
 import { BackButton, UpgradeSubscription, BottomSheet, Button, BottomSheetOption, useToast } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
-import { useAuthStore } from '../store/useAuthStore';
-import { AuthService } from '../services/api/AuthService';
+import { AccountDeletionService } from '../services/account/AccountDeletionService';
 import { scheduleReminders } from '../services/NotificationService';
 import { getDeviceTimezone, getTimezoneList } from '../utils/timezoneUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
 import { vs, s } from '../utils/responsive';
 import { useTranslation } from 'react-i18next';
+import type { LegalDocumentKind } from '../content/legalDocuments';
 
 const notifThumb = require('../assets/images/notifThumb.png');
 const SHADOW_OFFSET_1 = 6;
@@ -35,6 +35,7 @@ interface AppSettingsScreenProps {
   onBack?: () => void;
   onNavigateToNotificationTime?: () => void;
   onAccountDeleted?: () => void;
+  onOpenLegal?: (document: LegalDocumentKind) => void;
 }
 
 const CARD_HEIGHT = vs(110);
@@ -43,12 +44,12 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
   onBack,
   onNavigateToNotificationTime,
   onAccountDeleted,
+  onOpenLegal,
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { profile, setTimezone } = useUserStore();
-  const { logout } = useAuthStore();
   const [showUpgradeSubscription, setShowUpgradeSubscription] = useState(false);
   const [showNotifSheet, setShowNotifSheet] = useState(false);
   const [showTimezoneSheet, setShowTimezoneSheet] = useState(false);
@@ -96,8 +97,15 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
 
     setIsDeletingAccount(true);
     try {
-      await AuthService.deleteAccount();
-      logout();
+      const status = await AccountDeletionService.deleteCurrentAccount();
+      if (status === 'unconfirmed') {
+        showToast({
+          type: 'info',
+          title: t('settings.delete_account_unconfirmed_title'),
+          message: t('settings.delete_account_unconfirmed_message'),
+          duration: 5000,
+        });
+      }
       onAccountDeleted?.();
     } catch {
       showToast({
@@ -129,6 +137,8 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
     'notifications',
     'notification_time',
     'time_zone',
+    'privacy_policy',
+    'terms_of_use',
     // 'Appearance',
     ...(PREMIUM_FLOWS_ENABLED ? ['manage_subscription'] : []),
     // 'Manage account',
@@ -308,6 +318,10 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
                     setShowTimezoneSheet(true);
                   } else if (item === 'notification_time') {
                     onNavigateToNotificationTime?.();
+                  } else if (item === 'privacy_policy') {
+                    onOpenLegal?.('privacy');
+                  } else if (item === 'terms_of_use') {
+                    onOpenLegal?.('terms');
                   } else if (item === 'delete_account') {
                     confirmDeleteAccount();
                   } else {
@@ -327,6 +341,10 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
                   ? `${t(`settings.${item}`)} (${currentTimezone})`
                   : item === 'notification_time'
                     ? `${t(`settings.${item}`)} (${formatNotifTime()})`
+                    : item === 'privacy_policy'
+                      ? t('legal.privacy')
+                      : item === 'terms_of_use'
+                        ? t('legal.terms')
                     : item === 'delete_account' && isDeletingAccount
                       ? t('settings.deleting_account')
                       : t(`settings.${item}`)}

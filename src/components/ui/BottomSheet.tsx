@@ -297,12 +297,14 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
 
           {/* Internal content shown after fold */}
           {showContent && (
-        <Animated.View
-          style={[
+            <Animated.View
+              testID="bottom-sheet-surface"
+              style={[
                 styles.contentContainer,
-            {
+                {
                   height: contentHeight,
                   opacity: contentOpacity,
+                  backgroundColor: theme.colors.background,
                 },
               ]}
             >
@@ -310,7 +312,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
                 style={[
                   styles.content,
                   {
-                    backgroundColor: 'transparent',
+                    backgroundColor: theme.colors.background,
                   },
                 ]}
               >
@@ -478,6 +480,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     width: '100%',
+    overflow: 'hidden',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   content: {
     borderTopLeftRadius: 20,

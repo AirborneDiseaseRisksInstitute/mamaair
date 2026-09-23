@@ -10,6 +10,7 @@ import {
   type NativeStackNavigationProp,
 } from '@react-navigation/native-stack';
 import { IntroStep01 } from '../screens/intro/steps/IntroStep01';
+import { IntroDataConsentScreen } from '../screens/intro/IntroDataConsentScreen';
 import { IntroStep02 } from '../screens/intro/steps/IntroStep02';
 import { IntroStep03 } from '../screens/intro/steps/IntroStep03';
 import { IntroStep04 } from '../screens/intro/steps/IntroStep04';
@@ -38,11 +39,12 @@ import { ProfileInformationScreen } from '../screens/ProfileInformationScreen';
 import { BabyTwinScreen } from '../screens/BabyTwinScreen';
 import { MotherTwinScreen } from '../screens/MotherTwinScreen';
 import { ReferAppScreen } from '../screens/ReferAppScreen';
-import { AdsScreen } from '../screens/AdsScreen';
 import { BabyStatusScreen } from '../screens/BabyStatusScreen';
 import { AppSettingsScreen } from '../screens/AppSettingsScreen';
 import { NotificationTimeScreen } from '../screens/NotificationTimeScreen';
 import { PrivacySettingsScreen } from '../screens/PrivacySettingsScreen';
+import { LegalDocumentsScreen } from '../screens/LegalDocumentsScreen';
+import type { LegalDocumentKind } from '../content/legalDocuments';
 import { PlanBirthdayScreen } from '../screens/PlanBirthdayScreen';
 import { RemindersScreen } from '../screens/RemindersScreen';
 import { SymptomsHistoryScreen } from '../screens/SymptomsHistoryScreen';
@@ -78,11 +80,16 @@ import {
   shouldShowSymptomFab,
 } from '../utils/symptomFabRoutes';
 import { resolveIntroCompletionRoute } from '../utils/introNavigation';
-import { resolveNextIntroStep } from '../utils/introFlow';
+import {
+  resolveIntroEntryStep,
+  resolveNextIntroStep,
+  type IntroFlowScreen,
+} from '../utils/introFlow';
 import { resolvePlanInputReadiness } from '../utils/planReadiness';
 
 export type RootStackParamList = {
   AuthLoading: { authenticatedEmail?: string } | undefined;
+  IntroDataConsent: { next: 'Home' | 'IntroStep01' | IntroFlowScreen };
   IntroStep01: undefined;
   IntroStep02: undefined;
   IntroStep03: undefined;
@@ -123,8 +130,8 @@ export type RootStackParamList = {
   NotificationTime: undefined;
   Reminders: undefined;
   PrivacySettings: undefined;
+  LegalDocuments: { document: LegalDocumentKind };
   PlanBirthday: undefined;
-  Ads: undefined;
   BabyStatus: undefined;
   SymptomsHistory: undefined;
   WeeklySummary:
@@ -410,10 +417,24 @@ export const Navigation: React.FC = () => {
                     index: 0,
                     routes: [{ name: 'Home' }],
                   });
-                } else if (target === 'Intro') {
+                } else if (target === 'ConsentHome') {
                   navigation.reset({
                     index: 0,
-                    routes: [{ name: 'IntroStep01' }],
+                    routes: [{ name: 'IntroDataConsent', params: { next: 'Home' } }],
+                  });
+                } else if (target === 'Intro') {
+                  const profile = useUserStore.getState().profile;
+                  const introEntryStep = resolveIntroEntryStep(profile);
+                  navigation.reset({
+                    index: 0,
+                    routes: profile.agreementAccepted
+                      ? [{ name: introEntryStep }]
+                      : [
+                          {
+                            name: 'IntroDataConsent',
+                            params: { next: introEntryStep },
+                          },
+                        ],
                   });
                 } else {
                   navigation.reset({
@@ -422,6 +443,14 @@ export const Navigation: React.FC = () => {
                   });
                 }
               }}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="IntroDataConsent">
+          {({ navigation, route }) => (
+            <IntroDataConsentScreen
+              onContinue={() => navigation.replace(route.params.next)}
+              onOpenLegal={document => navigation.navigate('LegalDocuments', { document })}
             />
           )}
         </Stack.Screen>
@@ -805,6 +834,12 @@ export const Navigation: React.FC = () => {
                   ],
                 });
               }}
+              onAccountDeleted={() => {
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: DEV_LOCAL_SESSION ? 'AuthLoading' : 'SignIn' }],
+                });
+              }}
             />
           )}
         </Stack.Screen>
@@ -855,6 +890,7 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <AppSettingsScreen
               onBack={() => navigation.goBack()}
+              onOpenLegal={document => navigation.navigate('LegalDocuments', { document })}
               onNavigateToNotificationTime={() =>
                 navigation.navigate('NotificationTime')
               }
@@ -883,7 +919,18 @@ export const Navigation: React.FC = () => {
         </Stack.Screen>
         <Stack.Screen name="PrivacySettings">
           {({ navigation }) => (
-            <PrivacySettingsScreen onBack={() => navigation.goBack()} />
+            <PrivacySettingsScreen
+              onBack={() => navigation.goBack()}
+              onOpenPrivacyPolicy={() => navigation.navigate('LegalDocuments', { document: 'privacy' })}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="LegalDocuments">
+          {({ navigation, route }) => (
+            <LegalDocumentsScreen
+              initialDocument={route.params.document}
+              onBack={() => navigation.goBack()}
+            />
           )}
         </Stack.Screen>
         <Stack.Screen name="PlanBirthday">
@@ -893,14 +940,6 @@ export const Navigation: React.FC = () => {
               onConfirm={_date => {
                 // Don't navigate back - let the screen handle the state change
               }}
-            />
-          )}
-        </Stack.Screen>
-        <Stack.Screen name="Ads">
-          {({ navigation }) => (
-            <AdsScreen
-              placement="standalone"
-              onClose={() => navigation.navigate('Home')}
             />
           )}
         </Stack.Screen>
@@ -918,6 +957,7 @@ export const Navigation: React.FC = () => {
                 })
               }
               onForgotPassword={() => navigation.navigate('ForgotPassword')}
+              onOpenLegal={document => navigation.navigate('LegalDocuments', { document })}
               onGoogleSignIn={() => {}}
               onSignUp={() => navigation.navigate('SignUp')}
             />
@@ -926,12 +966,13 @@ export const Navigation: React.FC = () => {
         <Stack.Screen name="SignUp">
           {({ navigation }) => (
             <SignUpScreen
+              onOpenLegal={document => navigation.navigate('LegalDocuments', { document })}
               onSignUp={(email) =>
                 navigation.replace('AuthLoading', {
                   authenticatedEmail: email,
                 })
               }
-              onLogin={() => navigation.navigate('SignIn')}
+              onLogin={() => navigation.replace('SignIn')}
               onGoogleSignIn={() => {}}
             />
           )}
@@ -940,7 +981,6 @@ export const Navigation: React.FC = () => {
           {({ navigation }) => (
             <ForgotPasswordScreen
               onBack={() => navigation.goBack()}
-              onResetPassword={() => {}}
             />
           )}
         </Stack.Screen>

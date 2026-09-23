@@ -10,14 +10,12 @@
 		076AB1635BDF46D7B66808C0 /* MPLUSRounded1c-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C4D6FDE62BEA4C54A46FB16B /* MPLUSRounded1c-Regular.ttf */; };
 		0C80B921A6F3F58F76C31292 /* libPods-MamaAir.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-MamaAir.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		191255E0B7244F46AA63BB04 /* MPLUSRounded1c-Black.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 87A41556520D4672A5709E94 /* MPLUSRounded1c-Black.ttf */; };
 		3B3F93B4A452984E85B91E1F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		5067F7306FAB3C760E627EBA /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = FA2BC2F10E56A88D566E47E3 /* GoogleService-Info.plist */; };
 		5660F72FA4444D31A368977B /* MPLUSRounded1c-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E692671336024AA5934C7614 /* MPLUSRounded1c-Medium.ttf */; };
 		610114BB296440699B10AA7B /* MPLUSRounded1c-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 043A2F0EC4724C5DBBF544D7 /* MPLUSRounded1c-ExtraBold.ttf */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
-		E547CDD1965C454799CFC18F /* MPLUSRounded1c-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 31A6788F010B4C1FB2F16E72 /* MPLUSRounded1c-Light.ttf */; };
 		E54E3DF103994891ADBCCA8E /* MPLUSRounded1c-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 96168F853A994175A5DAC380 /* MPLUSRounded1c-Bold.ttf */; };
 /* End PBXBuildFile section */
 
@@ -27,13 +25,11 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = MamaAir/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = MamaAir/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = MamaAir/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		31A6788F010B4C1FB2F16E72 /* MPLUSRounded1c-Light.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "MPLUSRounded1c-Light.ttf"; path = "../src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Light.ttf"; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-MamaAir.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MamaAir.debug.xcconfig"; path = "Target Support Files/Pods-MamaAir/Pods-MamaAir.debug.xcconfig"; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-MamaAir.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MamaAir.release.xcconfig"; path = "Target Support Files/Pods-MamaAir/Pods-MamaAir.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-MamaAir.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-MamaAir.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = MamaAir/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = MamaAir/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		87A41556520D4672A5709E94 /* MPLUSRounded1c-Black.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "MPLUSRounded1c-Black.ttf"; path = "../src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Black.ttf"; sourceTree = "<group>"; };
 		96168F853A994175A5DAC380 /* MPLUSRounded1c-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "MPLUSRounded1c-Bold.ttf"; path = "../src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Bold.ttf"; sourceTree = "<group>"; };
 		C4D6FDE62BEA4C54A46FB16B /* MPLUSRounded1c-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "MPLUSRounded1c-Regular.ttf"; path = "../src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Regular.ttf"; sourceTree = "<group>"; };
 		E692671336024AA5934C7614 /* MPLUSRounded1c-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "MPLUSRounded1c-Medium.ttf"; path = "../src/assets/fonts/M_PLUS_Rounded_1c/ttf/MPLUSRounded1c-Medium.ttf"; sourceTree = "<group>"; };
@@ -78,10 +74,8 @@
 		3FF0D546F92B4DBE85D51C3F /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				87A41556520D4672A5709E94 /* MPLUSRounded1c-Black.ttf */,
 				96168F853A994175A5DAC380 /* MPLUSRounded1c-Bold.ttf */,
 				043A2F0EC4724C5DBBF544D7 /* MPLUSRounded1c-ExtraBold.ttf */,
-				31A6788F010B4C1FB2F16E72 /* MPLUSRounded1c-Light.ttf */,
 				E692671336024AA5934C7614 /* MPLUSRounded1c-Medium.ttf */,
 				C4D6FDE62BEA4C54A46FB16B /* MPLUSRounded1c-Regular.ttf */,
 			);
@@ -190,10 +184,8 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
-				191255E0B7244F46AA63BB04 /* MPLUSRounded1c-Black.ttf in Resources */,
 				E54E3DF103994891ADBCCA8E /* MPLUSRounded1c-Bold.ttf in Resources */,
 				610114BB296440699B10AA7B /* MPLUSRounded1c-ExtraBold.ttf in Resources */,
-				E547CDD1965C454799CFC18F /* MPLUSRounded1c-Light.ttf in Resources */,
 				5660F72FA4444D31A368977B /* MPLUSRounded1c-Medium.ttf in Resources */,
 				076AB1635BDF46D7B66808C0 /* MPLUSRounded1c-Regular.ttf in Resources */,
 				3B3F93B4A452984E85B91E1F /* PrivacyInfo.xcprivacy in Resources */,

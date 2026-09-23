@@ -72,6 +72,16 @@ def enableProguardInReleaseBuilds = true
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def releaseSigningProperties = [
+    'MYAPP_UPLOAD_STORE_FILE',
+    'MYAPP_UPLOAD_STORE_PASSWORD',
+    'MYAPP_UPLOAD_KEY_ALIAS',
+    'MYAPP_UPLOAD_KEY_PASSWORD',
+]
+def releaseSigningConfigured = releaseSigningProperties.every { propertyName ->
+    project.hasProperty(propertyName) && project.property(propertyName).toString().trim()
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -97,17 +107,12 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+        if (releaseSigningConfigured) {
+            release {
                 storeFile file(MYAPP_UPLOAD_STORE_FILE)
                 storePassword MYAPP_UPLOAD_STORE_PASSWORD
                 keyAlias MYAPP_UPLOAD_KEY_ALIAS
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-            } else {
-                storeFile file('debug.keystore')
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
             }
         }
     }
@@ -116,13 +121,25 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.release
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseTaskRequested = graph.allTasks.any { task ->
+        task.path.toLowerCase().contains('release')
+    }
+    if (releaseTaskRequested && !releaseSigningConfigured) {
+        throw new GradleException(
+            "Release signing is not configured. Define ${releaseSigningProperties.join(', ')} " +
+            "outside the repository before building a release artifact."
+        )
     }
 }
 

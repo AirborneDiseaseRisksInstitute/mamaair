@@ -1,0 +1,45 @@
+buildscript {
+    ext {
+        buildToolsVersion = "36.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 36
+        targetSdkVersion = 36
+        ndkVersion = "27.1.12297006"
+        kotlinVersion = "2.0.21"
+    }
+    repositories {
+        if (System.getenv("MAMAAIR_USE_REGIONAL_MAVEN_MIRRORS") == "true") {
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/public' }
+            maven { url 'https://maven.aliyun.com/repository/central' }
+            maven { url 'https://en-mirror.ir' }
+            maven { url 'https://google403.ir' }
+        }
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.8.0")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
+        classpath("com.google.gms:google-services:4.4.2")
+    }
+}
+
+plugins {
+    id("com.facebook.react.rootproject")
+}
+
+allprojects {
+    repositories {
+        if (System.getenv("MAMAAIR_USE_REGIONAL_MAVEN_MIRRORS") == "true") {
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/public' }
+            maven { url 'https://maven.aliyun.com/repository/central' }
+            maven { url 'https://en-mirror.ir' }
+            maven { url 'https://google403.ir' }
+        }
+        google()
+        mavenCentral()
+        maven { url("https://www.jitpack.io") }
+    }
+}

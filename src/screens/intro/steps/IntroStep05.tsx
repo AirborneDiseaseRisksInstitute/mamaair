@@ -46,9 +46,8 @@ export const IntroStep05: React.FC<IntroStep05Props> = ({ onNext, onBack }) => {
     optionsContainer: { width: '100%' },
   }), [theme]);
 
-  const isOther = selectedCountry === 'other';
-  const isFormValid = selectedCountry !== null && (!isOther || selectedAreaType !== null);
-  const selectedAreaTypeLabel = selectedAreaType ? AREA_TYPES.find(t => t.id === selectedAreaType)?.label ?? null : null;
+  const isFormValid = selectedCountry !== null && selectedAreaType !== null;
+  const selectedAreaTypeLabel = selectedAreaType ? AREA_TYPES.find(option => option.id === selectedAreaType)?.label ?? null : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -68,17 +67,12 @@ export const IntroStep05: React.FC<IntroStep05Props> = ({ onNext, onBack }) => {
                 selected={selectedCountry === country.value}
                 onPress={() => {
                   setSelectedCountryLocal(country.value);
-                  if (country.value !== 'other') setSelectedAreaTypeLocal(null);
                 }}
               />
             ))}
           </View>
-          {isOther && (
-            <>
-              <Text style={styles.pickAreaText} allowFontScaling={false}>{t('intro.step05_area')}</Text>
-              <Dropdown label={t('intro.step05_select_area')} value={selectedAreaTypeLabel} onPress={() => setAreaTypeSheetVisible(true)} />
-            </>
-          )}
+          <Text style={styles.pickAreaText} allowFontScaling={false}>{t('intro.step05_area')}</Text>
+          <Dropdown label={t('intro.step05_select_area')} value={selectedAreaTypeLabel} onPress={() => setAreaTypeSheetVisible(true)} />
         </View>
       </ScrollView>
       <FixedButtonContainer>

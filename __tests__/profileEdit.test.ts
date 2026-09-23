@@ -95,6 +95,7 @@ describe('profile edit payloads', () => {
         country: 'GH',
         timezone: 'Africa/Accra',
         week_of_pregnancy: 12,
+        pregnancy_number: 2,
         is_first_pregnancy: false,
       },
       email: {
@@ -107,10 +108,9 @@ describe('profile edit payloads', () => {
         work_type: 'Field',
         diet_type: 'vegetarian',
         cooking_method: 'wood',
-        ventilation: 'poor',
         ventilation_level: 'low',
-        time_spent: 'outdoors',
-        time_of_day: 'afternoon',
+        time_spent: 'mostly_outdoors',
+        time_of_day: 'midday_or_afternoon',
       },
       languageChanged: true,
     });

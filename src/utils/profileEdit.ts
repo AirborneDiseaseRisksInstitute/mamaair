@@ -1,5 +1,12 @@
 import type { UserProfile } from '../store/useUserStore';
 import { getCurrentPregnancyWeek } from './pregnancyUtils';
+import {
+  areaToApi,
+  pregnancyNumberToApi,
+  timeOfDayToApi,
+  timeSpentToApi,
+  ventilationToApi,
+} from './profileApiMapping';
 
 export type ProfileEditValues = Pick<
   UserProfile,
@@ -34,12 +41,6 @@ export interface ProfileEditPayloads {
 interface ProfileEditPayloadOptions {
   forcePregnancyWeek?: boolean;
 }
-
-const VENTILATION_LEVEL: Record<string, string> = {
-  good: 'high',
-  moderate: 'medium',
-  poor: 'low',
-};
 
 export const getProfileEditValues = (
   profile: UserProfile,
@@ -99,10 +100,13 @@ export const buildProfileEditPayloads = (
     profile.week_of_pregnancy = draft.pregnancyWeek;
   }
   if (draft.pregnancyNumber !== current.pregnancyNumber) {
-    profile.is_first_pregnancy = draft.pregnancyNumber === 'first';
+    const pregnancyNumber = pregnancyNumberToApi(draft.pregnancyNumber);
+    profile.pregnancy_number = pregnancyNumber;
+    profile.is_first_pregnancy =
+      pregnancyNumber === null ? null : pregnancyNumber === 1;
   }
 
-  if (draft.area !== current.area) lifestyle.area = draft.area;
+  if (draft.area !== current.area) lifestyle.area = areaToApi(draft.area);
   if (draft.sleepHours !== current.sleepHours) {
     lifestyle.average_sleep_hours = draft.sleepHours;
   }
@@ -118,16 +122,13 @@ export const buildProfileEditPayloads = (
     lifestyle.cooking_method = draft.cookingMethod;
   }
   if (draft.ventilation !== current.ventilation) {
-    lifestyle.ventilation = draft.ventilation;
-    lifestyle.ventilation_level = draft.ventilation
-      ? VENTILATION_LEVEL[draft.ventilation]
-      : null;
+    lifestyle.ventilation_level = ventilationToApi(draft.ventilation);
   }
   if (draft.timeSpent !== current.timeSpent) {
-    lifestyle.time_spent = draft.timeSpent;
+    lifestyle.time_spent = timeSpentToApi(draft.timeSpent);
   }
   if (draft.timeOfDay !== current.timeOfDay) {
-    lifestyle.time_of_day = draft.timeOfDay;
+    lifestyle.time_of_day = timeOfDayToApi(draft.timeOfDay);
   }
 
   return {

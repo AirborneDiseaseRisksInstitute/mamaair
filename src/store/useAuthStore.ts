@@ -12,10 +12,11 @@ interface AuthState {
   setToken: (token: string) => void;
   setRefreshToken: (token: string) => void;
   setTokens: (accessToken: string, refreshToken: string) => void;
+  clearSession: () => void;
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   token: storage.getString('auth_token') || null,
   refreshToken: storage.getString('auth_refresh_token') || null,
   setToken: (token) => {
@@ -31,18 +32,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     storage.set('auth_refresh_token', refreshToken);
     set({ token: accessToken, refreshToken });
   },
-  logout: () => {
+  clearSession: () => {
     // This preference belongs to the app installation, not the user session.
-    // It also migrates existing installations that predate the install flag.
     markInitialLanguagePromptSeen();
+    storage.remove('auth_token');
+    storage.remove('auth_refresh_token');
+    set({ token: null, refreshToken: null });
+    useUserStore.getState().clearUser();
+  },
+  logout: () => {
     const refresh = storage.getString('auth_refresh_token');
     if (refresh) {
       // fire-and-forget: blacklist token on server, don't block local logout
       AuthService.logout(refresh).catch(() => {});
     }
-    storage.remove('auth_token');
-    storage.remove('auth_refresh_token');
-    set({ token: null, refreshToken: null });
-    useUserStore.getState().clearUser();
+    get().clearSession();
   },
 }));

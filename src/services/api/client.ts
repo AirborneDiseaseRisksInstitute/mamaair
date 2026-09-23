@@ -33,6 +33,7 @@ const api = axios.create({
 const AUTH_ENDPOINT_PREFIXES = [
   '/auth/token/',
   '/auth/token/refresh/',
+  '/auth/email/login/',
   '/auth/register/',
   '/auth/email/register/',
   '/auth/email/resend/',

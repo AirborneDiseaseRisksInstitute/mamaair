@@ -3,6 +3,7 @@
  */
 
 import { AppRegistry, LogBox } from 'react-native';
+import notifee from '@notifee/react-native';
 import BackgroundFetch from 'react-native-background-fetch';
 import App from './App';
 import { name as appName } from './app.json';
@@ -14,6 +15,12 @@ LogBox.ignoreLogs([
 ]);
 
 registerActionReminderBackgroundHandler();
+notifee.registerForegroundService(
+  () =>
+    new Promise(() => {
+      // Kept alive until LocationTracker calls stopForegroundService().
+    }),
+);
 AppRegistry.registerComponent(appName, () => App);
 
 // Headless task: lets background location upload run even after the app is

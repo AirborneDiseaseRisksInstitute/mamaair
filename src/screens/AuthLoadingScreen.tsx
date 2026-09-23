@@ -13,12 +13,18 @@ import {
   DEV_LOCAL_SESSION_RESET_TOKEN,
 } from '../config/dev';
 import { shouldReplaceLocalProfileForAuthenticatedUser } from '../services/auth/AuthSessionIdentity';
+import { locationAccessCoordinator } from '../services/tracking/LocationAccessCoordinator';
+import {
+  buildLifestyleApiPayload,
+  buildProfileApiPayload,
+  mapApiLifestyleToLocal,
+  mapApiProfileToLocal,
+} from '../utils/profileApiMapping';
 
-const DEV_LOCAL_RESET_APPLIED_KEY =
-  'dev-local-session-reset-token-applied';
+const DEV_LOCAL_RESET_APPLIED_KEY = 'dev-local-session-reset-token-applied';
 
 interface AuthLoadingScreenProps {
-  onComplete: (target: 'Home' | 'Intro' | 'Auth') => void;
+  onComplete: (target: 'Home' | 'Intro' | 'ConsentHome' | 'Auth') => void;
   authenticatedEmail?: string;
 }
 
@@ -47,8 +53,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
 
         const localProfile = useUserStore.getState().profile;
         const isLocalOnboardingComplete =
-          localProfile.agreementAccepted &&
-          localProfile.pregnancyWeekConfirmed;
+          localProfile.agreementAccepted && localProfile.pregnancyWeekConfirmed;
 
         onComplete(isLocalOnboardingComplete ? 'Home' : 'Intro');
         return;
@@ -70,48 +75,14 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
         // 2.1 Fetch Lifestyle from API
         let lifestyleData: any = {};
         try {
-            lifestyleData = await LifestyleService.getLifestyle();
+          lifestyleData = await LifestyleService.getLifestyle();
         } catch {
-            // silently ignore — lifestyle may not exist yet
+          // silently ignore — lifestyle may not exist yet
         }
 
-        // ventilation_level (API) → ventilation (local store)
-        const ventilationReverseMap: Record<string, string> = {
-            'high': 'good',
-            'medium': 'moderate',
-            'low': 'poor',
-        };
+        const mappedProfile = mapApiProfileToLocal(profileData, sessionEmail);
+        const mappedLifestyle = mapApiLifestyleToLocal(lifestyleData);
 
-        // Profile fields — API values are stored directly, no enum conversion needed
-        const mappedProfile = {
-            ...profileData,
-            backendUserId:
-              profileData.id !== undefined && profileData.id !== null
-                ? String(profileData.id)
-                : undefined,
-            email: profileData.email ?? sessionEmail,
-            pregnancyWeek: profileData.week_of_pregnancy ?? profileData.pregnancyWeek,
-            birthday: profileData.date_of_birth ?? profileData.birthday,
-            expectedDueDate:
-              profileData.expected_due_date ??
-              profileData.expectedDueDate ??
-              profileData.due_date,
-            // country, language — stored as API values (NG, KE, en, fr, etc.)
-        };
-
-        const mappedLifestyle = {
-            sleepHours: lifestyleData.average_sleep_hours,
-            workType: lifestyleData.work_type,
-            diet: lifestyleData.diet_type,
-            cookingMethod: lifestyleData.cooking_method,
-            activeHours: lifestyleData.activity_duration_minutes
-                ? lifestyleData.activity_duration_minutes / 60
-                : undefined,
-            ventilation: ventilationReverseMap[lifestyleData.ventilation_level],
-            timeSpent: lifestyleData.time_spent,
-            timeOfDay: lifestyleData.time_of_day,
-        };
-        
         // Get current local profile state non-reactively to avoid loops
         let currentProfile = useUserStore.getState().profile;
 
@@ -130,17 +101,24 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
         }
 
         // 3. Smart Merge & Sync Strategy
-        // We want to trust LOCAL data if it exists, because the user might have just entered it 
+        // We want to trust LOCAL data if it exists, because the user might have just entered it
         // and the server sync failed or hasn't happened yet.
         // We only overwrite local with server if server has data and local doesn't (or if we want to force sync from server).
-        
+
         const mergedProfile = { ...currentProfile };
-        
+
         // Helper to update if server has value and local is empty
-        const updateIfMissing = (key: keyof typeof mergedProfile, serverValue: any) => {
-            if (serverValue !== undefined && serverValue !== null && !mergedProfile[key]) {
-                (mergedProfile as any)[key] = serverValue;
-            }
+        const updateIfMissing = (
+          key: keyof typeof mergedProfile,
+          serverValue: any,
+        ) => {
+          if (
+            serverValue !== undefined &&
+            serverValue !== null &&
+            !mergedProfile[key]
+          ) {
+            (mergedProfile as any)[key] = serverValue;
+          }
         };
 
         updateIfMissing('name', mappedProfile.name);
@@ -149,7 +127,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
         updateIfMissing('birthday', mappedProfile.birthday);
         updateIfMissing('expectedDueDate', mappedProfile.expectedDueDate);
         updateIfMissing('height', mappedProfile.height);
-        updateIfMissing('weight', mappedProfile.weight_pre_pregnancy || mappedProfile.weight);
+        updateIfMissing('weight', mappedProfile.weight);
         // Language is explicitly chosen by the user in IntroStep04 or Profile Settings.
         // The API returns 'en' as a default for all new users, which would cause IntroStep04
         // to be skipped — so we only sync language from server if the user already has a name
@@ -159,14 +137,24 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
         }
         updateIfMissing('country', mappedProfile.country);
         updateIfMissing('timezone', mappedProfile.timezone);
-        // updateIfMissing('area', mappedProfile.area); // Not in profile response?
         updateIfMissing('pregnancyWeek', mappedProfile.pregnancyWeek);
+        updateIfMissing(
+          'pregnancyWeekConfirmed',
+          mappedProfile.pregnancyWeekConfirmed,
+        );
+        updateIfMissing('pregnancyNumber', mappedProfile.pregnancyNumber);
         // If we got a pregnancy week but have no set date, use today so week advancement starts counting now
-        if (mergedProfile.pregnancyWeek && !mergedProfile.pregnancyWeekSetDate) {
+        if (
+          mergedProfile.pregnancyWeek &&
+          !mergedProfile.pregnancyWeekSetDate
+        ) {
           mergedProfile.pregnancyWeekSetDate = formatLocalDate(new Date());
         }
         // Photo is handled separately usually, but if server sends URL:
-        updateIfMissing('photo', mappedProfile.avatar_url || mappedProfile.photo);
+        updateIfMissing(
+          'photo',
+          mappedProfile.photo,
+        );
 
         // Lifestyle fields
         updateIfMissing('sleepHours', mappedLifestyle.sleepHours);
@@ -174,19 +162,19 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
         updateIfMissing('diet', mappedLifestyle.diet);
         updateIfMissing('cookingMethod', mappedLifestyle.cookingMethod);
         updateIfMissing('activeHours', mappedLifestyle.activeHours);
+        updateIfMissing('area', mappedLifestyle.area);
         updateIfMissing('ventilation', mappedLifestyle.ventilation);
         updateIfMissing('timeSpent', mappedLifestyle.timeSpent);
         updateIfMissing('timeOfDay', mappedLifestyle.timeOfDay);
-        
-        // These fields might be missing from backend response if they are not in schema or mapped differently
-        // 'area', 'ventilation', 'timeSpent', 'timeOfDay'
-        // If we saved them to lifestyle endpoint (as extra fields), we need to ensure backend returns them.
-        // If backend schema doesn't support them, we can't fetch them back yet.
-        
+
         // Update the store with the merged profile
         // This ensures we don't wipe local data with empty server data
         setProfile(mergedProfile);
-        
+        if (profileData?.consent === true && !mergedProfile.agreementAccepted) {
+          setAgreementAccepted(true);
+          mergedProfile.agreementAccepted = true;
+        }
+
         // 4. Sync LOCAL -> SERVER when the server is missing data we hold locally.
         // Fixes data loss: if the initial profile/lifestyle save failed or was
         // done offline, the local-only data would otherwise never reach the
@@ -198,6 +186,12 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
           !serverPregnancyWeek ||
           !profileData?.timezone ||
           !profileData?.name ||
+          !profileData?.country ||
+          !profileData?.date_of_birth ||
+          profileData?.height == null ||
+          profileData?.weight_pre_pregnancy == null ||
+          (Boolean(mergedProfile.pregnancyNumber) &&
+            profileData?.pregnancy_number == null) ||
           Boolean(
             mergedProfile.pregnancyWeekConfirmed &&
               mergedProfile.pregnancyWeek &&
@@ -208,92 +202,69 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
           !lifestyleData?.cooking_method ||
           !lifestyleData?.ventilation_level ||
           !lifestyleData?.time_spent ||
-          !lifestyleData?.time_of_day;
+          !lifestyleData?.time_of_day ||
+          !lifestyleData?.area ||
+          lifestyleData?.average_sleep_hours == null ||
+          lifestyleData?.activity_duration_minutes == null ||
+          !lifestyleData?.diet_type;
         const hasLocalData = !!(
           mergedProfile.name &&
           mergedProfile.pregnancyWeek &&
           mergedProfile.pregnancyWeekConfirmed
         );
 
-        if (hasLocalData && (serverMissingProfile || serverMissingLifestyle)) {
+        if (
+          hasLocalData &&
+          mergedProfile.agreementAccepted &&
+          (serverMissingProfile || serverMissingLifestyle)
+        ) {
           // Best-effort and non-blocking: navigation proceeds regardless, and a
           // failure simply retries on the next launch.
-          void (async () => {
+          (async () => {
             try {
-              const VENTILATION_LEVEL: Record<string, string> = {
-                good: 'high',
-                moderate: 'medium',
-                poor: 'low',
-              };
-              const avatarUrl =
-                mergedProfile.photo && mergedProfile.photo.startsWith('http')
-                  ? mergedProfile.photo
-                  : `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                      mergedProfile.name || 'Mama Air',
-                    )}&background=FF8C00&color=fff`;
+              const locationState = await locationAccessCoordinator
+                .getState()
+                .catch(() => null);
+              await ProfileService.patchProfile(
+                buildProfileApiPayload(mergedProfile, {
+                  trackingEnabled:
+                    locationState?.trackingEnabled ?? false,
+                  timezoneFallback: getDeviceTimezone(),
+                }),
+              );
 
-              const updated = await ProfileService.patchProfile({
-                name: mergedProfile.name || '',
-                avatar_url: avatarUrl,
-                date_of_birth: mergedProfile.birthday || null,
-                height: mergedProfile.height || 0,
-                weight_pre_pregnancy: mergedProfile.weight || 0,
-                language: mergedProfile.language || 'en',
-                country: mergedProfile.country || 'other',
-                week_of_pregnancy: mergedProfile.pregnancyWeek || 1,
-                timezone: mergedProfile.timezone || getDeviceTimezone(),
-                is_first_pregnancy: mergedProfile.pregnancyNumber === 'first',
-                consent: true,
-                tracking_enabled: true,
-                notifications_enabled: true,
-              });
-
-              await LifestyleService.patchLifestyle({
-                user: updated?.id ?? profileData?.id,
-                average_sleep_hours: mergedProfile.sleepHours || 0,
-                work_type: mergedProfile.workType || null,
-                diet_type: mergedProfile.diet || null,
-                cooking_method: mergedProfile.cookingMethod || null,
-                activity_duration_minutes: Math.round((mergedProfile.activeHours || 0) * 60),
-                area: mergedProfile.area || '',
-                ventilation: mergedProfile.ventilation || null,
-                ventilation_level: VENTILATION_LEVEL[mergedProfile.ventilation || ''] || 'medium',
-                time_spent: mergedProfile.timeSpent || null,
-                time_of_day: mergedProfile.timeOfDay || null,
-              });
-              console.log('[AuthLoading] Synced local profile/lifestyle to server.');
+              await LifestyleService.patchLifestyle(
+                buildLifestyleApiPayload(mergedProfile),
+              );
+              console.log(
+                '[AuthLoading] Synced local profile/lifestyle to server.',
+              );
             } catch (e) {
-              console.warn('[AuthLoading] Local->server sync failed (will retry next launch):', e);
+              console.warn(
+                '[AuthLoading] Local->server sync failed (will retry next launch):',
+                e,
+              );
             }
           })();
         }
 
         // 5. Navigation Decision
         // Check if user has completed all necessary onboarding steps (including new fields)
-        const isOnboardingComplete = 
-            mergedProfile.pregnancyWeek &&
-            mergedProfile.pregnancyWeekConfirmed &&
-            mergedProfile.timezone &&
-            mergedProfile.timeSpent &&
-            mergedProfile.timeOfDay &&
-            mergedProfile.workType &&
-            mergedProfile.cookingMethod &&
-            mergedProfile.ventilation;
+        const isOnboardingComplete =
+          mergedProfile.pregnancyWeek &&
+          mergedProfile.pregnancyWeekConfirmed &&
+          mergedProfile.timezone &&
+          mergedProfile.timeSpent &&
+          mergedProfile.timeOfDay &&
+          mergedProfile.workType &&
+          mergedProfile.cookingMethod &&
+          mergedProfile.ventilation;
 
         if (isOnboardingComplete) {
-             setAgreementAccepted(true);
-             onComplete('Home');
-             return;
+          onComplete(mergedProfile.agreementAccepted ? 'Home' : 'ConsentHome');
+          return;
         }
-        
-        // If we have pregnancy week but NO agreement, maybe we can shortcut to Step 14?
-        // That would be cool but requires changing onComplete to accept a specific step.
-        // onComplete type is (target: 'Home' | 'Intro' | 'Auth').
-        
-        // For now, let's stick to standard flow but rely on Pre-fill.
-        // BUT, if the user explicitly wants to "not show again", maybe they consider "Pregnancy Week" as done?
-        // Let's rely on Agreement for now to be legally safe, but ensuring Sync happens above fixes the data loss.
-        
+
         onComplete('Intro');
       } catch (error: any) {
         console.error('Failed to fetch profile:', error);
@@ -317,8 +288,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
           local?.cookingMethod &&
           local?.ventilation;
         if (localOnboardingComplete) {
-          setAgreementAccepted(true);
-          onComplete('Home');
+          onComplete(local.agreementAccepted ? 'Home' : 'ConsentHome');
         } else {
           onComplete('Intro');
         }
@@ -330,7 +300,9 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
   }, []); // We only run this on mount, dependencies are stable stores
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    >
       <ActivityIndicator size="large" color={theme.colors.primary} />
     </View>
   );

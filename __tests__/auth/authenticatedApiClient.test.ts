@@ -41,6 +41,7 @@ const axiosMock = jest.requireMock('axios') as {
   __instance: {
     get: jest.Mock;
     post: jest.Mock;
+    delete: jest.Mock;
     interceptors: {
       request: { use: jest.Mock };
       response: { use: jest.Mock };
@@ -75,6 +76,7 @@ describe('authenticated API client', () => {
   it('does not attach a stale access token to auth endpoints', async () => {
     const authUrls = [
       '/auth/google/',
+      '/auth/email/login/',
       '/auth/email/register/',
       '/auth/email/resend/',
       '/auth/email/verify/',
@@ -114,7 +116,7 @@ describe('authenticated API client', () => {
       AuthService.login('user@example.com', 'safe-password'),
     ).resolves.toEqual({ access: 'new-access', refresh: 'new-refresh' });
 
-    expect(axiosMock.__instance.post).toHaveBeenCalledWith('/auth/token/', {
+    expect(axiosMock.__instance.post).toHaveBeenCalledWith('/auth/email/login/', {
       email: 'user@example.com',
       password: 'safe-password',
     });
@@ -125,13 +127,14 @@ describe('authenticated API client', () => {
 
     await AuthService.registerWithEmail('user@example.com', 'safe-password');
     await AuthService.resendEmailVerification('user@example.com');
-    await AuthService.verifyEmailRegistration('user@example.com', '1234');
+    await AuthService.verifyEmailRegistration('encoded-uid', 'token-value', 'safe-password');
 
     expect(axiosMock.__instance.post).toHaveBeenCalledWith(
       '/auth/email/register/',
       {
         email: 'user@example.com',
         password: 'safe-password',
+        password_confirm: 'safe-password',
       },
     );
     expect(axiosMock.__instance.post).toHaveBeenCalledWith(
@@ -141,10 +144,10 @@ describe('authenticated API client', () => {
     expect(axiosMock.__instance.post).toHaveBeenCalledWith(
       '/auth/email/verify/',
       {
-        email: 'user@example.com',
-        code: '1234',
-        uid: 'user@example.com',
-        token: '1234',
+        uid: 'encoded-uid',
+        token: 'token-value',
+        new_password: 'safe-password',
+        password_confirm: 'safe-password',
       },
     );
   });
@@ -154,8 +157,8 @@ describe('authenticated API client', () => {
 
     await AuthService.requestPasswordReset('user@example.com');
     await AuthService.confirmPasswordReset(
-      'user@example.com',
-      '1234',
+      'encoded-uid',
+      'token-value',
       'new-password',
     );
 
@@ -166,13 +169,25 @@ describe('authenticated API client', () => {
     expect(axiosMock.__instance.post).toHaveBeenCalledWith(
       '/auth/password-reset/confirm/',
       {
-        email: 'user@example.com',
-        code: '1234',
-        uid: 'user@example.com',
-        token: '1234',
+        uid: 'encoded-uid',
+        token: 'token-value',
         new_password: 'new-password',
         password_confirm: 'new-password',
       },
+    );
+  });
+
+  it('sends the required confirmation when deleting an account', async () => {
+    axiosMock.__instance.delete.mockResolvedValue({
+      data: null,
+      status: 204,
+    });
+
+    await expect(AuthService.deleteAccount()).resolves.toBeUndefined();
+
+    expect(axiosMock.__instance.delete).toHaveBeenCalledWith(
+      '/auth/delete-account/',
+      { data: { confirmation: 'DELETE' } },
     );
   });
 });

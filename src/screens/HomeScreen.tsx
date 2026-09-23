@@ -14,7 +14,6 @@ import {
   FlatList,
   ListRenderItem,
   TouchableOpacity,
-  Modal,
   Image,
   AppState,
   Linking,
@@ -40,10 +39,8 @@ import {
   AccessLocationBottomSheet,
   TransitionLoader,
 } from '../components/ui';
-import {
-  locationTracker,
-  type LocationPermissionStatus,
-} from '../services/tracking/LocationTracker';
+import { type LocationPermissionStatus } from '../services/tracking/LocationTracker';
+import { locationAccessCoordinator } from '../services/tracking/LocationAccessCoordinator';
 import { SummaryService } from '../services/api/SummaryService';
 import { ProfileService } from '../services/api/ProfileService';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
@@ -52,9 +49,11 @@ import { resolveBirthdayCardPresentation } from '../utils/birthdayCard';
 import { countCompletedActionsByDomain } from '../utils/dailyTaskProgress';
 import {
   resolveHomeActiveWeek,
+  resolveHomeCareIcons,
   resolveHomeDayState,
+  HOME_CARE_ICONS,
+  type HomeCareIcon,
 } from '../utils/homeDayState';
-import { AdsScreen } from './AdsScreen';
 import { useTranslation } from 'react-i18next';
 import { DEV_LOCAL_SESSION } from '../config/dev';
 import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
@@ -89,6 +88,9 @@ const WEEK_CARD_TEXT_SECTION_HEIGHT = 390;
 // Keep the final week's copy clear of the global symptoms FAB.
 const HOME_LIST_BOTTOM_CLEARANCE =
   WEEK_CARD_TEXT_SECTION_HEIGHT / 2 + ms(64) + spacing('xl') + spacing('lg');
+const ESTIMATED_WEEK_ITEM_HEIGHT = 530;
+const ESTIMATED_HEADER_HEIGHT =
+  CARD_HEIGHT + HEADER_MARGIN_TOP + HEADER_MARGIN_BOTTOM;
 
 interface HomeScreenProps {
   onNavigateToToday?: () => void;
@@ -112,9 +114,9 @@ interface WeekData {
   }>;
   weekDays: Array<{
     day: string;
-    icons: Array<'heart' | 'basket' | 'running'>;
+    icons: readonly HomeCareIcon[];
     isActive?: boolean;
-    activeIcons?: Array<'heart' | 'basket' | 'running'>;
+    activeIcons?: readonly HomeCareIcon[];
     isMissed?: boolean;
     isStartDay?: boolean;
   }>;
@@ -1932,20 +1934,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     apiWeek: apiActiveWeek,
   });
   const [weeksData, setWeeksData] = useState<WeekData[]>(WEEKS_DATA);
-  const [isLayoutReady, setIsLayoutReady] = useState(false);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const [weekItemHeight, setWeekItemHeight] = useState(0);
-  const [showTodayAds, setShowTodayAds] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(ESTIMATED_HEADER_HEIGHT);
+  const [weekItemHeight, setWeekItemHeight] = useState(
+    ESTIMATED_WEEK_ITEM_HEIGHT,
+  );
   const [isNavigatingToToday, setIsNavigatingToToday] = useState(false);
-  const preparedTodayNavigationRef = useRef<(() => void) | null>(null);
-  const prepareTodayNavigationRequestRef = useRef(0);
+  const todayNavigationInFlight = useRef(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
   const [locationPermissionStatus, setLocationPermissionStatus] =
     useState<LocationPermissionStatus | null>(() =>
-      locationTracker.isTracking() ? 'granted' : null,
+      locationAccessCoordinator.isTracking() ? 'granted' : null,
     );
-  const [locationPromptDismissed, setLocationPromptDismissed] =
-    useState(false);
   const [suppressAirPulse, setSuppressAirPulse] = useState(false);
   const [airExposure, setAirExposure] = useState<AirExposure | null>(null);
   const [dismissedAirPulseKey, setDismissedAirPulseKey] = useState<
@@ -1953,6 +1952,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   >(null);
   const [birthdayCardHeight, setBirthdayCardHeight] = useState(CARD_HEIGHT);
   const totalWeeks = weeksData.length;
+  const activeWeekIndex = totalWeeks - activeWeek;
   const actionCompletions = useRecommendationExperienceStore(
     state => state.actionCompletions,
   );
@@ -2050,7 +2050,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     day: dayName,
                     isActive: hasHistory ? true : dayItem.isActive || false,
                     activeIcons: hasHistory
-                      ? (['running'] as ('heart' | 'basket' | 'running')[])
+                      ? (['running'] as const)
                       : dayItem.activeIcons,
                   };
                 },
@@ -2082,15 +2082,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
     let mounted = true;
 
-    if (locationTracker.isTracking()) {
+    if (locationAccessCoordinator.isTracking()) {
       setLocationPermissionStatus('granted');
       return () => {
         mounted = false;
       };
     }
 
-    locationTracker
-      .getPermissionStatus()
+    locationAccessCoordinator
+      .getTrackingStatus()
       .then(status => {
         if (mounted) {
           setLocationPermissionStatus(status);
@@ -2298,31 +2298,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
 
   // Memoize the header component
-  const handleHeaderLayout = useCallback(
-    (event: any) => {
-      const height = event?.nativeEvent?.layout?.height ?? 0;
-      if (height > 0 && height !== headerHeight) {
-        setHeaderHeight(height);
-      }
-    },
-    [headerHeight],
-  );
+  const handleHeaderLayout = useCallback((event: any) => {
+    const height = event?.nativeEvent?.layout?.height ?? 0;
+    if (height > 0) {
+      setHeaderHeight(current => (current === height ? current : height));
+    }
+  }, []);
 
-  const handleWeekItemLayout = useCallback(
-    (event: any) => {
-      const height = event?.nativeEvent?.layout?.height ?? 0;
-      if (height > 0 && height !== weekItemHeight) {
-        setWeekItemHeight(height);
-      }
-    },
-    [weekItemHeight],
-  );
+  const handleWeekItemLayout = useCallback((event: any) => {
+    const height = event?.nativeEvent?.layout?.height ?? 0;
+    if (height > 0) {
+      setWeekItemHeight(current => (current === height ? current : height));
+    }
+  }, []);
 
   const handleLocationAllow = useCallback(async () => {
     setShowLocationSheet(false);
 
-    const status = await locationTracker
-      .requestAndStart()
+    const status = await locationAccessCoordinator
+      .enable()
       .catch(() => 'unavailable' as const);
     setLocationPermissionStatus(status);
 
@@ -2334,8 +2328,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   }, []);
 
   const handleRequestLocation = useCallback(() => {
-    setLocationPromptDismissed(true);
     setShowLocationSheet(true);
+  }, []);
+
+  const handleLocationDecline = useCallback(() => {
+    setShowLocationSheet(false);
+    locationAccessCoordinator.decline();
+    setLocationPermissionStatus('denied');
   }, []);
 
   const renderHeader = useCallback(
@@ -2343,30 +2342,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <View onLayout={handleHeaderLayout}>
         {locationPermissionStatus !== null &&
           locationPermissionStatus !== 'granted' && (
-          <TouchableOpacity
-            style={styles.emptyStateBanner}
-            onPress={handleRequestLocation}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.emptyStateBannerIcon} allowFontScaling={false}>
-              📍
-            </Text>
-            <View style={{ flex: 1 }}>
+            <TouchableOpacity
+              style={styles.emptyStateBanner}
+              onPress={handleRequestLocation}
+              activeOpacity={0.8}
+            >
               <Text
-                style={styles.emptyStateBannerTitle}
+                style={styles.emptyStateBannerIcon}
                 allowFontScaling={false}
               >
-                {t('home.location_banner_title')}
+                📍
               </Text>
-              <Text
-                style={styles.emptyStateBannerSubtitle}
-                allowFontScaling={false}
-              >
-                {t('home.location_banner_subtitle')}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={styles.emptyStateBannerTitle}
+                  allowFontScaling={false}
+                >
+                  {t('home.location_banner_title')}
+                </Text>
+                <Text
+                  style={styles.emptyStateBannerSubtitle}
+                  allowFontScaling={false}
+                >
+                  {t('home.location_banner_subtitle')}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
         <View style={styles.birthdayCardWrapper}>
           <View
             style={styles.birthdayCardContainer}
@@ -2474,49 +2476,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     ],
   );
 
-  const prepareTodayNavigation = useCallback(() => {
-    const requestId = prepareTodayNavigationRequestRef.current + 1;
-    prepareTodayNavigationRequestRef.current = requestId;
-    preparedTodayNavigationRef.current = null;
-
-    if (!onPrepareNavigateToToday) return;
-
-    onPrepareNavigateToToday()
-      .then((navigate) => {
-        if (prepareTodayNavigationRequestRef.current === requestId) {
-          preparedTodayNavigationRef.current = navigate;
-        }
-      })
-      .catch(() => {
-        if (prepareTodayNavigationRequestRef.current === requestId) {
-          preparedTodayNavigationRef.current = null;
-        }
-      });
-  }, [onPrepareNavigateToToday]);
-
-  const handleNavigateToToday = useCallback(() => {
-    if (showTodayAds || isNavigatingToToday) return;
+  const handleNavigateToToday = useCallback(async () => {
+    if (todayNavigationInFlight.current) return;
+    todayNavigationInFlight.current = true;
     setIsNavigatingToToday(true);
-    prepareTodayNavigation();
-    setTimeout(() => {
+    let navigate: (() => void) | null | undefined;
+    try {
+      navigate = await onPrepareNavigateToToday?.();
+    } catch {
+      navigate = null;
+    } finally {
+      todayNavigationInFlight.current = false;
       setIsNavigatingToToday(false);
-      setShowTodayAds(true);
-    }, 350);
-  }, [prepareTodayNavigation, showTodayAds, isNavigatingToToday]);
-
-  const handleTodayAdClose = useCallback(() => {
-    const navigate = preparedTodayNavigationRef.current;
-    preparedTodayNavigationRef.current = null;
-    prepareTodayNavigationRequestRef.current += 1;
-    setShowTodayAds(false);
-
-    if (navigate) {
-      navigate();
-      return;
     }
-
-    onNavigateToToday?.();
-  }, [onNavigateToToday]);
+    if (navigate) navigate();
+    else onNavigateToToday?.();
+  }, [onPrepareNavigateToToday, onNavigateToToday]);
 
   // Memoize the render function for week items
   // Note: In reversed array, index 0 = week 40, so active week index calculation:
@@ -2572,15 +2547,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         });
         const localDomains = pathDay.domains;
         const localActive = pathDay.active;
-        const localActiveIcons: Array<'heart' | 'basket' | 'running'> = [
-          ...(localDomains.some(
-            domain => domain === 'behaviour' || domain === 'wellbeing',
-          )
-            ? (['heart'] as const)
-            : []),
-          ...(localDomains.includes('diet') ? (['basket'] as const) : []),
-          ...(localDomains.includes('activity') ? (['running'] as const) : []),
-        ];
+        const localActiveIcons = resolveHomeCareIcons(localDomains);
         const {
           isActive: isDayActive,
           isStartDay,
@@ -2596,6 +2563,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         return {
           ...dayData,
           day: t(`common.${DAY_KEYS[dayIndex]}`),
+          icons: HOME_CARE_ICONS,
           isActive: isDayActive,
           activeIcons:
             localActiveIcons.length > 0
@@ -2638,7 +2606,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       return (
         <View
           style={styles.weekItem}
-          onLayout={index === 0 ? handleWeekItemLayout : undefined}
+          onLayout={isActiveWeek ? handleWeekItemLayout : undefined}
         >
           <WeekCycleView
             title={t('home.week_label', { week: weekNumber })}
@@ -2698,13 +2666,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     [weeksData],
   );
 
-  // Calculate index for active week in reversed array
-  // If activeWeek = 1, index should be 39 (40 - 1) in reversed array
-  // If activeWeek = 40, index should be 0 in reversed array
-  const activeWeekIndex = useMemo(() => {
-    return totalWeeks - activeWeek;
-  }, [activeWeek, totalWeeks]);
-
   // Get item layout for accurate scrolling
   // Note: Heights are approximate and may need adjustment based on actual measurements
   const getItemLayout = useCallback(
@@ -2725,49 +2686,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     [headerHeight, weekItemHeight],
   );
 
-  // Scroll to active week when layout is ready
+  const positionedActiveWeekIndex = useRef<number | null>(null);
+
+  // Correct the estimated initial position after the actual card sizes are known.
   useEffect(() => {
-    if (
-      isLayoutReady &&
-      flatListRef.current &&
-      activeWeek >= 1 &&
-      activeWeek <= totalWeeks
-    ) {
-      const attemptScroll = (attempt: number = 1) => {
-        const delay = attempt * 300;
-        setTimeout(() => {
-          try {
-            flatListRef.current?.scrollToIndex({
-              index: activeWeekIndex,
-              animated: attempt === 1,
-              viewPosition: 0,
-              // Keep the current week's title and badge in the primary view.
-              // Positive viewOffset was placing the following week on screen.
-              viewOffset: -WEEK_CARD_TEXT_SECTION_HEIGHT,
-            });
-          } catch {
-            const layout = getItemLayout(null, activeWeekIndex);
-            const offsetCorrected =
-              layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
-            flatListRef.current?.scrollToOffset({
-              offset: offsetCorrected,
-              animated: attempt === 1,
-            });
-            if (attempt < 3) {
-              attemptScroll(attempt + 1);
-            }
-          }
-        }, delay);
-      };
-      attemptScroll(1);
+    if (flatListRef.current && activeWeek >= 1 && activeWeek <= totalWeeks) {
+      const frame = requestAnimationFrame(() => {
+        const shouldAnimate =
+          positionedActiveWeekIndex.current !== null &&
+          positionedActiveWeekIndex.current !== activeWeekIndex;
+        flatListRef.current?.scrollToIndex({
+          index: activeWeekIndex,
+          animated: shouldAnimate,
+          viewPosition: 0,
+          viewOffset: -WEEK_CARD_TEXT_SECTION_HEIGHT,
+        });
+        positionedActiveWeekIndex.current = activeWeekIndex;
+      });
+
+      return () => cancelAnimationFrame(frame);
     }
+
+    return undefined;
   }, [
-    isLayoutReady,
     activeWeekIndex,
     activeWeek,
     getItemLayout,
-    reversedWeeksData,
+    headerHeight,
     totalWeeks,
+    weekItemHeight,
   ]);
 
   // Handle scroll to index errors with better retry logic
@@ -2779,42 +2726,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }) => {
       const layout = getItemLayout(null, info.index);
       const offsetCorrected = layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
-      setTimeout(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToOffset({
-            offset: offsetCorrected,
-            animated: true,
-          });
-        }
-      }, 200);
+      flatListRef.current?.scrollToOffset({
+        offset: offsetCorrected,
+        animated: false,
+      });
     },
     [getItemLayout],
   );
-
-  // Handle layout ready - wait for both content size and layout
-  const handleContentSizeChange = useCallback(() => {
-    if (!isLayoutReady && headerHeight > 0 && weekItemHeight > 0) {
-      // Additional delay to ensure all items are measured
-      setTimeout(() => {
-        setIsLayoutReady(true);
-      }, 200);
-    }
-  }, [isLayoutReady, headerHeight, weekItemHeight]);
-
-  // Also handle onLayout for more reliable detection
-  const handleLayout = useCallback(() => {
-    if (!isLayoutReady && headerHeight > 0 && weekItemHeight > 0) {
-      setTimeout(() => {
-        setIsLayoutReady(true);
-      }, 200);
-    }
-  }, [isLayoutReady, headerHeight, weekItemHeight]);
-
-  useEffect(() => {
-    if (!isLayoutReady && headerHeight > 0 && weekItemHeight > 0) {
-      setIsLayoutReady(true);
-    }
-  }, [isLayoutReady, headerHeight, weekItemHeight]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -2849,30 +2767,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
-        maxToRenderPerBatch={3}
-        windowSize={5}
-        initialNumToRender={Math.min(activeWeekIndex + 3, 6)}
+        initialScrollIndex={activeWeekIndex}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        initialNumToRender={2}
         getItemLayout={getItemLayout}
-        onContentSizeChange={handleContentSizeChange}
-        onLayout={handleLayout}
         onScrollToIndexFailed={handleScrollToIndexFailed}
         updateCellsBatchingPeriod={50}
       />
 
-      {locationPermissionStatus !== null &&
-      locationPermissionStatus !== 'granted' &&
-      !locationPromptDismissed ? (
-        <AirQualityPulseToast
-          animate={!reduceMotion}
-          locationPermissionRequired
-          onRequestLocation={handleRequestLocation}
-          onDismiss={() => setLocationPromptDismissed(true)}
-        />
-      ) : locationPermissionStatus === 'granted' &&
-        !suppressAirPulse &&
-        airExposure &&
-        airPulseKey &&
-        airPulseKey !== dismissedAirPulseKey ? (
+      {locationPermissionStatus === 'granted' &&
+      !suppressAirPulse &&
+      airExposure &&
+      airPulseKey &&
+      airPulseKey !== dismissedAirPulseKey ? (
         <AirQualityPulseToast
           airExposure={airExposure}
           animate={!reduceMotion}
@@ -2882,23 +2790,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       <AccessLocationBottomSheet
         visible={showLocationSheet}
-        onClose={() => setShowLocationSheet(false)}
+        onClose={handleLocationDecline}
         onAllow={handleLocationAllow}
-        onNotNow={() => setShowLocationSheet(false)}
+        onNotNow={handleLocationDecline}
       />
 
       <TransitionLoader visible={isNavigatingToToday} />
-
-      <Modal
-        visible={showTodayAds}
-        animationType="fade"
-        onRequestClose={() => {}}
-      >
-        <AdsScreen
-          placement="home-to-today"
-          onClose={handleTodayAdClose}
-        />
-      </Modal>
     </SafeAreaView>
   );
 };

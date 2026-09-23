@@ -14,7 +14,6 @@ import {
   Button,
   OrangeHalo,
   BackButton,
-  VerificationCodeInput,
   type InputRef,
   useToast,
 } from '../../components/ui';
@@ -26,28 +25,20 @@ import { getAuthErrorMessage } from '../../utils/authErrors';
 
 interface ForgotPasswordScreenProps {
   onBack?: () => void;
-  onResetPassword?: (email: string) => void;
 }
 
 export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
   onBack,
-  onResetPassword,
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [verificationEmail, setVerificationEmail] = useState('');
-  const [step, setStep] = useState<'email' | 'verify' | 'password'>('email');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [verificationError, setVerificationError] = useState<string | null>(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [step, setStep] = useState<'email' | 'checkEmail'>('email');
   const [loading, setLoading] = useState(false);
 
   const emailInputRef = useRef<InputRef>(null);
-  const newPasswordInputRef = useRef<InputRef>(null);
-  const confirmPasswordInputRef = useRef<InputRef>(null);
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -88,10 +79,6 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
     },
     buttonContainer: {
     },
-    codeContainer: {
-      marginTop: spacing('md'),
-      marginBottom: spacing('lg'),
-    },
     sentText: {
       fontSize: theme.typography.fontSize.sm,
       fontFamily: theme.typography.fontFamily.medium,
@@ -119,15 +106,11 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
       setLoading(true);
       await AuthService.requestPasswordReset(nextEmail);
       setVerificationEmail(nextEmail);
-      setVerificationCode('');
-      setVerificationError(null);
-      setNewPassword('');
-      setConfirmPassword('');
-      setStep('verify');
+      setStep('checkEmail');
       showToast({
         type: 'success',
-        title: t('auth.verification_code_sent_title'),
-        message: t('auth.verification_code_sent_message', { email: nextEmail }),
+        title: t('auth.check_email_title'),
+        message: t('auth.password_reset_email_link_sent', { email: nextEmail }),
       });
     } catch (error: any) {
       console.error('Password reset request error:', error);
@@ -141,67 +124,21 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
     }
   };
 
-  const handleVerificationCodeChange = (code: string) => {
-    setVerificationCode(code);
-    if (verificationError) {
-      setVerificationError(null);
-    }
-  };
-
-  const handleVerifyCode = (code = verificationCode) => {
-    if (code.length < 4) return;
-    setVerificationCode(code);
-    setVerificationError(null);
-    setStep('password');
-  };
-
-  const handleResendCode = async () => {
+  const handleResendResetEmail = async () => {
     const nextEmail = verificationEmail || email.trim();
 
     try {
       setLoading(true);
       await AuthService.requestPasswordReset(nextEmail);
-      setVerificationCode('');
-      setVerificationError(null);
       showToast({
         type: 'success',
-        title: t('auth.verification_code_sent_title'),
-        message: t('auth.verification_code_sent_message', {
+        title: t('auth.check_email_title'),
+        message: t('auth.password_reset_email_link_sent', {
           email: nextEmail,
         }),
       });
     } catch (error: any) {
       console.error('Password reset resend error:', error);
-      setVerificationError(getAuthErrorMessage(error, 'passwordReset'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirmPasswordReset = async () => {
-    const nextEmail = verificationEmail || email.trim();
-    const nextPassword = newPassword.trim();
-
-    if (!nextEmail || !verificationCode || nextPassword !== confirmPassword.trim()) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      await AuthService.confirmPasswordReset(
-        nextEmail,
-        verificationCode,
-        nextPassword,
-      );
-      showToast({
-        type: 'success',
-        title: t('auth.password_reset_success_title'),
-        message: t('auth.password_reset_success_message'),
-      });
-      onResetPassword?.(nextEmail);
-      onBack?.();
-    } catch (error: any) {
-      console.error('Password reset confirm error:', error);
       showToast({
         type: 'error',
         title: t('auth.password_reset_failed_title'),
@@ -212,34 +149,19 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
     }
   };
 
-  const isPasswordFormValid =
-    newPassword.trim().length > 0 &&
-    confirmPassword.trim().length > 0 &&
-    newPassword.trim() === confirmPassword.trim();
-
   const getTitle = () => {
     if (step === 'email') return t('auth.forgot_password_title');
-    if (step === 'verify') return t('auth.verification_title');
-    return t('auth.create_new_password_title');
+    return t('auth.check_email_title');
   };
 
   const getDescription = () => {
     if (step === 'email') return t('auth.forgot_password_description');
-    if (step === 'verify') return t('auth.enter_verification_code_description');
-    return t('auth.create_new_password_description');
+    return t('auth.password_reset_email_instructions');
   };
 
   const handleBack = () => {
-    if (step === 'password') {
-      setStep('verify');
-      return;
-    }
-    if (step === 'verify') {
+    if (step === 'checkEmail') {
       setStep('email');
-      setVerificationCode('');
-      setVerificationError(null);
-      setNewPassword('');
-      setConfirmPassword('');
       return;
     }
     onBack?.();
@@ -292,76 +214,36 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
               {/* Reset Password Button */}
               <View style={styles.buttonContainer}>
                 <Button
-                  title={loading ? t('auth.sending_code') : t('auth.send_verification_code')}
+                  title={loading ? t('auth.sending_email') : t('auth.send_reset_link')}
                   onPress={handleResetPassword}
                   disabled={loading || !email.trim()}
                 />
               </View>
             </>
-          ) : step === 'verify' ? (
+          ) : (
             <>
               <Text style={styles.sentText} allowFontScaling={false}>
-                {t('auth.verification_code_sent_message', {
+                {t('auth.password_reset_email_link_sent', {
                   email: verificationEmail,
                 })}
               </Text>
-              <View style={styles.codeContainer}>
-                <VerificationCodeInput
-                  value={verificationCode}
-                  onChangeText={handleVerificationCodeChange}
-                  error={verificationError}
-                  onComplete={handleVerifyCode}
-                />
-              </View>
               <View style={styles.buttonContainer}>
                 <Button
-                  title={t('common.continue')}
-                  onPress={handleVerifyCode}
-                  disabled={loading || verificationCode.length < 4}
+                  title={t('auth.go_to_login')}
+                  onPress={() => onBack?.()}
+                  disabled={loading}
                 />
               </View>
               <TouchableOpacity
                 style={styles.resendButton}
-                onPress={handleResendCode}
+                onPress={handleResendResetEmail}
                 disabled={loading}
                 activeOpacity={0.7}
               >
                 <Text style={styles.resendText} allowFontScaling={false}>
-                  {t('auth.resend_code')}
+                  {loading ? t('auth.sending_email') : t('auth.resend_reset_email')}
                 </Text>
               </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <View style={styles.inputContainer}>
-                <Input
-                  ref={newPasswordInputRef}
-                  title={t('auth.new_password')}
-                  placeholder={t('auth.new_password_placeholder')}
-                  type="password"
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  nextInputRef={confirmPasswordInputRef}
-                />
-              </View>
-              <View style={styles.inputContainer}>
-                <Input
-                  ref={confirmPasswordInputRef}
-                  title={t('auth.confirm_password')}
-                  placeholder={t('auth.confirm_password_placeholder')}
-                  type="password"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  onSubmitEditing={handleConfirmPasswordReset}
-                />
-              </View>
-              <View style={styles.buttonContainer}>
-                <Button
-                  title={loading ? t('auth.resetting_password') : t('auth.reset_password')}
-                  onPress={handleConfirmPasswordReset}
-                  disabled={loading || !isPasswordFormValid}
-                />
-              </View>
             </>
           )}
         </View>

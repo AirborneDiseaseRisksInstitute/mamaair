@@ -3,6 +3,7 @@ import api from './client';
 export interface LoginResponse {
   access: string;
   refresh: string;
+  user?: AuthUser;
 }
 
 export interface AuthUser {
@@ -22,10 +23,6 @@ export type AuthMessageResponse = {
   message?: string;
 };
 
-export type EmailRegistrationVerifyResponse = Partial<LoginResponse> & {
-  user?: AuthUser;
-};
-
 const assertTokenResponse = <T extends LoginResponse>(
   response: T,
   source: string,
@@ -38,7 +35,7 @@ const assertTokenResponse = <T extends LoginResponse>(
 
 export const AuthService = {
   login: async (email: string, password: string): Promise<LoginResponse> => {
-    const response = await api.post<LoginResponse>('/auth/token/', { email, password });
+    const response = await api.post<LoginResponse>('/auth/email/login/', { email, password });
     return assertTokenResponse(response.data, 'Password login');
   },
 
@@ -53,7 +50,7 @@ export const AuthService = {
   ): Promise<AuthMessageResponse> => {
     const response = await api.post<AuthMessageResponse>(
       '/auth/email/register/',
-      { email, password },
+      { email, password, password_confirm: password },
     );
     return response.data;
   },
@@ -69,16 +66,17 @@ export const AuthService = {
   },
 
   verifyEmailRegistration: async (
-    email: string,
-    code: string,
-  ): Promise<EmailRegistrationVerifyResponse> => {
-    const response = await api.post<EmailRegistrationVerifyResponse>(
+    uid: string,
+    token: string,
+    password: string,
+  ): Promise<AuthMessageResponse> => {
+    const response = await api.post<AuthMessageResponse>(
       '/auth/email/verify/',
       {
-        email,
-        code,
-        uid: email,
-        token: code,
+        uid,
+        token,
+        new_password: password,
+        password_confirm: password,
       },
     );
     return response.data;
@@ -95,17 +93,15 @@ export const AuthService = {
   },
 
   confirmPasswordReset: async (
-    email: string,
-    code: string,
+    uid: string,
+    token: string,
     newPassword: string,
   ): Promise<AuthMessageResponse> => {
     const response = await api.post<AuthMessageResponse>(
       '/auth/password-reset/confirm/',
       {
-        email,
-        code,
-        uid: email,
-        token: code,
+        uid,
+        token,
         new_password: newPassword,
         password_confirm: newPassword,
       },
@@ -118,9 +114,10 @@ export const AuthService = {
     return response.data;
   },
 
-  deleteAccount: async () => {
-    const response = await api.delete('/auth/delete-account/');
-    return response.data;
+  deleteAccount: async (): Promise<void> => {
+    await api.delete('/auth/delete-account/', {
+      data: { confirmation: 'DELETE' },
+    });
   },
 
   changePassword: async (oldPassword: string, newPassword: string) => {

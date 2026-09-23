@@ -48,6 +48,7 @@ export const IntroStep08: React.FC<IntroStep08Props> = ({ onNext, onBack, onSkip
     skipButton: { paddingVertical: spacing('md'), paddingHorizontal: spacing('lg'), marginLeft: spacing('lg') },
     skipText: { fontSize: 18, fontFamily: theme.typography.fontFamily.extraBold, color: theme.colors.orange500 },
     continueButtonWrapper: { width: s(200), marginLeft: spacing('md') },
+    continueButtonWrapperFull: { flex: 1, width: '100%', marginLeft: 0 },
   }), [theme]);
 
   const isFormValid = activeHours > 0 && sleepHours > 0;
@@ -71,7 +72,7 @@ export const IntroStep08: React.FC<IntroStep08Props> = ({ onNext, onBack, onSkip
       <FixedButtonContainer>
         <View style={styles.buttonRow}>
           {showSkip ? <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}><Text style={styles.skipText} allowFontScaling={false}>{t('common.skip')}</Text></Pressable> : null}
-          <View style={styles.continueButtonWrapper}><Button title={t('common.continue')} onPress={handleNext} disabled={!isFormValid} /></View>
+          <View style={[styles.continueButtonWrapper, !showSkip && styles.continueButtonWrapperFull]}><Button title={t('common.continue')} onPress={handleNext} disabled={!isFormValid} /></View>
         </View>
       </FixedButtonContainer>
     </SafeAreaView>

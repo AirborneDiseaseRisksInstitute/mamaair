@@ -4,7 +4,9 @@ import {
   Text,
   StyleSheet,
   Image,
+  ScrollView,
   TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faTimes } from '@fortawesome/free-solid-svg-icons';
@@ -29,6 +31,7 @@ export const AccessLocationBottomSheet: React.FC<AccessLocationBottomSheetProps>
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
+  const { height } = useWindowDimensions();
 
   const styles = useMemo(
     () =>
@@ -106,7 +109,11 @@ export const AccessLocationBottomSheet: React.FC<AccessLocationBottomSheetProps>
       onClose={onClose}
       showHandle={false}
     >
-      <View style={styles.contentWrapper}>
+      <ScrollView
+        style={{ maxHeight: height * 0.8 }}
+        contentContainerStyle={styles.contentWrapper}
+        showsVerticalScrollIndicator={false}
+      >
         <TouchableOpacity
           style={styles.closeButton}
           onPress={onClose}
@@ -152,7 +159,7 @@ export const AccessLocationBottomSheet: React.FC<AccessLocationBottomSheetProps>
             {t('location.not_now')}
           </Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </BottomSheet>
   );
 };

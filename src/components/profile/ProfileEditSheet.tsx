@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   ScrollView,
@@ -20,13 +20,15 @@ import {
   Dropdown,
   HeightWeightPicker,
   Input,
+  useToast,
 } from '../ui';
 import { useMetaChoices } from '../../hooks/useMetaChoices';
 import { useUserStore } from '../../store/useUserStore';
-import { ProfileService } from '../../services/api/ProfileService';
-import { LifestyleService } from '../../services/api/LifestyleService';
-import { LanguageService } from '../../services/api/LanguageService';
 import { DEV_LOCAL_SESSION } from '../../config/dev';
+import {
+  saveProfileEditPayloads,
+  type ProfileEditSaveResult,
+} from '../../services/profile/ProfileEditSaveService';
 import { formatLocalDate } from '../../utils/dateUtils';
 import { getTimezoneList } from '../../utils/timezoneUtils';
 import {
@@ -99,6 +101,7 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
+  const { showToast } = useToast();
   const { countries, languages, cooking_methods, work_types, diet_types } =
     useMetaChoices();
   const store = useUserStore();
@@ -111,6 +114,9 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
   const [isHeightWeightPickerVisible, setIsHeightWeightPickerVisible] =
     useState(false);
   const [isBirthdayPickerVisible, setIsBirthdayPickerVisible] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveInFlight = useRef(false);
 
   const locale =
     i18n.resolvedLanguage === 'fr'
@@ -140,6 +146,7 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
     setActiveChoiceField(null);
     setIsHeightWeightPickerVisible(false);
     setIsBirthdayPickerVisible(false);
+    setSaveError(null);
   }, [section, visible]);
 
   const updateDraft = <K extends keyof ProfileEditValues>(
@@ -147,6 +154,7 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
     value: ProfileEditValues[K],
   ) => {
     setDraft(current => ({ ...current, [key]: value }));
+    setSaveError(null);
   };
 
   const timezoneOptions = useMemo<ChoiceOption[]>(() => {
@@ -322,8 +330,10 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
       ? Boolean(normalizedDraft.pregnancyWeek)
       : section !== null;
 
-  const handleSave = () => {
-    if (!isFormValid) return;
+  const handleSave = async () => {
+    if (!isFormValid || saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaveError(null);
 
     const current = getProfileEditValues(profile);
     const isPregnancyWeekConfirmation = section === 'pregnancy';
@@ -331,93 +341,158 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
       forcePregnancyWeek: isPregnancyWeekConfirmation,
     });
 
-    if (normalizedDraft.name !== current.name && normalizedDraft.name) {
+    let saveResult: ProfileEditSaveResult = {
+      profileSaved: true,
+      emailSaved: true,
+      lifestyleSaved: true,
+      languageSaved: true,
+      failed: false,
+      partial: false,
+    };
+    if (!DEV_LOCAL_SESSION) {
+      setIsSaving(true);
+      try {
+        saveResult = await saveProfileEditPayloads(payloads);
+      } catch (error) {
+        console.warn('[ProfileEdit] Failed to save profile changes', error);
+        setSaveError(t('profile.update_failed_message'));
+        setIsSaving(false);
+        saveInFlight.current = false;
+        return;
+      }
+      setIsSaving(false);
+    }
+
+    if (
+      saveResult.profileSaved &&
+      normalizedDraft.name !== current.name &&
+      normalizedDraft.name
+    ) {
       store.setName(normalizedDraft.name);
     }
-    if (normalizedDraft.email !== current.email && normalizedDraft.email) {
+    if (
+      saveResult.emailSaved &&
+      normalizedDraft.email !== current.email &&
+      normalizedDraft.email
+    ) {
       store.setEmail(normalizedDraft.email);
     }
-    if (normalizedDraft.birthday !== current.birthday) {
+    if (
+      saveResult.profileSaved &&
+      normalizedDraft.birthday !== current.birthday
+    ) {
       store.setBirthday(parseLocalDate(normalizedDraft.birthday));
     }
-    if (normalizedDraft.height !== current.height) {
+    if (saveResult.profileSaved && normalizedDraft.height !== current.height) {
       store.setHeight(normalizedDraft.height);
     }
-    if (normalizedDraft.weight !== current.weight) {
+    if (saveResult.profileSaved && normalizedDraft.weight !== current.weight) {
       store.setWeight(normalizedDraft.weight);
     }
     if (
+      saveResult.profileSaved &&
+      saveResult.languageSaved &&
       normalizedDraft.language !== current.language &&
       normalizedDraft.language
     ) {
       store.setLanguage(normalizedDraft.language);
     }
     if (
+      saveResult.profileSaved &&
       normalizedDraft.country !== current.country &&
       normalizedDraft.country
     ) {
       store.setCountry(normalizedDraft.country);
     }
-    if (normalizedDraft.area !== current.area && normalizedDraft.area) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.area !== current.area &&
+      normalizedDraft.area
+    ) {
       store.setArea(normalizedDraft.area);
     }
-    if (normalizedDraft.timezone !== current.timezone) {
+    if (
+      saveResult.profileSaved &&
+      normalizedDraft.timezone !== current.timezone
+    ) {
       store.setTimezone(normalizedDraft.timezone);
     }
     if (
-      normalizedDraft.pregnancyWeek !== current.pregnancyWeek ||
-      isPregnancyWeekConfirmation
+      saveResult.profileSaved &&
+      (normalizedDraft.pregnancyWeek !== current.pregnancyWeek ||
+        isPregnancyWeekConfirmation)
     ) {
       store.setPregnancyWeek(normalizedDraft.pregnancyWeek);
     }
-    if (normalizedDraft.pregnancyNumber !== current.pregnancyNumber) {
+    if (
+      saveResult.profileSaved &&
+      normalizedDraft.pregnancyNumber !== current.pregnancyNumber
+    ) {
       store.setPregnancyNumber(normalizedDraft.pregnancyNumber);
     }
-    if (normalizedDraft.timeSpent !== current.timeSpent) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.timeSpent !== current.timeSpent
+    ) {
       store.setTimeSpent(normalizedDraft.timeSpent);
     }
-    if (normalizedDraft.timeOfDay !== current.timeOfDay) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.timeOfDay !== current.timeOfDay
+    ) {
       store.setTimeOfDay(normalizedDraft.timeOfDay);
     }
-    if (normalizedDraft.cookingMethod !== current.cookingMethod) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.cookingMethod !== current.cookingMethod
+    ) {
       store.setCookingMethod(normalizedDraft.cookingMethod);
     }
-    if (normalizedDraft.ventilation !== current.ventilation) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.ventilation !== current.ventilation
+    ) {
       store.setVentilation(normalizedDraft.ventilation);
     }
-    if (normalizedDraft.sleepHours !== current.sleepHours) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.sleepHours !== current.sleepHours
+    ) {
       store.setSleepHours(normalizedDraft.sleepHours);
     }
-    if (normalizedDraft.activeHours !== current.activeHours) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.activeHours !== current.activeHours
+    ) {
       store.setActiveHours(normalizedDraft.activeHours);
     }
-    if (normalizedDraft.workType !== current.workType) {
+    if (
+      saveResult.lifestyleSaved &&
+      normalizedDraft.workType !== current.workType
+    ) {
       store.setWorkType(normalizedDraft.workType);
     }
-    if (normalizedDraft.diet !== current.diet) {
+    if (saveResult.lifestyleSaved && normalizedDraft.diet !== current.diet) {
       store.setDiet(normalizedDraft.diet);
     }
 
+    saveInFlight.current = false;
+    if (saveResult.failed) {
+      setSaveError(
+        t(
+          saveResult.partial
+            ? 'profile.update_partial_message'
+            : 'profile.update_failed_message',
+        ),
+      );
+      return;
+    }
     onClose();
-
-    if (DEV_LOCAL_SESSION) return;
-
-    const requests: Promise<unknown>[] = [];
-    if (Object.keys(payloads.profile).length > 0) {
-      requests.push(ProfileService.patchProfile(payloads.profile));
-    }
-    // Email is sent separately so an account-level email restriction cannot
-    // prevent the remaining profile fields from being saved.
-    if (Object.keys(payloads.email).length > 0) {
-      requests.push(ProfileService.patchProfile(payloads.email));
-    }
-    if (Object.keys(payloads.lifestyle).length > 0) {
-      requests.push(LifestyleService.patchLifestyle(payloads.lifestyle));
-    }
-    if (payloads.languageChanged && normalizedDraft.language) {
-      requests.push(LanguageService.setLanguage(normalizedDraft.language));
-    }
-    if (requests.length > 0) Promise.allSettled(requests);
+    showToast({
+      type: 'success',
+      title: t('profile.update_success_title'),
+      message: t('profile.update_success_message'),
+    });
   };
 
   const renderBirthdayField = () => (
@@ -640,6 +715,12 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
         saveContainer: {
           marginTop: spacing('lg'),
         },
+        saveError: {
+          color: theme.colors.orange800,
+          fontFamily: theme.typography.fontFamily.regular,
+          fontSize: 14,
+          marginBottom: spacing('md'),
+        },
         optionsScroll: {
           maxHeight: SCREEN_HEIGHT * 0.65,
         },
@@ -654,7 +735,9 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
     <>
       <BottomSheet
         visible={visible && section !== null}
-        onClose={onClose}
+        onClose={() => {
+          if (!isSaving) onClose();
+        }}
         showHandle
         title={section ? editSectionTitles[section] : undefined}
       >
@@ -667,10 +750,15 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
           {renderSectionFields()}
 
           <View style={styles.saveContainer}>
+            {saveError ? (
+              <Text style={styles.saveError} accessibilityRole="alert">
+                {saveError}
+              </Text>
+            ) : null}
             <Button
-              title={t('common.save')}
-              onPress={handleSave}
-              disabled={!isFormValid}
+              title={isSaving ? t('common.saving') : t('common.save')}
+              onPress={() => void handleSave()}
+              disabled={!isFormValid || isSaving}
             />
           </View>
         </ScrollView>
@@ -701,6 +789,7 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
                   ...current,
                   [activeChoiceField]: option.value,
                 }));
+                setSaveError(null);
                 setActiveChoiceField(null);
               }}
             />
