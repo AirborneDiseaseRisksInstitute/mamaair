@@ -19,7 +19,7 @@ describe('exposure history capability handling', () => {
     jest.clearAllMocks();
   });
 
-  it('does not show presentation values when backend and summary history are empty', async () => {
+  it('does not show reference values when backend and summary history are empty', async () => {
     historyMock.mockResolvedValue({ items: [] });
     const result = await loadExposureTrend({
       summary: null,
@@ -55,7 +55,7 @@ describe('exposure history capability handling', () => {
     expect(result.points).toHaveLength(2);
   });
 
-  it('keeps valid history values ahead of presentation values', async () => {
+  it('keeps valid history values ahead of reference values', async () => {
     historyMock.mockResolvedValue({
       items: [
         {

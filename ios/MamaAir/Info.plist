@@ -66,10 +66,8 @@
 	<true/>
 	<key>UIAppFonts</key>
 	<array>
-		<string>MPLUSRounded1c-Black.ttf</string>
 		<string>MPLUSRounded1c-Bold.ttf</string>
 		<string>MPLUSRounded1c-ExtraBold.ttf</string>
-		<string>MPLUSRounded1c-Light.ttf</string>
 		<string>MPLUSRounded1c-Medium.ttf</string>
 		<string>MPLUSRounded1c-Regular.ttf</string>
 	</array>

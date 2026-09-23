@@ -86,9 +86,8 @@ export const completeTodayCheckIn = (
 ): FeelingCheckInExperience => {
   if (experience.recordState === 'recorded') return experience;
 
-  // Presentation hydration was investor-demo-only. Keep the fallback path
-  // available, but do not surface invented water totals/goals in the real
-  // Today flow unless a backend hydration model provides them.
+  // Non-production hydration fixtures must not supply user water totals or
+  // goals. Those values require an approved backend hydration model.
   return experience;
 };
 
@@ -111,9 +110,8 @@ const mergeAirExposure = (
 ): AirExposure | null => {
   if (!value) return null;
 
-  // Presentation environment values were investor-demo-only. Preserve the
-  // function and timestamp normalization, but do not fill missing pollutant,
-  // weather, UV or indoor readings from scenario data in the real Today flow.
+  // Reference environment fixtures must not fill missing pollutant, weather,
+  // UV, or indoor readings in the authenticated Today flow.
   return {
     ...value,
     timestamp: validText(value.timestamp)
@@ -176,9 +174,8 @@ export const completeTodayPresentation = ({
     airExposure: mergeAirExposure(date, airExposure, presentationToday),
     lifestyle: {
       ...(lifestyle ?? {}),
-      // Demo hydration targets are no longer shown as real user health data.
-      // Restore the presentation fallback only with an approved backend-backed
-      // hydration target model.
+      // Hydration targets are shown only when supplied by an approved backend
+      // model; reference fixtures never become user health data.
       hydration_target_ml_per_day: validPositiveNumber(
         lifestyle?.hydration_target_ml_per_day,
       )
@@ -547,8 +544,8 @@ export const loadWeeklySummaryExperience = ({
   >;
 }): WeeklySummaryExperience => {
   /*
-   * The presentation week dataset is still available for the older demo path,
-   * but Weekly Summary must now be built only from real backend/local data.
+   * Reference trajectory data remains available for deterministic validation,
+   * but Weekly Summary is built only from backend and user-recorded local data.
    *
    * const presentationSummary = selectPresentationWeekSummary(pregnancyWeek);
    * const presentationDays = ensurePresentationWeek(

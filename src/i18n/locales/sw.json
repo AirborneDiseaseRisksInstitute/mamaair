@@ -843,56 +843,6 @@
     "home_airflow": "Mtiririko wa hewa wa nyumbani: {{value}}",
     "indoor_peak": "Kilele cha ndani: {{value}}°C"
   },
-  "daily_plan_samples": {
-    "mary_hydration_300": {
-      "title": "Kunywa ml 300 za maji sasa",
-      "purpose": "Kunywa ml 300 nyingine kabla ya mchana, na uongeze tunda lenye vitamini C kama chungwa kwenye mlo wako unaofuata."
-    },
-    "mary_shift_midday_work": {
-      "title": "Panga kazi nzito mbali na muda wa adhuhuri",
-      "purpose": "Lenga 09:00–11:00 au 16:00–18:00 na uepuke muda wa joto na shughuli nyingi wa 12:30–14:30 inapowezekana."
-    },
-    "mary_shaded_rest": {
-      "title": "Pumzika kwa kukaa kivulini kwa dakika 10",
-      "purpose": "Punguza joto mwilini karibu 13:00 na tena karibu 17:00; kitambaa chenye unyevunyevu kinaweza kukusaidia kujisikia vizuri zaidi."
-    },
-    "wellbeing_clean_air_breathing": {
-      "title": "Tumia dakika moja kwa utulivu katika hewa safi",
-      "purpose": "Jaribu kupumua polepole na kwa mpangilio kwa tumbo ukiwa ndani katika sehemu isiyo na moshi."
-    },
-    "wellbeing_gentle_wind_down": {
-      "title": "Fanya maandalizi ya kulala ya leo yawe mepesi",
-      "purpose": "Chagua utaratibu usio na skrini na ujipatie sehemu tulivu ya kutulia kabla ya kulala."
-    },
-    "wellbeing_cool_pause": {
-      "title": "Punguza joto na upumzike msongo unapoongezeka",
-      "purpose": "Nenda sehemu yenye baridi na kivuli, kunywa maji kidogo na weka kitambaa chenye unyevunyevu shingoni au kwenye paji la uso."
-    },
-    "diet_vitamin_c_pairing": {
-      "title": "Changanya chakula chenye madini ya chuma na vitamini C",
-      "purpose": "Ongeza tunda au mboga inayopatikana eneo lako yenye vitamini C pamoja na mlo wenye madini ya chuma."
-    },
-    "behaviour_cleaner_cooking_window": {
-      "title": "Tengeneza sehemu ya kupikia yenye hewa safi",
-      "purpose": "Pika nje au chini ya kibanda kilicho wazi pembeni inapowezekana, na uzime makaa kabisa baada ya kupika."
-    },
-    "activity_shaded_route": {
-      "title": "Chagua njia yenye kivuli na magari machache",
-      "purpose": "Pendelea njia fupi yenye kivuli na iliyo mbali na barabara zenye vumbi au msongamano."
-    },
-    "behaviour_ventilate_when_air_clears": {
-      "title": "Ingiza hewa safi ndani wakati hewa ya nje imetulia",
-      "purpose": "Hewa ya nje inapohisi safi zaidi, fungua kwa muda mfupi madirisha au milango iliyo pande tofauti ili kuboresha mtiririko wa hewa."
-    },
-    "activity_gentle_mobility_pause": {
-      "title": "Pumzika na ufanye mwendo laini wa mwili",
-      "purpose": "Legeza mabega na vifundo vya miguu kwa mwendo wa polepole na unaokufaa, kisha keti ukihitaji."
-    },
-    "wellbeing_grounding_senses": {
-      "title": "Jaribu dakika moja ya kujituliza kwa hisia",
-      "purpose": "Tambua unachoweza kuona, kusikia na kuhisi karibu nawe, bila kuhukumu jinsi wakati huu unavyoendelea."
-    }
-  },
   "home_air_pulse": {
     "eyebrow": "MAMAAIR · HEWA SASA",
     "status_good": "Hewa ni safi na tulivu leo",

@@ -24,7 +24,8 @@ export const DEV_MODE: boolean = __DEV__ && DEV_ENABLED;
 export const DEV_LOCAL_SESSION: boolean = DEV_MODE;
 
 /**
- * Increment to clear the local DEV profile and feature-owned demo state once
+ * Increment to clear the local DEV profile and feature-owned development state
+ * once
  * on the next launch. This reset is ignored outside a development bundle.
  */
 export const DEV_LOCAL_SESSION_RESET_TOKEN = 0;

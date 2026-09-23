@@ -5,9 +5,9 @@ import {
   selectPresentationWeekSummary,
   toPresentationDayRecord,
 } from '../../src/services/recommendationExperience/PresentationDataProvider';
-import compactTrajectory from '../../src/data/mamaairPresentationTrajectory.json';
+import compactTrajectory from '../../src/data/mamaairReferenceTrajectory.json';
 
-describe('presentation data provider', () => {
+describe('reference trajectory provider', () => {
   it('ships only the compact week and day values used by the app', () => {
     const serialized = JSON.stringify(compactTrajectory);
     const weeks = compactTrajectory as unknown as Array<

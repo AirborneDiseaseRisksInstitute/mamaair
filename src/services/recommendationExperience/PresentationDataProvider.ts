@@ -1,4 +1,4 @@
-import compactTrajectory from '../../data/mamaairPresentationTrajectory.json';
+import compactTrajectory from '../../data/mamaairReferenceTrajectory.json';
 import type {
   DailyActionDomain,
   ExposureTrendPoint,
@@ -261,7 +261,7 @@ const selectRawWeek = (pregnancyWeek: number): RawWeek => {
   const week = weeksByNumber.get(selectedWeek);
   if (!week) {
     throw new Error(
-      `Missing presentation record for gestational week ${selectedWeek}`,
+      `Missing reference record for gestational week ${selectedWeek}`,
     );
   }
   return week;
@@ -273,7 +273,7 @@ const selectRawDay = (pregnancyWeek: number, date: string | Date): RawDay => {
   const day = week.days.find(item => item.dayOfWeek === dayOfWeek);
   if (!day) {
     throw new Error(
-      `Missing presentation day ${dayOfWeek} for gestational week ${week.gestationWeek}`,
+      `Missing reference day ${dayOfWeek} for gestational week ${week.gestationWeek}`,
     );
   }
   return day;

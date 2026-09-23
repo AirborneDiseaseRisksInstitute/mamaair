@@ -82,12 +82,22 @@ def releaseSigningConfigured = releaseSigningProperties.every { propertyName ->
     project.hasProperty(propertyName) && project.property(propertyName).toString().trim()
 }
 
+def sharedFontsDir = file("../../src/assets/fonts/M_PLUS_Rounded_1c/ttf")
+def generatedFontsAssetsDir = layout.buildDirectory.dir("generated/mamaairFonts")
+def copySharedFonts = tasks.register("copySharedFonts", Copy) {
+    from(sharedFontsDir)
+    into(generatedFontsAssetsDir.map { it.dir("fonts") })
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.mamaair"
+    sourceSets {
+        main.assets.srcDir(generatedFontsAssetsDir)
+    }
     lint {
         checkReleaseBuilds false
         abortOnError false
@@ -131,9 +141,20 @@ android {
     }
 }
 
+tasks.matching { task ->
+    task.name.startsWith("merge") && task.name.endsWith("Assets")
+}.configureEach {
+    dependsOn(copySharedFonts)
+}
+
 gradle.taskGraph.whenReady { graph ->
     def releaseTaskRequested = graph.allTasks.any { task ->
-        task.path.toLowerCase().contains('release')
+        task.project == project && task.name in [
+            'assembleRelease',
+            'bundleRelease',
+            'packageRelease',
+            'packageReleaseBundle',
+        ]
     }
     if (releaseTaskRequested && !releaseSigningConfigured) {
         throw new GradleException(

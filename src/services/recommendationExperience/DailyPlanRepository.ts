@@ -1,6 +1,6 @@
 import {
   LEGACY_DAILY_TASK_FALLBACK_ENABLED,
-  RISK_IMPACT_PRESENTATION_ENABLED,
+  RISK_IMPACT_DISPLAY_ENABLED,
   RECOMMENDATION_CAPABILITIES,
   resolveRecommendationCapabilityStatus,
 } from '../../config/recommendationExperience';
@@ -466,11 +466,11 @@ const backendActionRiskImpact = (
       };
 };
 
-const withRiskImpactPresentation = (
+const withRiskImpactDisplay = (
   experience: DailyPlanExperience,
   totalRiskImpact: number | undefined,
 ): DailyPlanExperience => {
-  if (!RISK_IMPACT_PRESENTATION_ENABLED) return experience;
+  if (!RISK_IMPACT_DISPLAY_ENABLED) return experience;
 
   const actionKeys = new Set(
     activeRiskImpactActions(experience).map(action => action.key),
@@ -986,7 +986,7 @@ export const composeBackendDailyPlan = (
     nonActionableRecommendations,
   );
 
-  return withRiskImpactPresentation(
+  return withRiskImpactDisplay(
     {
       date: input.plan.date,
       timezone: input.plan.timezone || undefined,
@@ -1059,7 +1059,7 @@ export const composeDailyPlan = (
     input.recommendations,
   );
 
-  return withRiskImpactPresentation(
+  return withRiskImpactDisplay(
     {
       date: input.date,
       source: 'legacy',

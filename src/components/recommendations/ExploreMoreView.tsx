@@ -435,7 +435,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
             nestedScrollEnabled
           >
             {/* Guidance used to share this sheet with additional actions.
-                Keep the presentation path disabled so the header count and
+                Keep the shared rendering path disabled so the header count and
                 completion model describe actions only. */}
             {GUIDANCE_IN_MORE_FOR_TODAY_ENABLED
               ? renderRecommendationSection(

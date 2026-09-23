@@ -962,56 +962,6 @@
     "outdoors": "Outdoors",
     "air_quality_label": "Air quality"
   },
-  "daily_plan_samples": {
-    "mary_hydration_300": {
-      "title": "Drink 300 ml of water now",
-      "purpose": "Have another 300 ml before noon, and add a vitamin-C fruit such as an orange with your next meal."
-    },
-    "mary_shift_midday_work": {
-      "title": "Move demanding tasks away from midday",
-      "purpose": "Aim for 09:00–11:00 or 16:00–18:00 and avoid the hottest, busiest 12:30–14:30 window when you can."
-    },
-    "mary_shaded_rest": {
-      "title": "Take a 10-minute seated rest in shade",
-      "purpose": "Cool down around 13:00 and again near 17:00; a damp cloth can help you feel more comfortable."
-    },
-    "wellbeing_clean_air_breathing": {
-      "title": "Take one quiet minute in clean air",
-      "purpose": "Try slow, rhythmic abdominal breathing in a smoke-free indoor space."
-    },
-    "wellbeing_gentle_wind_down": {
-      "title": "Make tonight’s wind-down gentler",
-      "purpose": "Choose a screen-free routine and give yourself a quiet space to decompress before sleep."
-    },
-    "wellbeing_cool_pause": {
-      "title": "Cool down and pause when stress rises",
-      "purpose": "Move to a cooler shaded space, sip water and place a damp cloth on your neck or forehead."
-    },
-    "diet_vitamin_c_pairing": {
-      "title": "Pair an iron-rich food with vitamin C",
-      "purpose": "Add a locally available fruit or vegetable rich in vitamin C alongside an iron-rich meal."
-    },
-    "behaviour_cleaner_cooking_window": {
-      "title": "Create a cleaner cooking space",
-      "purpose": "Cook outdoors or under an open-sided shelter when possible, and fully extinguish coals after cooking."
-    },
-    "activity_shaded_route": {
-      "title": "Choose the shaded, lower-traffic route",
-      "purpose": "Prefer a short route with shade and fewer dusty or congested roads."
-    },
-    "behaviour_ventilate_when_air_clears": {
-      "title": "Refresh indoor air at a cleaner time",
-      "purpose": "When outdoor air feels clearer, open opposite windows or doors briefly to improve airflow."
-    },
-    "activity_gentle_mobility_pause": {
-      "title": "Take a gentle mobility pause",
-      "purpose": "Relax your shoulders and ankles with slow, comfortable movements, then sit if you need to."
-    },
-    "wellbeing_grounding_senses": {
-      "title": "Try a one-minute grounding pause",
-      "purpose": "Notice what you can see, hear and feel around you, without judging how the moment is going."
-    }
-  },
   "home_air_pulse": {
     "eyebrow": "MAMAAIR · LIVE AIR",
     "status_good": "The air feels comfortable today",

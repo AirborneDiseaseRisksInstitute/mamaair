@@ -9,7 +9,7 @@ import type { SummaryResponse } from '../api/SummaryService';
 export interface ExposureTrendExperience {
   points: ExposureTrendPoint[];
   status: CapabilityStatus;
-  source: 'history' | 'summary' | 'presentation' | 'none';
+  source: 'history' | 'summary' | 'reference' | 'none';
 }
 
 const normalizeHistory = (value: unknown): ExposureTrendPoint[] => {
@@ -86,9 +86,8 @@ export const loadExposureTrend = async ({
       return {
         points: pointsFromSummary,
         status: 'available',
-        // Presentation exposure history was investor-demo-only. Keep source
-        // support in the type for future restoration, but do not show scenario
-        // environment values when backend/summary history is missing.
+        // Reference trajectories never substitute for recorded exposure
+        // history when backend or summary data is unavailable.
         source: pointsFromSummary.length ? 'summary' : 'none',
       };
     } catch {
@@ -96,7 +95,7 @@ export const loadExposureTrend = async ({
       return {
         points,
         status: 'unavailable',
-        // Do not fall back to presentation exposure values in production Today.
+        // Do not substitute reference trajectory values in Today.
         source: points.length ? 'summary' : 'none',
       };
     }
@@ -112,8 +111,7 @@ export const loadExposureTrend = async ({
   }
 
   return {
-    // Presentation exposure history is disabled for production-facing Today.
-    // Restore only if demo mode is explicitly reintroduced for this surface.
+    // Today displays only recorded exposure history.
     points: [],
     status: explicitStatus,
     source: 'none',

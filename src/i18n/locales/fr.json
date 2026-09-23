@@ -843,56 +843,6 @@
     "home_airflow": "Débit d'air domestique : {{value}}",
     "indoors": "À l'intérieur"
   },
-  "daily_plan_samples": {
-    "mary_hydration_300": {
-      "title": "Buvez 300 ml d’eau maintenant",
-      "purpose": "Buvez encore 300 ml avant midi et ajoutez un fruit riche en vitamine C, comme une orange, à votre prochain repas."
-    },
-    "mary_shift_midday_work": {
-      "title": "Déplacez les tâches exigeantes hors des heures de midi",
-      "purpose": "Essayez 09 h–11 h ou 16 h–18 h et évitez si possible la période la plus chaude et chargée de 12 h 30 à 14 h 30."
-    },
-    "mary_shaded_rest": {
-      "title": "Faites une pause assise de 10 minutes à l’ombre",
-      "purpose": "Rafraîchissez-vous vers 13 h puis vers 17 h ; un linge humide peut vous aider à vous sentir plus à l’aise."
-    },
-    "wellbeing_clean_air_breathing": {
-      "title": "Prenez une minute au calme dans un air plus propre",
-      "purpose": "Essayez de respirer lentement et régulièrement avec le ventre, à l’intérieur dans un espace sans fumée."
-    },
-    "wellbeing_gentle_wind_down": {
-      "title": "Adoucissez votre routine de ce soir",
-      "purpose": "Choisissez une routine sans écran et accordez-vous un endroit calme pour relâcher la pression avant de dormir."
-    },
-    "wellbeing_cool_pause": {
-      "title": "Rafraîchissez-vous et faites une pause lorsque le stress monte",
-      "purpose": "Allez dans un endroit plus frais et ombragé, buvez quelques gorgées d’eau et posez un linge humide sur votre cou ou votre front."
-    },
-    "diet_vitamin_c_pairing": {
-      "title": "Associez un aliment riche en fer à de la vitamine C",
-      "purpose": "Ajoutez un fruit ou un légume local riche en vitamine C à un repas contenant un aliment riche en fer."
-    },
-    "behaviour_cleaner_cooking_window": {
-      "title": "Créez un espace de cuisson avec un air plus propre",
-      "purpose": "Si possible, cuisinez dehors ou sous un abri ouvert sur les côtés et éteignez complètement les braises après la cuisson."
-    },
-    "activity_shaded_route": {
-      "title": "Choisissez un trajet ombragé et moins fréquenté",
-      "purpose": "Privilégiez un trajet court, ombragé et éloigné des routes poussiéreuses ou encombrées."
-    },
-    "behaviour_ventilate_when_air_clears": {
-      "title": "Renouvelez l’air intérieur au moment le plus propre",
-      "purpose": "Lorsque l’air extérieur semble plus propre, ouvrez brièvement des fenêtres ou portes opposées pour faire circuler l’air."
-    },
-    "activity_gentle_mobility_pause": {
-      "title": "Faites une pause avec quelques mouvements doux",
-      "purpose": "Détendez lentement vos épaules et vos chevilles, en restant dans le confort, puis asseyez-vous si nécessaire."
-    },
-    "wellbeing_grounding_senses": {
-      "title": "Essayez une minute d’ancrage",
-      "purpose": "Remarquez ce que vous voyez, entendez et ressentez autour de vous, sans juger le moment."
-    }
-  },
   "home_air_pulse": {
     "eyebrow": "MAMAAIR · AIR EN DIRECT",
     "status_good": "L’air est agréable aujourd’hui",

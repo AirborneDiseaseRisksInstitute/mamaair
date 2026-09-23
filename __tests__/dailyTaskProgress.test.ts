@@ -49,7 +49,7 @@ describe('countCompletedActionsByDomain', () => {
     });
   });
 
-  it('recovers the domain for existing sample records saved before domain metadata', () => {
+  it('recovers every legacy local domain saved before domain metadata', () => {
     expect(
       countCompletedActionsByDomain({
         'local:mary-hydration-300': {
@@ -57,12 +57,67 @@ describe('countCompletedActionsByDomain', () => {
           completed: true,
           updatedAt: '2026-07-29T08:00:00.000Z',
         },
+        'local:mary-shift-midday-work': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:mary-shaded-rest': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:wellbeing-clean-air-breathing': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:wellbeing-gentle-wind-down': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:wellbeing-cool-pause': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:diet-vitamin-c-pairing': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:behaviour-cleaner-cooking-window': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:activity-shaded-route': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:behaviour-ventilate-when-air-clears': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:activity-gentle-mobility-pause': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
+        'local:wellbeing-grounding-senses': {
+          state: 'completed',
+          completed: true,
+          updatedAt: '2026-07-29T08:00:00.000Z',
+        },
       }),
     ).toEqual({
-      diet: 1,
-      activity: 0,
-      behaviour: 0,
-      wellbeing: 0,
+      diet: 2,
+      activity: 3,
+      behaviour: 3,
+      wellbeing: 4,
       service: 0,
     });
   });

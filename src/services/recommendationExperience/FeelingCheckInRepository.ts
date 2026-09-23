@@ -1,7 +1,7 @@
 import {
   LOCAL_FEELING_CHECK_IN_SUPPLEMENT_ENABLED,
   RECOMMENDATION_CAPABILITIES,
-  RECOMMENDATION_DEMO_FALLBACK_ENABLED,
+  RECOMMENDATION_REFERENCE_DATA_ENABLED,
   resolveRecommendationCapabilityStatus,
 } from '../../config/recommendationExperience';
 import { FEELING_CHECK_IN_SUPPLEMENT } from '../../data/recommendations/feelingCheckInFallback';
@@ -103,7 +103,7 @@ export const mergeCheckInItems = (
       return;
     }
 
-    // Preserve the API identity while enriching presentation metadata from
+    // Preserve the API identity while enriching display metadata from
     // the reviewed local catalog.
     merged.set(identity, {
       ...item,
@@ -224,7 +224,7 @@ const localItemsForKind = (
   kind: FeelingCheckInItem['kind'],
 ): FeelingCheckInItem[] =>
   LOCAL_FEELING_CHECK_IN_SUPPLEMENT_ENABLED &&
-  RECOMMENDATION_DEMO_FALLBACK_ENABLED &&
+  RECOMMENDATION_REFERENCE_DATA_ENABLED &&
   RECOMMENDATION_CAPABILITIES.unifiedFeelingSupplement === 'notImplemented'
     ? FEELING_CHECK_IN_SUPPLEMENT.filter(item => item.kind === kind)
     : [];

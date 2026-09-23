@@ -31,7 +31,7 @@ import {
   selectWeekPathDay,
 } from '../../src/services/recommendationExperience/PresentationJourneyRepository';
 
-describe('presentation journey history', () => {
+describe('reference journey history', () => {
   it('builds stable week-aware records for the same calendar date', () => {
     const first = toPresentationDayRecord(
       selectPresentationDay(19, '2026-07-20'),
@@ -46,7 +46,7 @@ describe('presentation journey history', () => {
     expect(first.primaryTotal).toBe(0);
   });
 
-  it('leaves the presentation-only week empty without demo metrics', () => {
+  it('leaves a reference-only week empty without recorded metrics', () => {
     const summary = loadWeeklySummaryExperience({
       identity: { backendUserId: 'context-only-user' },
       pregnancyWeek: 19,
@@ -260,7 +260,7 @@ describe('presentation journey history', () => {
     expect(summary.symptomLevels).toEqual([]);
   });
 
-  it('keeps persisted Week Path actions ahead of presentation activity', () => {
+  it('keeps persisted Week Path actions ahead of reference activity', () => {
     const pending = selectWeekPathDay({
       pregnancyWeek: 19,
       date: '2026-07-27',
@@ -317,7 +317,7 @@ describe('presentation journey history', () => {
     });
   });
 
-  it('keeps valid summary participation ahead of persisted and presentation values', () => {
+  it('keeps valid summary participation ahead of persisted and reference values', () => {
     const summary = loadWeeklySummaryExperience({
       identity: { backendUserId: 'summary-user' },
       pregnancyWeek: 19,

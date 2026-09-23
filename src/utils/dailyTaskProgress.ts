@@ -1,4 +1,4 @@
-import { DAILY_PLAN_SAMPLE_ACTIONS } from '../data/recommendations/dailyPlanFallback';
+import { LEGACY_LOCAL_ACTION_DOMAINS } from '../data/recommendations/legacyDailyActionDomains';
 import type {
   DailyActionCompletionRecord,
   DailyActionDomain,
@@ -14,18 +14,11 @@ const emptyCounts = (): DailyTaskDomainCounts => ({
   service: 0,
 });
 
-const sampleActionDomains = new Map<string, DailyActionDomain>(
-  DAILY_PLAN_SAMPLE_ACTIONS.map(action => [
-    `local:${action.id}`,
-    action.domain,
-  ] as const),
-);
-
 export const countCompletedActionsByDomain = (
   records: Record<string, DailyActionCompletionRecord>,
 ): DailyTaskDomainCounts =>
   Object.entries(records).reduce((counts, [actionKey, record]) => {
-    const domain = record.domain ?? sampleActionDomains.get(actionKey);
+    const domain = record.domain ?? LEGACY_LOCAL_ACTION_DOMAINS[actionKey];
     if (record.completed && domain) {
       counts[domain] += 1;
     }

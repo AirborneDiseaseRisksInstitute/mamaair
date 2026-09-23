@@ -6,22 +6,23 @@ import type {
 import { DEV_LOCAL_SESSION, DEV_LOCAL_SESSION_RESET_TOKEN } from './dev';
 
 export const RECOMMENDATION_EXPERIENCE_STORAGE_VERSION = 1;
-export const RECOMMENDATION_DEMO_FALLBACK_ENABLED = true;
+export const RECOMMENDATION_REFERENCE_DATA_ENABLED = true;
 // Legacy Daily Tasks remain available for development and rollback analysis,
 // but they must not replace the unified Daily Plan in the customer experience.
 export const LEGACY_DAILY_TASK_FALLBACK_ENABLED = false;
 export const LOCAL_FEELING_CHECK_IN_SUPPLEMENT_ENABLED = false;
-export const RISK_IMPACT_PRESENTATION_ENABLED = true;
+export const RISK_IMPACT_DISPLAY_ENABLED = true;
 // Keep healthcare service-request screens implemented for the planned backend,
 // but do not expose promises or successful submissions before it is connected.
 export const HEALTHCARE_SERVICE_REQUESTS_ENABLED = false;
 /*
- * Legacy fixed demo progress is intentionally disabled. Keep this restore
+ * Legacy fixed illustrative progress is intentionally disabled. Keep this
+ * restore
  * point commented instead of deleting it, but do not use a fixed value in
- * runtime presentation.
+ * runtime data.
  *
  * export const ILLUSTRATIVE_PROGRESS_ENABLED = false;
- * export const ILLUSTRATIVE_PROGRESS_VALUE = <legacy fixed demo value>;
+ * export const ILLUSTRATIVE_PROGRESS_VALUE = <legacy fixed value>;
  */
 
 /**

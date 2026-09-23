@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "name": "MamaAir App Presentation Data — Single Coherent 40-Week Trajectory",
+    "name": "MamaAir Reference Data - Single Coherent 40-Week Trajectory",
     "sourceDataset": "mamaair-ssa-climate-maternal-wq1",
     "sourceTrackId": "WQ1-062",
     "sourcePersonaArchetype": "Amani WQ1 — Poorest Quintile Urban Informal Settlement",
@@ -8,13 +8,13 @@
     "containsRealPatientData": false,
     "containsPhi": false,
     "containsExactGps": false,
-    "purpose": "A compact, internally consistent presentation-data source for the MamaAir testing build when valid backend data is unavailable."
+    "purpose": "A compact, internally consistent reference trajectory for deterministic product validation and automated testing."
   },
   "usageConstraints": [
     "Never overwrite valid authenticated backend data.",
     "Never overwrite user-entered profile, pregnancy week, symptoms, hydration, sleep, tasks, or completion history.",
-    "Use only through a centralized presentation-data provider; do not import this file directly inside screen components.",
-    "Do not expose the words synthetic, demo, mock, fallback, dataset, AWS, or track ID in user-facing UI.",
+    "Use only through the centralized reference-data provider; do not import this file directly inside screen components.",
+    "Keep fixture metadata and source identifiers out of user-facing UI.",
     "Do not generate emergency referrals or clinical diagnoses from this file.",
     "Baby development indices are reference trends only and must not be shown as measured fetal health or clinical risk reduction.",
     "Select data by the tester's chosen gestational week and current day-of-week."
