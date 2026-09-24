@@ -5,9 +5,9 @@ report suspected security or privacy issues privately and responsibly.
 
 ## Reporting a vulnerability
 
-Email `support@mamaair.africa` with the subject `Security report`. Do not open a
-public GitHub issue containing exploit details, credentials, personal data, or
-information that could put users at risk.
+Email [service@mamaair.work](mailto:service@mamaair.work) with the subject
+`Security report`. Do not open a public GitHub issue containing exploit details,
+credentials, personal data, or information that could put users at risk.
 
 Include the following when available:
 
