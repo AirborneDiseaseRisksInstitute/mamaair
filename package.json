@@ -43,7 +43,7 @@
     "react-native-svg": "^15.15.1",
     "react-native-wheely": "^0.6.0",
     "react-native-worklets": "^0.9.1",
-    "zustand": "^5.0.9"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
