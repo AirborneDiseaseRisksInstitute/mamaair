@@ -35,7 +35,7 @@ Core experiences include:
 
 - pregnancy onboarding and profile management;
 - personalized Daily Plans and action completion tracking;
-- symptom, feeling, lifestyle, and wellbeing check-ins;
+- feelings, lifestyle, and wellbeing check-ins;
 - location-aware air quality, weather, and UV context;
 - mother and baby week-by-week views;
 - reminders, background tracking, and selected offline persistence;
@@ -47,14 +47,19 @@ professional.
 
 ## Project status
 
-MamaAir is under active development. Android is the current release target;
-iOS project files are maintained for development but are not part of the
-current release scope.
+MamaAir is under active development and is currently at version **v3.2**.
+Android is the current release target; iOS project files are maintained for
+development but are not part of the current release scope. The `develop`
+branch is the active integration branch.
 
-The latest published Android build is
-[v2.3, build 31](https://github.com/AirborneDiseaseRisksInstitute/mamaair/releases/tag/v2.3),
-published on 11 August 2026. The `develop` branch contains newer, unreleased
-work and is the active integration branch.
+### Android version history
+
+| Date | Version | Build | Status | Highlights |
+| --- | --- | ---: | --- | --- |
+| 2025 Q3 | v1.0 | 1 | Internal test | First Android testing line. |
+| 2025 Q4 | v2.0 | 12 | Internal test | Early pregnancy journey and tracking iterations. |
+| 27 May 2026 | v3.0 | 30 | Internal test | Stable tracking, local persistence, daily actions, notifications, and guidance updates. |
+| 8 Aug 2026 | **v3.2** | **31** | **Current version** | Expanded backend integrations, personalized Daily Plans, and production-readiness improvements. |
 
 ## Technical overview
 
