@@ -10,12 +10,42 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      react-native-image-picker uses Android's system picker/camera intents and
+      does not need broad storage access. Remove legacy permissions contributed
+      by transitive manifests so they are not requested or declared to Play.
+    -->
+    <uses-permission
+      android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+      tools:ignore="ScopedStorage"
+      tools:node="remove" />
+    <!--
+      RNFS targets an old SDK, so the manifest merger otherwise implies broad
+      read access. minSdk is 24; limiting the implied permission to API 22
+      makes it unavailable to every device MamaAir supports.
+    -->
+    <uses-permission
+      android:name="android.permission.READ_EXTERNAL_STORAGE"
+      android:maxSdkVersion="22" />
+
+    <!-- MamaAir never requests notification-policy (Do Not Disturb) access. -->
+    <uses-permission
+      android:name="android.permission.ACCESS_NOTIFICATION_POLICY"
+      tools:node="remove" />
+
+    <!-- Timestamp notifications use Notifee's default WorkManager path. -->
+    <uses-permission
+      android:name="android.permission.SCHEDULE_EXACT_ALARM"
+      tools:node="remove" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
       android:icon="@mipmap/ic_launcher"
-      android:roundIcon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
+      android:dataExtractionRules="@xml/data_extraction_rules"
+      android:fullBackupContent="@xml/backup_rules"
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
@@ -23,10 +53,14 @@
         android:name="app.notifee.core.ForegroundService"
         android:exported="false"
         android:foregroundServiceType="location"
+        tools:ignore="MissingClass"
         tools:replace="android:foregroundServiceType" />
+      <receiver
+        android:name="app.notifee.core.AlarmPermissionBroadcastReceiver"
+        tools:ignore="MissingClass"
+        tools:node="remove" />
       <activity
         android:name=".MainActivity"
-        android:label="@string/app_name"
         android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
         android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize"

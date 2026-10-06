@@ -15,3 +15,13 @@ export const shouldReplaceLocalProfileForAuthenticatedUser = (
   const localId = String(localBackendUserId ?? '').trim();
   return localId !== authenticatedId;
 };
+
+export const shouldCarryForwardPreAuthLanguage = (
+  localBackendUserId: string | number | null | undefined,
+  localLanguage: string | null | undefined,
+): boolean => {
+  const localId = String(localBackendUserId ?? '').trim();
+  const language = String(localLanguage ?? '').trim();
+
+  return !localId && Boolean(language);
+};

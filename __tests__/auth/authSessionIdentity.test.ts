@@ -1,4 +1,7 @@
-import { shouldReplaceLocalProfileForAuthenticatedUser } from '../../src/services/auth/AuthSessionIdentity';
+import {
+  shouldCarryForwardPreAuthLanguage,
+  shouldReplaceLocalProfileForAuthenticatedUser,
+} from '../../src/services/auth/AuthSessionIdentity';
 import {
   DEV_LOCAL_SESSION,
   DEV_MODE,
@@ -20,5 +23,12 @@ describe('release authentication guards', () => {
     expect(shouldReplaceLocalProfileForAuthenticatedUser('42', undefined)).toBe(
       false,
     );
+  });
+
+  it('carries forward only a language chosen before the profile is bound to a backend user', () => {
+    expect(shouldCarryForwardPreAuthLanguage(null, 'en')).toBe(true);
+    expect(shouldCarryForwardPreAuthLanguage(undefined, 'fr')).toBe(true);
+    expect(shouldCarryForwardPreAuthLanguage('42', 'en')).toBe(false);
+    expect(shouldCarryForwardPreAuthLanguage(null, null)).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -94,13 +95,18 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.mamaair"
+    namespace "africa.mamaair.mobile"
     sourceSets {
         main.assets.srcDir(generatedFontsAssetsDir)
     }
     lint {
-        checkReleaseBuilds false
-        abortOnError false
+        // A release artifact must never be produced while Android lint has
+        // found an error. Warnings remain visible for explicit review.
+        checkReleaseBuilds true
+        abortOnError true
+        // Third-party modules run their own lint. Analysing their Gradle
+        // scripts here triggers a known lint crash in react-native-worklets.
+        checkDependencies false
     }
     defaultConfig {
         applicationId "com.mamaair"
@@ -143,6 +149,12 @@ android {
 
 tasks.matching { task ->
     task.name.startsWith("merge") && task.name.endsWith("Assets")
+}.configureEach {
+    dependsOn(copySharedFonts)
+}
+
+tasks.matching { task ->
+    task.name.contains("Lint") || task.name.contains("lint")
 }.configureEach {
     dependsOn(copySharedFonts)
 }

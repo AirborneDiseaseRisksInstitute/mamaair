@@ -4,6 +4,7 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faPlus } from '@fortawesome/free-solid-svg-icons';
 import { useTheme, spacing } from '../../theme';
@@ -35,6 +36,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [isBottomSheetVisible, setIsBottomSheetVisible] = useState(false);
 
   const FAB_SIZE = ms(64);
@@ -42,7 +44,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   const styles = useMemo(() => StyleSheet.create({
     fab: {
       position: 'absolute',
-      bottom: spacing('lg'),
+      bottom: insets.bottom + spacing('lg'),
       right: spacing('lg'),
       width: FAB_SIZE,
       height: FAB_SIZE,
@@ -57,7 +59,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
       zIndex: 99999,
       elevation: 99999,
     },
-  }), [theme, FAB_SIZE]);
+  }), [theme, FAB_SIZE, insets.bottom]);
 
   const handleClose = () => setIsBottomSheetVisible(false);
 

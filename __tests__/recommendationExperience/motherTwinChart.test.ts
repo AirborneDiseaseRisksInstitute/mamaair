@@ -14,7 +14,7 @@ describe('mother twin chart model', () => {
     '2026-09-13',
   ];
 
-  it('counts completed recommendations and uses audience-specific risk readings', () => {
+  it('counts completed recommendations and uses the latest audience-specific risk readings', () => {
     const model = buildMotherTwinChartModel({
       weekDates,
       currentDate: '2026-09-10',
@@ -31,14 +31,6 @@ describe('mother twin chart model', () => {
             { date: '2026-09-08', integrated_score: 60 },
             { date: '2026-09-09', integrated_score: 59 },
           ],
-        },
-      },
-      environmentalRiskObservations: {
-        '2026-09-07': {
-          date: '2026-09-07',
-          mother: { predicted: 55, afterSelfCare: 49 },
-          baby: { predicted: 54, afterSelfCare: 48 },
-          updatedAt: '2026-09-07T10:00:00.000Z',
         },
       },
       actionCompletions: {
@@ -94,13 +86,12 @@ describe('mother twin chart model', () => {
     expect(model.hasEnvironmentalRiskData.mother).toBe(true);
     expect(model.hasEnvironmentalRiskData.baby).toBe(true);
     expect(model.environmentalRisk.mother).toEqual([
-      { date: '2026-09-07', predicted: 55, afterSelfCare: 49 },
-      { date: '2026-09-10', predicted: 65, afterSelfCare: 62 },
+      { date: '2026-09-10', current: 62, delta: -3 },
     ]);
-    expect(model.environmentalRisk.baby[1]).toEqual({
+    expect(model.environmentalRisk.baby[0]).toEqual({
       date: '2026-09-10',
-      predicted: 63,
-      afterSelfCare: 58,
+      current: 58,
+      delta: -5,
     });
   });
 
@@ -119,7 +110,6 @@ describe('mother twin chart model', () => {
           ],
         },
       },
-      environmentalRiskObservations: {},
       actionCompletions: {},
     });
 
@@ -130,7 +120,28 @@ describe('mother twin chart model', () => {
     expect(model.environmentalRisk).toEqual({ mother: [], baby: [] });
   });
 
-  it('groups backend completion codes by care category for each day', () => {
+  it('keeps mother and child reading availability independent', () => {
+    const model = buildMotherTwinChartModel({
+      weekDates,
+      currentDate: '2026-09-10',
+      backendSummary: {
+        mom_exposure: { exposure_level: 42 },
+        baby_exposure: undefined,
+      },
+      actionCompletions: {},
+    });
+
+    expect(model.hasEnvironmentalRiskData).toEqual({
+      mother: true,
+      baby: false,
+    });
+    expect(model.environmentalRisk.mother).toEqual([
+      { date: '2026-09-10', current: 42, delta: undefined },
+    ]);
+    expect(model.environmentalRisk.baby).toEqual([]);
+  });
+
+  it('uses structured backend counts and keeps optimistic local completions', () => {
     const model = buildMotherTwinChartModel({
       weekDates,
       currentDate: '2026-09-10',
@@ -138,26 +149,36 @@ describe('mother twin chart model', () => {
         task_completions: [
           {
             date: '2026-09-08',
-            tasks: [
-              'nutrition-hydration',
-              'protection-ventilation',
-              'activity-walk',
-              'wellbeing-rest',
-            ],
+            tasks: ['opaque-task-code'],
+            counts: {
+              diet: { done: 2, total: 3 },
+              activity: { done: 1, total: 2 },
+              behavior: { done: 1, total: 1 },
+              mental: { done: 1, total: 2 },
+            },
           },
         ],
       },
-      environmentalRiskObservations: {},
-      actionCompletions: {},
+      actionCompletions: {
+        '2026-09-08': {
+          localActivity: {
+            state: 'completed',
+            completed: true,
+            domain: 'activity',
+            kind: 'primary',
+            updatedAt: '2026-09-08T08:00:00.000Z',
+          },
+        },
+      },
     });
 
-    expect(model.careCompletion.diet[1].value).toBe(1);
+    expect(model.careCompletion.diet[1].value).toBe(2);
     expect(model.careCompletion.behaviour[1].value).toBe(1);
     expect(model.careCompletion.activity[1].value).toBe(1);
     expect(model.careCompletion.wellbeing[1].value).toBe(1);
   });
 
-  it('derives the predicted value from the API risk delta', () => {
+  it('keeps current risk and API delta as separate values', () => {
     const observation = buildEnvironmentalRiskObservation(
       {
         snapshot_created_at: '2026-09-10T08:30:00.000Z',
@@ -170,8 +191,8 @@ describe('mother twin chart model', () => {
 
     expect(observation).toMatchObject({
       date: '2026-09-10',
-      mother: { predicted: 5.5, afterSelfCare: 4.2 },
-      baby: { predicted: 4.5, afterSelfCare: 3.8 },
+      mother: { current: 4.2, delta: -1.3 },
+      baby: { current: 3.8, delta: -0.7 },
     });
   });
 });

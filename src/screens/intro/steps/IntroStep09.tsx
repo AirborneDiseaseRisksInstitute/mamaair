@@ -20,7 +20,7 @@ export const IntroStep09: React.FC<IntroStep09Props> = ({ onNext, onBack, onSkip
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
 
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT + 32 },
     contentWrapper: { paddingHorizontal: spacing('md'), paddingTop: HEADER_CLEARANCE },
     questionText: { fontSize: 18, fontFamily: theme.typography.fontFamily.medium, color: theme.colors.textPrimary, marginBottom: spacing('lg'), textAlign: 'left' },

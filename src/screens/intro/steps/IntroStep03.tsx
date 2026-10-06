@@ -34,14 +34,19 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
   };
 
   const formatHeightWeight = (): string => {
-    if (height && weight) return `${height} Cm - ${weight} Kg`;
+    if (height && weight) {
+      return `${t('profile.height_cm', { value: height })} - ${t(
+        'profile.weight_kg',
+        { value: weight },
+      )}`;
+    }
     return '';
   };
 
   const isFormValid = birthday !== null && height !== null && weight !== null;
 
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
     contentWrapper: {
       paddingHorizontal: spacing('md'),

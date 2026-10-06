@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { StatusBar, useColorScheme, Text, TextInput } from 'react-native';
+import { Text, TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppRoot } from './src/App/AppRoot';
 import './src/i18n';
@@ -24,11 +24,8 @@ if ((TextInput as any).defaultProps == null) {
 (TextInput as any).defaultProps.maxFontSizeMultiplier = 1;
 
 function App() {
-  const isDarkMode = useColorScheme() === 'dark';
-
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <AppRoot />
     </SafeAreaProvider>
   );

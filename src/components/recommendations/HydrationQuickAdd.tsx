@@ -1,15 +1,7 @@
 import React, { useMemo } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import {
-  faCheck,
-  faDroplet,
-} from '@fortawesome/free-solid-svg-icons';
+import { faDroplet, faMinus, faPlus } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
 import { radius, spacing, useTheme } from '../../theme';
 
@@ -18,20 +10,18 @@ interface HydrationQuickAddProps {
   selectedIncrementMl: number;
   onSelect: (amount: number) => void;
   goalMl?: number;
-  amounts?: number[];
   disabled?: boolean;
 }
 
-const DEFAULT_AMOUNTS = [100, 250, 500];
+const GLASS_AMOUNT_ML = 250;
+// Input bound only when the API has no goal; this is not a health target.
+const DEFAULT_MAX_GLASSES = 8;
 
-export const HydrationQuickAdd: React.FC<
-  HydrationQuickAddProps
-> = ({
+export const HydrationQuickAdd: React.FC<HydrationQuickAddProps> = ({
   currentTotalMl,
   selectedIncrementMl,
   onSelect,
   goalMl,
-  amounts = DEFAULT_AMOUNTS,
   disabled = false,
 }) => {
   const theme = useTheme();
@@ -39,8 +29,18 @@ export const HydrationQuickAdd: React.FC<
   const displayedTotal = currentTotalMl + selectedIncrementMl;
   const progress =
     goalMl && goalMl > 0
-      ? Math.min(100, Math.round((displayedTotal / goalMl) * 100))
+      ? Math.min(100, Math.floor((displayedTotal / goalMl) * 100))
       : null;
+  const selectedGlassCount = Math.max(
+    0,
+    Math.round(selectedIncrementMl / GLASS_AMOUNT_ML),
+  );
+  const maxGlasses =
+    goalMl && goalMl > 0
+      ? Math.max(1, Math.ceil(goalMl / GLASS_AMOUNT_ML))
+      : DEFAULT_MAX_GLASSES;
+  const canDecrease = !disabled && selectedIncrementMl > 0;
+  const canIncrease = !disabled && selectedGlassCount < maxGlasses;
 
   const styles = useMemo(
     () =>
@@ -49,7 +49,7 @@ export const HydrationQuickAdd: React.FC<
           marginTop: spacing('lg'),
           paddingVertical: spacing('md'),
           borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: '#CBE7F4',
+          borderTopColor: theme.borderColor('#CBE7F4'),
         },
         header: {
           flexDirection: 'row',
@@ -62,7 +62,7 @@ export const HydrationQuickAdd: React.FC<
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: spacing('sm'),
-          backgroundColor: '#E7F7FF',
+          backgroundColor: theme.surfaceColor('#E7F7FF'),
         },
         copy: {
           flex: 1,
@@ -74,7 +74,7 @@ export const HydrationQuickAdd: React.FC<
         },
         total: {
           marginTop: 1,
-          color: '#075F88',
+          color: theme.accentTextColor('#075F88'),
           fontFamily: theme.typography.fontFamily.extraBold,
           fontSize: 18,
         },
@@ -88,7 +88,7 @@ export const HydrationQuickAdd: React.FC<
           overflow: 'hidden',
           marginTop: spacing('sm'),
           borderRadius: 3,
-          backgroundColor: '#DCEFF7',
+          backgroundColor: theme.surfaceColor('#DCEFF7'),
         },
         fill: {
           height: '100%',
@@ -102,47 +102,64 @@ export const HydrationQuickAdd: React.FC<
           fontFamily: theme.typography.fontFamily.regular,
           fontSize: 13,
         },
-        segmented: {
-          minHeight: 50,
-          flexDirection: 'row',
-          overflow: 'hidden',
-          borderWidth: 1,
-          borderColor: '#B9DEED',
-          borderRadius: radius('md'),
-          backgroundColor: '#FFFFFF',
-        },
-        segment: {
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 5,
-        },
-        segmentBorder: {
-          borderLeftWidth: StyleSheet.hairlineWidth,
-          borderLeftColor: '#B9DEED',
-        },
-        segmentSelected: {
-          backgroundColor: '#DDF4FD',
-        },
-        segmentPressed: {
-          opacity: 0.72,
-        },
-        segmentText: {
-          color: '#18779D',
+        stepperLabel: {
+          marginBottom: spacing('xs'),
+          color: theme.accentTextColor('#075F88'),
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 13,
         },
-        segmentTextSelected: {
-          color: '#075F88',
+        stepper: {
+          height: 64,
+          flexDirection: 'row',
+          overflow: 'hidden',
+          borderWidth: 1,
+          borderColor: theme.borderColor('#B9DEED'),
+          borderRadius: radius('md'),
+          backgroundColor: theme.colors.surface,
         },
-        selectionHint: {
-          minHeight: 18,
-          marginTop: spacing('xs'),
-          color: '#18779D',
+        stepperButton: {
+          width: 58,
+          height: '100%',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        decreaseButton: {
+          borderRightWidth: StyleSheet.hairlineWidth,
+          borderRightColor: theme.borderColor('#B9DEED'),
+        },
+        increaseButton: {
+          borderLeftWidth: StyleSheet.hairlineWidth,
+          borderLeftColor: theme.borderColor('#B9DEED'),
+        },
+        stepperButtonPressed: {
+          backgroundColor: theme.surfaceColor('#E7F7FF'),
+        },
+        stepperButtonDisabled: {
+          opacity: 0.35,
+        },
+        stepperValue: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        glassCount: {
+          color: theme.accentTextColor('#075F88'),
+          fontFamily: theme.typography.fontFamily.extraBold,
+          fontSize: 17,
+          textAlign: 'center',
+        },
+        selectedAmount: {
+          marginTop: 2,
+          color: theme.colors.textSecondary,
           fontFamily: theme.typography.fontFamily.medium,
+          fontSize: 12,
+        },
+        glassSize: {
+          marginTop: spacing('xs'),
+          color: theme.colors.textSecondary,
+          fontFamily: theme.typography.fontFamily.regular,
           fontSize: 11,
-          textAlign: 'right',
+          textAlign: 'center',
         },
       }),
     [theme],
@@ -152,20 +169,11 @@ export const HydrationQuickAdd: React.FC<
     <View style={styles.root}>
       <View style={styles.header}>
         <View style={styles.icon}>
-          <FontAwesomeIcon
-            icon={faDroplet}
-            size={16}
-            color="#179FD2"
-          />
+          <FontAwesomeIcon icon={faDroplet} size={16} color="#179FD2" />
         </View>
         <View style={styles.copy}>
-          <Text style={styles.label}>
-            {t('today.water_today')}
-          </Text>
-          <Text
-            accessibilityLiveRegion="polite"
-            style={styles.total}
-          >
+          <Text style={styles.label}>{t('today.water_today')}</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.total}>
             {displayedTotal} ml
           </Text>
         </View>
@@ -184,74 +192,81 @@ export const HydrationQuickAdd: React.FC<
           accessibilityValue={{
             min: 0,
             max: goalMl,
-            now: displayedTotal,
+            now: Math.min(displayedTotal, goalMl ?? 0),
           }}
           style={styles.track}
         >
-          <View
-            style={[
-              styles.fill,
-              { width: `${progress}%` },
-            ]}
-          />
+          <View style={[styles.fill, { width: `${progress}%` }]} />
         </View>
       ) : null}
 
       <Text style={styles.prompt}>
         {t('feeling_checkin.water_description')}
       </Text>
-      <View
-        accessibilityRole="radiogroup"
-        style={styles.segmented}
-      >
-        {amounts.map((amount, index) => {
-          const selected = selectedIncrementMl === amount;
-          return (
-            <Pressable
-              key={amount}
-              accessibilityRole="radio"
-              accessibilityLabel={t(
-                'feeling_checkin.add_water',
-                { amount },
-              )}
-              accessibilityState={{ selected, disabled }}
-              disabled={disabled}
-              onPress={() => onSelect(selected ? 0 : amount)}
-              style={({ pressed }) => [
-                styles.segment,
-                index > 0 && styles.segmentBorder,
-                selected && styles.segmentSelected,
-                pressed && styles.segmentPressed,
-              ]}
-            >
-              {selected ? (
-                <FontAwesomeIcon
-                  icon={faCheck}
-                  size={10}
-                  color="#075F88"
-                />
-              ) : null}
-              <Text
-                style={[
-                  styles.segmentText,
-                  selected && styles.segmentTextSelected,
-                ]}
-              >
-                +{amount} ml
-              </Text>
-            </Pressable>
-          );
-        })}
+      <Text style={styles.stepperLabel}>
+        {t('feeling_checkin.water_glasses_label')}
+      </Text>
+      <View style={styles.stepper}>
+        <Pressable
+          testID="hydration-decrease"
+          accessibilityRole="button"
+          accessibilityLabel={t('feeling_checkin.decrease_water')}
+          accessibilityState={{ disabled: !canDecrease }}
+          disabled={!canDecrease}
+          hitSlop={8}
+          onPress={() =>
+            onSelect(Math.max(0, selectedIncrementMl - GLASS_AMOUNT_ML))
+          }
+          style={({ pressed }) => [
+            styles.stepperButton,
+            styles.decreaseButton,
+            pressed && canDecrease && styles.stepperButtonPressed,
+            !canDecrease && styles.stepperButtonDisabled,
+          ]}
+        >
+          <FontAwesomeIcon icon={faMinus} size={16} color="#18779D" />
+        </Pressable>
+
+        <View style={styles.stepperValue}>
+          <Text
+            testID="hydration-glass-count"
+            accessibilityLiveRegion="polite"
+            style={styles.glassCount}
+          >
+            {t('feeling_checkin.water_glass_count', {
+              count: selectedGlassCount,
+            })}
+          </Text>
+          <Text
+            testID="hydration-selected-amount"
+            style={styles.selectedAmount}
+          >
+            {selectedIncrementMl} ml
+          </Text>
+        </View>
+
+        <Pressable
+          testID="hydration-increase"
+          accessibilityRole="button"
+          accessibilityLabel={t('feeling_checkin.increase_water')}
+          accessibilityState={{ disabled: !canIncrease }}
+          disabled={!canIncrease}
+          hitSlop={8}
+          onPress={() => onSelect(selectedIncrementMl + GLASS_AMOUNT_ML)}
+          style={({ pressed }) => [
+            styles.stepperButton,
+            styles.increaseButton,
+            pressed && canIncrease && styles.stepperButtonPressed,
+            !canIncrease && styles.stepperButtonDisabled,
+          ]}
+        >
+          <FontAwesomeIcon icon={faPlus} size={16} color="#18779D" />
+        </Pressable>
       </View>
-      <Text
-        accessibilityLiveRegion="polite"
-        style={styles.selectionHint}
-      >
-        {selectedIncrementMl > 0
-          ? t('feeling_checkin.water_adding', {
-              amount: selectedIncrementMl,
-            })
-          : ' '}
+      <Text style={styles.glassSize}>
+        {t('feeling_checkin.water_glass_size', {
+          amount: GLASS_AMOUNT_ML,
+        })}
       </Text>
     </View>
   );

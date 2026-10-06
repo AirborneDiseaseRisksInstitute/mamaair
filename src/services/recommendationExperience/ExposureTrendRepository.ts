@@ -70,6 +70,15 @@ export const loadExposureTrend = async ({
 }): Promise<ExposureTrendExperience> => {
   const explicitStatus =
     resolveRecommendationCapabilityStatus('exposureHistory');
+  const pointsFromSummary = summaryHistory(summary);
+  if (pointsFromSummary.length) {
+    return {
+      points: pointsFromSummary,
+      status: explicitStatus,
+      source: 'summary',
+    };
+  }
+
   if (explicitStatus === 'available') {
     try {
       const points = normalizeHistory(
@@ -82,32 +91,18 @@ export const loadExposureTrend = async ({
           source: 'history',
         };
       }
-      const pointsFromSummary = summaryHistory(summary);
       return {
-        points: pointsFromSummary,
+        points: [],
         status: 'available',
-        // Reference trajectories never substitute for recorded exposure
-        // history when backend or summary data is unavailable.
-        source: pointsFromSummary.length ? 'summary' : 'none',
+        source: 'none',
       };
     } catch {
-      const points = summaryHistory(summary);
       return {
-        points,
+        points: [],
         status: 'unavailable',
-        // Do not substitute reference trajectory values in Today.
-        source: points.length ? 'summary' : 'none',
+        source: 'none',
       };
     }
-  }
-
-  const points = summaryHistory(summary);
-  if (points.length) {
-    return {
-      points,
-      status: explicitStatus,
-      source: 'summary',
-    };
   }
 
   return {

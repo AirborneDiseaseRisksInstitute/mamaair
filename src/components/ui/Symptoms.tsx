@@ -182,7 +182,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({
       paddingHorizontal: 14,
       paddingVertical: 10,
       borderRadius: 24,
-      backgroundColor: '#FFF',
+      backgroundColor: theme.colors.surface,
       borderWidth: 2,
       borderColor: 'transparent',
       position: 'relative',
@@ -251,7 +251,7 @@ export const Symptoms: React.FC<SymptomsProps> = ({
     applyButtonContainer: {
       paddingTop: spacing('md'),
       paddingBottom: spacing('md'),
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderTopWidth: 1,
       borderTopColor: theme.colors.neutral200,
     },
@@ -288,13 +288,13 @@ export const Symptoms: React.FC<SymptomsProps> = ({
       flex: 1,
       paddingVertical: 10,
       borderRadius: 24,
-      backgroundColor: '#E3F6FF',
+      backgroundColor: theme.surfaceColor('#E3F6FF'),
       alignItems: 'center',
     },
     waterQuickBtnText: {
       fontSize: 14,
       fontFamily: theme.typography.fontFamily.medium,
-      color: '#0288D1',
+      color: theme.accentTextColor('#0288D1'),
     },
     waterIncrementRow: {
       flexDirection: 'row',

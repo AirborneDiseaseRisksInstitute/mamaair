@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
 import { useTheme, spacing } from '../../../theme';
 import { Button, FixedButtonContainer, OrangeHalo, BackButton, ProgressBar, RadioOption, IntroTitleBox } from '../../../components/ui';
@@ -21,13 +21,18 @@ const LANGUAGE_FLAG_MAP: Record<string, string | undefined> = {
 export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { setLanguage, profile } = useUserStore();
+  const { confirmIntroLanguage, profile } = useUserStore();
   const { languages } = useMetaChoices();
-  const [selectedLanguage, setSelectedLanguageLocal] = useState<string | null>(profile.language || null);
+  const profileLanguage = profile.language || null;
+  const [selectedLanguage, setSelectedLanguageLocal] = useState<string | null>(profileLanguage);
   const [titleBoxCenterY, setTitleBoxCenterY] = useState<number>(SCREEN_HEIGHT * 0.3);
 
+  useEffect(() => {
+    setSelectedLanguageLocal(profileLanguage);
+  }, [profileLanguage]);
+
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
     contentWrapper: { paddingHorizontal: spacing('md'), paddingTop: HEADER_CLEARANCE },
     pickLanguageText: { fontSize: 18, fontFamily: theme.typography.fontFamily.medium, color: theme.colors.textPrimary, marginBottom: spacing('lg'), textAlign: 'left' },
@@ -59,7 +64,12 @@ export const IntroStep04: React.FC<IntroStep04Props> = ({ onNext, onBack }) => {
       <FixedButtonContainer>
         <Button
           title={t('common.continue')}
-          onPress={() => { if (selectedLanguage) { setLanguage(selectedLanguage); onNext?.(); } }}
+          onPress={() => {
+            if (selectedLanguage) {
+              confirmIntroLanguage(selectedLanguage);
+              onNext?.();
+            }
+          }}
           disabled={!selectedLanguage}
         />
       </FixedButtonContainer>

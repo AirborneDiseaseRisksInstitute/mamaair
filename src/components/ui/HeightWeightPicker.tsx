@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import { BottomSheet } from './BottomSheet';
 import { ReliableWheelPicker } from './ReliableWheelPicker';
 import { useTheme, spacing, radius } from '../../theme';
 import { useTranslation } from 'react-i18next';
+import { calculateMetricBmi } from '../../utils/bodyMeasurements';
 
 interface HeightWeightPickerProps {
   visible: boolean;
@@ -19,13 +20,9 @@ interface HeightWeightPickerProps {
   title?: string;
 }
 
-// Generate height options (100cm - 220cm)
+// The profile API and local store use metric values as their canonical format.
 const heightOptions = Array.from({ length: 121 }, (_, i) => 100 + i);
-const heightLabels = heightOptions.map((h) => `${h}cm`);
-
-// Generate weight options (30kg - 200kg)
 const weightOptions = Array.from({ length: 171 }, (_, i) => 30 + i);
-const weightLabels = weightOptions.map((w) => `${w}kg`);
 
 const ITEM_HEIGHT = 56;
 const VISIBLE_REST = 2;
@@ -39,7 +36,21 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
   title,
 }) => {
   const theme = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const heightLabels = useMemo(
+    () =>
+      heightOptions.map(height =>
+        t('profile.height_cm', { value: height }),
+      ),
+    [t],
+  );
+  const weightLabels = useMemo(
+    () =>
+      weightOptions.map(weight =>
+        t('profile.weight_kg', { value: weight }),
+      ),
+    [t],
+  );
 
   const getInitialHeightIndex = useCallback(() => {
     const index = heightOptions.indexOf(initialHeight);
@@ -53,13 +64,6 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
 
   const [heightIndex, setHeightIndex] = useState(getInitialHeightIndex());
   const [weightIndex, setWeightIndex] = useState(getInitialWeightIndex());
-  
-  // Calculate BMI
-  const calculateBMI = (height: number, weight: number): number => {
-    const heightInMeters = height / 100;
-    return Math.round(weight / (heightInMeters * heightInMeters));
-  };
-
   const handleConfirm = () => {
     onConfirm(heightOptions[heightIndex], weightOptions[weightIndex]);
     onClose();
@@ -78,6 +82,14 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
 
   const selectedHeight = heightOptions[heightIndex];
   const selectedWeight = weightOptions[weightIndex];
+  const bmi = calculateMetricBmi(selectedHeight, selectedWeight);
+  const formattedBmi =
+    bmi === null
+      ? '-'
+      : bmi.toLocaleString(i18n.resolvedLanguage ?? 'en', {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        });
 
   // Scale function: center is largest
   const scaleFunction = useCallback((x: number) => {
@@ -138,7 +150,6 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
                 containerStyle={styles.wheelContainer}
                 scaleFunction={scaleFunction}
                 opacityFunction={opacityFunction}
-                decelerationRate="fast"
               />
             </View>
 
@@ -155,7 +166,6 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
                 containerStyle={styles.wheelContainer}
                 scaleFunction={scaleFunction}
                 opacityFunction={opacityFunction}
-                decelerationRate="fast"
               />
             </View>
           </View>
@@ -172,7 +182,7 @@ export const HeightWeightPicker: React.FC<HeightWeightPickerProps> = ({
               }}
               allowFontScaling={false}
             >
-              {calculateBMI(selectedHeight, selectedWeight)}
+              {formattedBmi}
             </Text>
           </Text>
         </View>

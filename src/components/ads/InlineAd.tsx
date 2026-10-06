@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
   container: {
     marginTop: spacing('lg'),
     paddingTop: spacing('sm'),
-    paddingBottom: spacing('xl') + 72,
+    paddingBottom: spacing('lg'),
     borderTopWidth: 1,
     alignItems: 'center',
   },

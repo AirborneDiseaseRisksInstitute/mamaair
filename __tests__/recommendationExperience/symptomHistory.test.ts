@@ -49,18 +49,34 @@ const experience = (
       source: 'localFallback',
     },
   ],
-  moods: [],
-  feelings: [],
+  moods: [
+    {
+      key: 'api:mood:5',
+      kind: 'mood',
+      group: 'wellbeing',
+      name: 'Calm',
+      emoji: '😌',
+      apiId: 5,
+      source: 'api',
+    },
+  ],
+  feelings: [
+    {
+      key: 'fallback:feeling:poor-sleep',
+      kind: 'wellbeingFeeling',
+      group: 'wellbeing',
+      name: 'Poor sleep',
+      emoji: '😴',
+      source: 'localFallback',
+    },
+  ],
   selection: {
-    mommySymptomKeys: [
-      'api:mommy:1',
-      'fallback:mommy:bleeding',
-    ],
-    moodKeys: [],
-    feelingKeys: [],
+    mommySymptomKeys: ['api:mommy:1', 'fallback:mommy:bleeding'],
+    moodKeys: ['api:mood:5'],
+    feelingKeys: ['fallback:feeling:poor-sleep'],
     waterIncrementMl: 0,
   },
-  waterDailyTotalMl: 0,
+  waterDailyTotalMl: 1250,
   recordState: 'recorded',
   capabilities: {
     mommySymptoms: capability('available'),
@@ -78,10 +94,8 @@ describe('symptom history repository', () => {
     jest.clearAllMocks();
   });
 
-  it('uses grouped mommy and baby symptom class statistics without exact events', async () => {
-    (
-      loadFeelingCheckInExperience as jest.Mock
-    ).mockResolvedValue(experience());
+  it('returns exact check-in details alongside grouped class statistics', async () => {
+    (loadFeelingCheckInExperience as jest.Mock).mockResolvedValue(experience());
     (SymptomsService.getMommyStatisticsClasses as jest.Mock).mockResolvedValue({
       classes: [
         { symptom_class: 1, quantity: 2 },
@@ -105,6 +119,29 @@ describe('symptom history repository', () => {
     });
     expect(SymptomsService.getBabyChecklist).not.toHaveBeenCalled();
     expect(SymptomsService.getBabySelection).not.toHaveBeenCalled();
+    expect(result.moods).toEqual([
+      {
+        key: 'api:mood:5',
+        kind: 'mood',
+        group: 'wellbeing',
+        name: 'Calm',
+        emoji: '😌',
+        source: 'api',
+      },
+    ]);
+    expect(result.feelings).toEqual([
+      {
+        key: 'fallback:feeling:poor-sleep',
+        kind: 'wellbeingFeeling',
+        group: 'wellbeing',
+        name: 'Poor sleep',
+        emoji: '😴',
+        source: 'localFallback',
+      },
+    ]);
+    expect(result.physical.map(item => item.name)).toEqual(['Headache']);
+    expect(result.warning.map(item => item.name)).toEqual(['Vaginal bleeding']);
+    expect(result.waterTotalMl).toBe(1250);
     expect(result.classes).toEqual([
       {
         key: 'class1',
@@ -133,9 +170,7 @@ describe('symptom history repository', () => {
   });
 
   it('falls back to local mommy selections as grouped classes only', async () => {
-    (
-      loadFeelingCheckInExperience as jest.Mock
-    ).mockResolvedValue(experience());
+    (loadFeelingCheckInExperience as jest.Mock).mockResolvedValue(experience());
     (SymptomsService.getMommyStatisticsClasses as jest.Mock).mockRejectedValue(
       new Error('offline'),
     );
@@ -168,17 +203,18 @@ describe('symptom history repository', () => {
   });
 
   it('keeps ambiguous empty/failed sources explicit', async () => {
-    (
-      loadFeelingCheckInExperience as jest.Mock
-    ).mockResolvedValue(
+    (loadFeelingCheckInExperience as jest.Mock).mockResolvedValue(
       experience({
         mommySymptoms: [],
+        moods: [],
+        feelings: [],
         selection: {
           mommySymptomKeys: [],
           moodKeys: [],
           feelingKeys: [],
           waterIncrementMl: 0,
         },
+        waterDailyTotalMl: 0,
         recordState: 'unknown',
         capabilities: {
           ...experience().capabilities,
@@ -201,6 +237,11 @@ describe('symptom history repository', () => {
     expect(result.recordState).toBe('unknown');
     expect(result.mommyStatus).toBe('unavailable');
     expect(result.babyStatus).toBe('unavailable');
+    expect(result.moods).toEqual([]);
+    expect(result.feelings).toEqual([]);
+    expect(result.physical).toEqual([]);
+    expect(result.warning).toEqual([]);
+    expect(result.waterTotalMl).toBe(0);
     expect(result.classes).toEqual([]);
   });
 });

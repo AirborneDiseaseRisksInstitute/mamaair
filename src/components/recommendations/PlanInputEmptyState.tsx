@@ -60,7 +60,7 @@ export const PlanInputEmptyState: React.FC<PlanInputEmptyStateProps> = ({
           alignItems: 'center',
           paddingHorizontal: spacing('md'),
           paddingVertical: spacing('sm'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         actionBorder: {
           borderTopWidth: StyleSheet.hairlineWidth,

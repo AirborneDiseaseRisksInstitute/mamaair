@@ -148,6 +148,16 @@ const READY_PLAN_INPUTS: PlanInputReadiness = {
 describe('daily plan composition', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    const storeMock = jest.requireMock(
+      '../../src/store/useRecommendationExperienceStore',
+    ) as {
+      __testState: {
+        actionCompletions: Record<string, unknown>;
+        presentedActions: Record<string, unknown>;
+      };
+    };
+    storeMock.__testState.actionCompletions = {};
+    storeMock.__testState.presentedActions = {};
     (DailyTasksService.getDailyTasks as jest.Mock).mockResolvedValue(
       BACKEND_TASKS,
     );
@@ -192,6 +202,67 @@ describe('daily plan composition', () => {
     expect(AdviceService.getAdvice).not.toHaveBeenCalled();
     expect(SummaryService.getSummary).not.toHaveBeenCalled();
     expect(RecommendationCompletionService.getCompletions).not.toHaveBeenCalled();
+  });
+
+  it('requests a fresh backend Daily Plan per date without carrying previous-day backend completions forward', async () => {
+    const storeMock = jest.requireMock(
+      '../../src/store/useRecommendationExperienceStore',
+    ) as {
+      __testState: {
+        savePresentedActions: jest.Mock;
+      };
+    };
+    (DailyPlanService.getDailyPlan as jest.Mock).mockImplementation(date =>
+      Promise.resolve({
+        date,
+        timezone: 'Africa/Nairobi',
+        primary_actions: [
+          {
+            id: 'hydration',
+            domain: 'nutrition',
+            title: 'Drink water',
+            completion_state:
+              date === '2026-09-10' ? 'completed' : 'not_done',
+          },
+        ],
+        additional_actions: [],
+        support_actions: [],
+      }),
+    );
+
+    const previousDay = await loadDailyPlanExperience(
+      { backendUserId: '7' },
+      '2026-09-10',
+      { inputReadiness: READY_PLAN_INPUTS },
+    );
+    const nextDay = await loadDailyPlanExperience(
+      { backendUserId: '7' },
+      '2026-09-11',
+      { inputReadiness: READY_PLAN_INPUTS },
+    );
+
+    expect(DailyPlanService.getDailyPlan).toHaveBeenCalledWith('2026-09-10');
+    expect(DailyPlanService.getDailyPlan).toHaveBeenCalledWith('2026-09-11');
+    expect(previousDay.experience.primaryActions[0]).toMatchObject({
+      key: 'daily-plan:primary:hydration',
+      completed: true,
+      state: 'completed',
+    });
+    expect(nextDay.experience).toMatchObject({
+      date: '2026-09-11',
+      source: 'dailyPlanApi',
+    });
+    expect(nextDay.experience.primaryActions[0]).toMatchObject({
+      key: 'daily-plan:primary:hydration',
+      completed: false,
+      state: 'pending',
+    });
+    expect(storeMock.__testState.savePresentedActions).toHaveBeenCalledWith(
+      expect.objectContaining({ date: '2026-09-10' }),
+    );
+    expect(storeMock.__testState.savePresentedActions).toHaveBeenCalledWith(
+      expect.objectContaining({ date: '2026-09-11' }),
+    );
   });
 
   it('builds Today tasks from backend daily tasks ordered by sort_order', () => {
@@ -249,19 +320,15 @@ describe('daily plan composition', () => {
     });
   });
 
-  it('distributes summary risk impact across active daily actions', () => {
+  it('does not infer action impact from a summary-level risk delta', () => {
     const plan = composeDailyPlan({
       ...BASE_INPUT,
       totalRiskImpact: -15,
     });
 
-    expect(plan.riskImpact).toEqual({
-      totalValue: -15,
-      source: 'summaryRisksDelta',
-      missingBackendActionValues: true,
-    });
+    expect(plan.riskImpact).toBeUndefined();
     expect(plan.primaryActions.map(action => action.riskImpact?.value)).toEqual(
-      [-5, -5, -5],
+      [undefined, undefined, undefined],
     );
   });
 
@@ -279,8 +346,8 @@ describe('daily plan composition', () => {
       true,
     );
 
-    expect(completedRiskImpactValue(result.experience)).toBe(-5);
-    expect(riskImpactCompletionPercent(result.experience)).toBe(33);
+    expect(completedRiskImpactValue(result.experience)).toBe(0);
+    expect(riskImpactCompletionPercent(result.experience)).toBe(0);
   });
 
   it('classifies high urgency medical metadata as medical attention', () => {
@@ -506,7 +573,7 @@ describe('daily plan composition', () => {
     });
   });
 
-  it('uses backend action impact values before allocating remaining summary impact', () => {
+  it('uses only explicit backend action impact values', () => {
     const plan = composeBackendDailyPlan({
       plan: {
         date: '2026-09-05',
@@ -541,21 +608,18 @@ describe('daily plan composition', () => {
     });
 
     expect(plan.riskImpact).toEqual({
-      totalValue: -10,
-      source: 'summaryRisksDelta',
+      totalValue: -4,
+      source: 'backendAction',
       missingBackendActionValues: true,
     });
     expect(plan.primaryActions[0].riskImpact).toEqual({
       value: -4,
       source: 'backendAction',
     });
-    expect(plan.primaryActions[1].riskImpact).toEqual({
-      value: -6,
-      source: 'allocatedSummary',
-    });
+    expect(plan.primaryActions[1].riskImpact).toBeUndefined();
     expect(plan.additionalActions.activity[0].riskImpact).toBeUndefined();
     expect(completedRiskImpactValue(plan)).toBe(-4);
-    expect(riskImpactCompletionPercent(plan)).toBe(40);
+    expect(riskImpactCompletionPercent(plan)).toBe(100);
   });
 
   it('does not replace an unavailable Daily Plan with legacy Daily Tasks', async () => {
@@ -598,6 +662,24 @@ describe('daily plan composition', () => {
     });
     expect(result.experience.medicalAttention).toHaveLength(1);
     expect(result.experience.guidanceRecommendations).toEqual([]);
+  });
+
+  it('reports the failing capability and server error separately', async () => {
+    (DailyPlanService.getDailyPlan as jest.Mock).mockRejectedValue({
+      response: { status: 503 },
+    });
+
+    const result = await loadDailyPlanExperience(
+      { backendUserId: '7' },
+      BASE_INPUT.date,
+      { inputReadiness: READY_PLAN_INPUTS },
+    );
+
+    expect(result.connectionError).toBe(false);
+    expect(result.issues).toContainEqual({
+      capability: 'dailyPlan',
+      failure: { kind: 'server', status: 503 },
+    });
   });
 
   it('preserves plan-improvement Advice when Daily Plan is unavailable', async () => {

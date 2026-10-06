@@ -32,21 +32,38 @@ import {
   isErrorWithCode,
   isSuccessResponse,
 } from '@react-native-google-signin/google-signin';
-import { getAuthErrorMessage } from '../../utils/authErrors';
+import {
+  getAuthErrorCode,
+  getAuthErrorMessage,
+  isPasswordValidationError,
+} from '../../utils/authErrors';
+import { isValidAuthEmail } from '../../utils/authValidation';
 import type { LegalDocumentKind } from '../../content/legalDocuments';
+import {
+  getRetryAfterSeconds,
+  useAuthRequestCooldown,
+} from '../../hooks/useAuthRequestCooldown';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface SignUpScreenProps {
-  onSignUp?: (email: string, password: string) => void;
+  onSignUp?: (email: string) => void;
   onLogin?: () => void;
+  onForgotPassword?: () => void;
   onGoogleSignIn?: () => void;
   onOpenLegal?: (document: LegalDocumentKind) => void;
 }
 
+type SignUpStep =
+  | 'details'
+  | 'checkEmail'
+  | 'accountExists'
+  | 'verificationRequired';
+
 export const SignUpScreen: React.FC<SignUpScreenProps> = ({
   onSignUp,
   onLogin,
+  onForgotPassword,
   onGoogleSignIn: _onGoogleSignIn,
   onOpenLegal,
 }) => {
@@ -57,9 +74,10 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordValidationError, setPasswordValidationError] = useState('');
   const [loading, setLoading] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
-  const [step, setStep] = useState<'details' | 'checkEmail'>('details');
+  const [step, setStep] = useState<SignUpStep>('details');
   const [verificationEmail, setVerificationEmail] = useState('');
   const setTokens = useAuthStore(state => state.setTokens);
   const setEmailStore = useUserStore(state => state.setEmail);
@@ -67,17 +85,26 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
   const emailInputRef = useRef<InputRef>(null);
   const passwordInputRef = useRef<InputRef>(null);
   const confirmPasswordInputRef = useRef<InputRef>(null);
+  const requestInFlightRef = useRef(false);
+  const cooldownEmail =
+    step === 'details' ? email : verificationEmail || email;
+  const {
+    secondsRemaining,
+    isCoolingDown,
+    getRemainingSeconds,
+    startCooldown,
+  } = useAuthRequestCooldown('registration', cooldownEmail);
 
   React.useEffect(() => {
     GoogleSignin.configure({
       webClientId: '212373353528-fe2pe6nb9i7n65gm306lsp5lno1ep68n.apps.googleusercontent.com',
-      offlineAccess: true,
-      forceCodeForRefreshToken: true,
     });
   }, []);
 
   const handleGoogleLogin = async () => {
-    if (!legalAccepted) return;
+    if (!legalAccepted || requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
+    let signInStage: 'google' | 'backend' | 'secureStorage' = 'google';
     try {
       setLoading(true);
       await GoogleSignin.hasPlayServices();
@@ -86,12 +113,14 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
       if (isSuccessResponse(response)) {
         const idToken = response.data.idToken;
         if (idToken) {
+          signInStage = 'backend';
           const authResponse = await AuthService.googleSignIn(idToken);
-          setTokens(authResponse.access, authResponse.refresh);
+          signInStage = 'secureStorage';
+          await setTokens(authResponse.access, authResponse.refresh);
           if (authResponse.user?.email) {
             setEmailStore(authResponse.user.email);
           }
-          onSignUp?.(authResponse.user?.email || '', '');
+          onSignUp?.(authResponse.user?.email || '');
         } else {
           showToast({
             type: 'error',
@@ -103,6 +132,17 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
         // sign in was cancelled by user
       }
     } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[GoogleSignIn] Failed', {
+          stage: signInStage,
+          nativeCode: signInStage === 'google' ? error?.code : undefined,
+          httpStatus: error?.response?.status,
+          backendCode: error?.response?.data?.code,
+          backendDetail:
+            error?.response?.data?.detail ?? error?.response?.data?.message,
+          requestId: error?.response?.headers?.['x-request-id'],
+        });
+      }
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.SIGN_IN_CANCELLED:
@@ -119,31 +159,38 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             });
             break;
           default:
-            console.error('Google Sign-In Error', error);
+            console.warn('Google Sign-In failed:', error.code);
             showToast({
               type: 'error',
               title: t('auth.google_sign_in_error'),
-              message: getAuthErrorMessage(error, 'google'),
+              message: getAuthErrorMessage(error, 'google', key => t(key)),
             });
         }
       } else {
-        console.error('Google Sign-In Error', error);
+        console.warn('Google Sign-In failed');
         showToast({
           type: 'error',
           title: t('auth.google_sign_in_error'),
-          message: getAuthErrorMessage(error, 'google'),
+          message: getAuthErrorMessage(error, 'google', key => t(key)),
         });
       }
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   };
 
+  const passwordsMatch = password === confirmPassword;
+  const showPasswordMismatch =
+    confirmPassword.length > 0 && !passwordsMatch;
+  const passwordErrorMessage = showPasswordMismatch
+    ? t('validation.passwords_do_not_match')
+    : passwordValidationError;
   const isFormValid =
-    email.trim().length > 0 &&
-    password.trim().length > 0 &&
-    confirmPassword.trim().length > 0 &&
-    password === confirmPassword;
+    isValidAuthEmail(email) &&
+    password.length > 0 &&
+    confirmPassword.length > 0 &&
+    passwordsMatch;
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -182,6 +229,14 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
     inputContainer: {
       marginTop: spacing('sm'),
     },
+    passwordMismatch: {
+      fontSize: theme.typography.fontSize.sm,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: theme.accentTextColor('#FB2C36'),
+      marginTop: -spacing('sm'),
+      marginBottom: spacing('sm'),
+      marginLeft: spacing('sm'),
+    },
     signUpButtonContainer: {
       marginTop: spacing('md'),
       marginBottom: spacing('md'),
@@ -199,8 +254,25 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
       fontFamily: theme.typography.fontFamily.medium,
       color: theme.colors.textSecondary,
       textAlign: 'center',
+      marginBottom: spacing('md'),
+      lineHeight: 20,
+    },
+    spamHint: {
+      fontSize: theme.typography.fontSize.sm,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
       marginBottom: spacing('lg'),
       lineHeight: 20,
+    },
+    accountAction: {
+      alignItems: 'center',
+      marginTop: spacing('md'),
+    },
+    accountActionText: {
+      fontSize: theme.typography.fontSize.sm,
+      fontFamily: theme.typography.fontFamily.bold,
+      color: theme.colors.orange500,
     },
     resendButton: {
       alignItems: 'center',
@@ -210,6 +282,9 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
       fontSize: theme.typography.fontSize.sm,
       fontFamily: theme.typography.fontFamily.bold,
       color: theme.colors.orange500,
+    },
+    resendTextDisabled: {
+      color: theme.colors.neutral600,
     },
     loginLinkContainer: {
       alignItems: 'center',
@@ -300,12 +375,16 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
   }), [theme]);
 
   const handleSignUp = async () => {
-    if (!isFormValid || !legalAccepted) return;
+    if (!isFormValid || !legalAccepted || requestInFlightRef.current) return;
     const nextEmail = email.trim();
+    if (getRemainingSeconds(nextEmail) > 0) return;
+    requestInFlightRef.current = true;
+    setPasswordValidationError('');
 
     try {
       setLoading(true);
-      await AuthService.registerWithEmail(nextEmail, password.trim());
+      await AuthService.registerWithEmail(nextEmail, password);
+      startCooldown(nextEmail);
       setVerificationEmail(nextEmail);
       setStep('checkEmail');
       showToast({
@@ -314,23 +393,62 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
         message: t('auth.registration_email_link_sent', { email: nextEmail }),
       });
     } catch (error: any) {
-      console.error('Email registration error:', error);
+      const errorCode = getAuthErrorCode(error);
+      if (
+        error?.response?.status === 409 &&
+        (errorCode === 'account_exists' ||
+          errorCode === 'email_verification_required')
+      ) {
+        setVerificationEmail(nextEmail);
+        setStep(
+          errorCode === 'email_verification_required'
+            ? 'verificationRequired'
+            : 'accountExists',
+        );
+        return;
+      }
+      if (error?.response?.status === 429) {
+        const retryAfterSeconds = getRetryAfterSeconds(error);
+        startCooldown(nextEmail, retryAfterSeconds);
+        showToast({
+          type: 'error',
+          title: t('auth.too_many_requests_title'),
+          message: t('auth.too_many_requests_message', {
+            seconds: retryAfterSeconds,
+          }),
+        });
+        return;
+      }
+      console.warn('Email registration failed:', error?.response?.status ?? 'network');
+      const errorMessage = getAuthErrorMessage(
+        error,
+        'signup',
+        key => t(key),
+      );
+      if (isPasswordValidationError(error)) {
+        setPasswordValidationError(errorMessage);
+      }
       showToast({
         type: 'error',
         title: t('auth.sign_up_failed'),
-        message: getAuthErrorMessage(error, 'signup'),
+        message: errorMessage,
       });
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   };
 
   const handleResendVerification = async () => {
+    if (requestInFlightRef.current) return;
     const nextEmail = verificationEmail || email.trim();
+    if (getRemainingSeconds(nextEmail) > 0) return;
+    requestInFlightRef.current = true;
 
     try {
       setLoading(true);
       await AuthService.resendEmailVerification(nextEmail);
+      startCooldown(nextEmail);
       showToast({
         type: 'success',
         title: t('auth.check_email_title'),
@@ -339,19 +457,41 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
         }),
       });
     } catch (error: any) {
-      console.error('Email verification resend error:', error);
+      if (error?.response?.status === 429) {
+        const retryAfterSeconds = getRetryAfterSeconds(error);
+        startCooldown(nextEmail, retryAfterSeconds);
+        showToast({
+          type: 'error',
+          title: t('auth.too_many_requests_title'),
+          message: t('auth.too_many_requests_message', {
+            seconds: retryAfterSeconds,
+          }),
+        });
+        return;
+      }
+      console.warn('Email verification resend failed:', error?.response?.status ?? 'network');
       showToast({
         type: 'error',
         title: t('auth.verification_resend_failed_title'),
-        message: getAuthErrorMessage(error, 'verification'),
+        message: getAuthErrorMessage(error, 'verification', key => t(key)),
       });
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   };
 
   const handleEditDetails = () => {
     setStep('details');
+  };
+
+  const getScreenTitle = () => {
+    if (step === 'details') return t('auth.new_here');
+    if (step === 'accountExists') return t('auth.account_exists_title');
+    if (step === 'verificationRequired') {
+      return t('auth.verification_required_title');
+    }
+    return t('auth.check_email_title');
   };
 
   const GoogleIcon = () => (
@@ -393,16 +533,16 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
             {/* Logo */}
             <View style={styles.logoContainer}>
               <Image
-                source={require('../../assets/images/logoBlack.png')}
+                source={theme.mode === 'dark'
+                  ? require('../../assets/images/logoWhite.png')
+                  : require('../../assets/images/logoBlack.png')}
                 style={styles.logo}
               />
             </View>
 
             {/* Welcome Text */}
             <Text style={styles.welcomeText} allowFontScaling={false}>
-              {step === 'details'
-                ? t('auth.new_here')
-                : t('auth.check_email_title')}
+              {getScreenTitle()}
             </Text>
 
             {step === 'details' ? (
@@ -428,7 +568,10 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
                     placeholder={t('auth.password_placeholder')}
                     type="password"
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={value => {
+                      setPassword(value);
+                      setPasswordValidationError('');
+                    }}
                     nextInputRef={confirmPasswordInputRef}
                   />
                 </View>
@@ -441,10 +584,23 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
                     placeholder={t('auth.confirm_password_placeholder')}
                     type="password"
                     value={confirmPassword}
-                    onChangeText={setConfirmPassword}
+                    onChangeText={value => {
+                      setConfirmPassword(value);
+                      setPasswordValidationError('');
+                    }}
                     onSubmitEditing={handleSignUp}
                   />
                 </View>
+                {passwordErrorMessage ? (
+                  <Text
+                    testID="signup-password-error"
+                    style={styles.passwordMismatch}
+                    accessibilityLiveRegion="polite"
+                    allowFontScaling={false}
+                  >
+                    {passwordErrorMessage}
+                  </Text>
+                ) : null}
 
                 <TouchableOpacity
                   accessibilityRole="checkbox"
@@ -474,19 +630,29 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
                 {/* Sign Up Button */}
                 <View style={styles.signUpButtonContainer}>
                   <Button
-                    title={loading ? t('auth.creating_account') : t('auth.sign_up')}
+                    title={
+                      loading
+                        ? t('auth.creating_account')
+                        : isCoolingDown
+                          ? t('auth.request_again_in', {
+                              seconds: secondsRemaining,
+                            })
+                          : t('auth.sign_up')
+                    }
                     onPress={handleSignUp}
-                    disabled={loading || !isFormValid || !legalAccepted}
+                    disabled={
+                      loading ||
+                      isCoolingDown ||
+                      !isFormValid ||
+                      !legalAccepted
+                    }
                   />
                 </View>
               </>
-            ) : (
+            ) : step === 'accountExists' ? (
               <>
                 <Text style={styles.verificationDescription} allowFontScaling={false}>
-                  {t('auth.registration_email_instructions')}
-                </Text>
-                <Text style={styles.sentText} allowFontScaling={false}>
-                  {t('auth.registration_email_link_sent', {
+                  {t('auth.account_exists_description', {
                     email: verificationEmail,
                   })}
                 </Text>
@@ -498,13 +664,103 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
                   />
                 </View>
                 <TouchableOpacity
-                  style={styles.resendButton}
-                  onPress={handleResendVerification}
+                  testID="signup-recover-password"
+                  style={styles.accountAction}
+                  onPress={() => onForgotPassword?.()}
                   disabled={loading}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.resendText} allowFontScaling={false}>
-                    {loading ? t('auth.sending_email') : t('auth.resend_verification_email')}
+                  <Text style={styles.accountActionText} allowFontScaling={false}>
+                    {t('auth.recover_password')}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : step === 'verificationRequired' ? (
+              <>
+                <Text style={styles.verificationDescription} allowFontScaling={false}>
+                  {t('auth.verification_required_description', {
+                    email: verificationEmail,
+                  })}
+                </Text>
+                <Text
+                  testID="email-spam-folder-hint"
+                  style={styles.spamHint}
+                  allowFontScaling={false}
+                >
+                  {t('auth.email_spam_folder_hint')}
+                </Text>
+                <View style={styles.signUpButtonContainer}>
+                  <Button
+                    title={
+                      loading
+                        ? t('auth.sending_email')
+                        : isCoolingDown
+                          ? t('auth.resend_in', {
+                              seconds: secondsRemaining,
+                            })
+                          : t('auth.resend_verification_email')
+                    }
+                    onPress={handleResendVerification}
+                    disabled={loading || isCoolingDown}
+                  />
+                </View>
+                <TouchableOpacity
+                  testID="signup-go-to-login"
+                  style={styles.accountAction}
+                  onPress={() => onLogin?.()}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.accountActionText} allowFontScaling={false}>
+                    {t('auth.go_to_login')}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.verificationDescription} allowFontScaling={false}>
+                  {t('auth.registration_email_instructions')}
+                </Text>
+                <Text style={styles.sentText} allowFontScaling={false}>
+                  {t('auth.registration_email_link_sent', {
+                    email: verificationEmail,
+                  })}
+                </Text>
+                <Text
+                  testID="email-spam-folder-hint"
+                  style={styles.spamHint}
+                  allowFontScaling={false}
+                >
+                  {t('auth.email_spam_folder_hint')}
+                </Text>
+                <View style={styles.signUpButtonContainer}>
+                  <Button
+                    title={t('auth.go_to_login')}
+                    onPress={() => onLogin?.()}
+                    disabled={loading}
+                  />
+                </View>
+                <TouchableOpacity
+                  testID="signup-resend-verification"
+                  style={styles.resendButton}
+                  onPress={handleResendVerification}
+                  disabled={loading || isCoolingDown}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: loading || isCoolingDown }}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.resendText,
+                      isCoolingDown && styles.resendTextDisabled,
+                    ]}
+                    allowFontScaling={false}
+                  >
+                    {loading
+                      ? t('auth.sending_email')
+                      : isCoolingDown
+                        ? t('auth.resend_in', { seconds: secondsRemaining })
+                        : t('auth.resend_verification_email')}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -512,6 +768,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
 
             {/* Login Link */}
             <TouchableOpacity
+              testID="signup-edit-email"
               style={styles.loginLinkContainer}
               onPress={step === 'details' ? onLogin : handleEditDetails}
               activeOpacity={0.7}
@@ -539,6 +796,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
 
             {/* Google Sign In Button */}
             <TouchableOpacity
+              testID="signup-google"
               style={[styles.googleButton, !legalAccepted && { opacity: 0.5 }]}
               onPress={handleGoogleLogin}
               disabled={loading || !legalAccepted}

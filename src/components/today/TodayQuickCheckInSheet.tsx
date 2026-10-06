@@ -29,6 +29,7 @@ import { submitFeelingCheckIn } from '../../services/recommendationExperience/Fe
 import { HydrationQuickAdd } from '../recommendations/HydrationQuickAdd';
 import { resolveCheckInOptionIcon } from '../recommendations/checkInOptionIcons';
 import { useRecommendationExperienceStore } from '../../store/useRecommendationExperienceStore';
+import { feelingCheckInItemLabel } from '../../utils/feelingCheckInLabels';
 
 export type TodayQuickCheckInKind =
   | 'water'
@@ -451,13 +452,14 @@ export const TodayQuickCheckInSheet: React.FC<
             <View style={styles.options}>
               {items.map(item => {
                 const selected = selectedKeys.includes(item.key);
+                const label = feelingCheckInItemLabel(item, t);
                 const iconPresentation =
                   resolveCheckInOptionIcon(item);
                 return (
                   <Pressable
                     key={item.key}
                     accessibilityRole="checkbox"
-                    accessibilityLabel={item.name}
+                    accessibilityLabel={label}
                     accessibilityState={{ checked: selected }}
                     onPress={() => toggleItem(item)}
                     style={[
@@ -470,18 +472,18 @@ export const TodayQuickCheckInSheet: React.FC<
                         styles.optionIcon,
                         {
                           backgroundColor:
-                            iconPresentation.backgroundColor,
+                            theme.surfaceColor(iconPresentation.backgroundColor),
                         },
                       ]}
                     >
                       <FontAwesomeIcon
                         icon={iconPresentation.icon}
-                        color={iconPresentation.color}
+                        color={theme.accentTextColor(iconPresentation.color)}
                         size={13}
                       />
                     </View>
                     <Text style={styles.optionText}>
-                      {item.name}
+                      {label}
                     </Text>
                     {selected ? (
                       <View style={styles.selectedMark}>

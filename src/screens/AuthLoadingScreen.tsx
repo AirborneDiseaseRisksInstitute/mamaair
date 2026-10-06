@@ -12,7 +12,10 @@ import {
   DEV_LOCAL_SESSION,
   DEV_LOCAL_SESSION_RESET_TOKEN,
 } from '../config/dev';
-import { shouldReplaceLocalProfileForAuthenticatedUser } from '../services/auth/AuthSessionIdentity';
+import {
+  shouldCarryForwardPreAuthLanguage,
+  shouldReplaceLocalProfileForAuthenticatedUser,
+} from '../services/auth/AuthSessionIdentity';
 import { locationAccessCoordinator } from '../services/tracking/LocationAccessCoordinator';
 import {
   buildLifestyleApiPayload,
@@ -33,10 +36,14 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
   authenticatedEmail,
 }) => {
   const theme = useTheme();
-  const { token, logout } = useAuthStore();
-  const { clearUser, setProfile, setAgreementAccepted } = useUserStore();
+  const { hydrateSession, logout } = useAuthStore();
+  const { clearUser, setProfile, setAgreementAccepted, setLanguage } =
+    useUserStore();
 
   useEffect(() => {
+    let cancelled = false;
+    let secureStorageRetry: ReturnType<typeof setTimeout> | null = null;
+
     const checkAuthStatus = async () => {
       if (DEV_LOCAL_SESSION) {
         const appliedResetToken = userStorage.getNumber(
@@ -59,7 +66,15 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
         return;
       }
 
-      let activeToken = token;
+      try {
+        await hydrateSession();
+      } catch {
+        if (!cancelled) {
+          secureStorageRetry = setTimeout(checkAuthStatus, 1000);
+        }
+        return;
+      }
+      const activeToken = useAuthStore.getState().token;
 
       // 1. Check for token
       if (!activeToken) {
@@ -96,7 +111,14 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
             mappedProfile.backendUserId,
           )
         ) {
+          const preAuthLanguage = shouldCarryForwardPreAuthLanguage(
+            currentProfile.backendUserId,
+            currentProfile.language,
+          )
+            ? currentProfile.language
+            : null;
           clearUser();
+          if (preAuthLanguage) setLanguage(preAuthLanguage);
           currentProfile = useUserStore.getState().profile;
         }
 
@@ -239,10 +261,10 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
               console.log(
                 '[AuthLoading] Synced local profile/lifestyle to server.',
               );
-            } catch (e) {
+            } catch (e: any) {
               console.warn(
                 '[AuthLoading] Local->server sync failed (will retry next launch):',
-                e,
+                e?.response?.status ?? 'network',
               );
             }
           })();
@@ -267,10 +289,10 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
 
         onComplete('Intro');
       } catch (error: any) {
-        console.error('Failed to fetch profile:', error);
+        console.warn('Failed to fetch profile:', error?.response?.status ?? 'network');
         // Only a real 401 means the token is invalid — then log out.
         if (error?.response?.status === 401) {
-          logout();
+          await logout().catch(() => {});
           onComplete('Auth');
           return;
         }
@@ -296,6 +318,10 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
     };
 
     checkAuthStatus();
+    return () => {
+      cancelled = true;
+      if (secureStorageRetry) clearTimeout(secureStorageRetry);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // We only run this on mount, dependencies are stable stores
 

@@ -88,7 +88,6 @@ export const ProfileInformationScreen: React.FC<
   };
 
   const birthdaySummary = formatBirthday(profile.birthday, locale) || '-';
-  const timezoneSummary = profile.timezone || '-';
   const pregnancySummary = joinSummary(
     t('profile.week_value', { week: currentPregnancyWeek }),
     profile.pregnancyNumber &&
@@ -126,7 +125,7 @@ export const ProfileInformationScreen: React.FC<
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.background,
         },
         header: {
           flexDirection: 'row',
@@ -135,7 +134,7 @@ export const ProfileInformationScreen: React.FC<
           paddingHorizontal: spacing('md'),
           paddingTop: 50,
           paddingBottom: spacing('md'),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.08,
@@ -165,7 +164,7 @@ export const ProfileInformationScreen: React.FC<
           marginBottom: spacing('sm'),
         },
         card: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 12,
           overflow: 'hidden',
           shadowColor: '#000',
@@ -265,11 +264,10 @@ export const ProfileInformationScreen: React.FC<
             {t('profile.edit_personal_details')}
           </Text>
           <View style={styles.card}>
-            {renderRow(t('profile.birthday'), birthdaySummary, 'birthday')}
             {renderRow(
-              t('profile.time_zone'),
-              timezoneSummary,
-              'timezone',
+              t('profile.birthday'),
+              birthdaySummary,
+              'birthday',
               false,
             )}
           </View>

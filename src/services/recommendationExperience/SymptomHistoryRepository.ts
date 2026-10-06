@@ -3,9 +3,7 @@ import type {
   FeelingCheckInItem,
   RecommendationExperienceIdentity,
 } from '../../types/recommendationExperience';
-import {
-  SymptomsService,
-} from '../api/SymptomsService';
+import { SymptomsService } from '../api/SymptomsService';
 import { loadFeelingCheckInExperience } from './FeelingCheckInRepository';
 import {
   getSymptomClass,
@@ -15,6 +13,9 @@ import {
 export interface SymptomHistoryEntry {
   key: string;
   name: string;
+  kind: FeelingCheckInItem['kind'];
+  group: FeelingCheckInItem['group'];
+  emoji?: string;
   source: 'api' | 'localFallback';
 }
 
@@ -28,6 +29,11 @@ export interface SymptomHistoryClassEntry {
 
 export interface SymptomHistoryDay {
   date: string;
+  moods: SymptomHistoryEntry[];
+  feelings: SymptomHistoryEntry[];
+  physical: SymptomHistoryEntry[];
+  warning: SymptomHistoryEntry[];
+  waterTotalMl: number;
   classes: SymptomHistoryClassEntry[];
   recordState: 'recorded' | 'unknown';
   mommyStatus: CapabilityStatus;
@@ -79,9 +85,7 @@ const classKeyForLevel = (
   return null;
 };
 
-const countValue = (
-  item: SymptomClassStatisticsItem,
-): number => {
+const countValue = (item: SymptomClassStatisticsItem): number => {
   const value = item.quantity ?? item.count ?? item.total ?? 0;
   return Number.isFinite(value) ? value : 0;
 };
@@ -127,25 +131,23 @@ const classEntries = (
     total: mommyCounts[key] + babyCounts[key],
   })).filter(entry => entry.total > 0);
 
-/*
- * Exact symptom-event history is disabled for this release. Keep the model and
- * mapper available here so the previous UI can be restored without rebuilding
- * the backend selection wiring.
 const selectedEntries = (
   items: FeelingCheckInItem[],
-  selectedKeys: string[],
-  group: FeelingCheckInItem['group'],
+  selectedKeys: readonly string[],
+  predicate: (item: FeelingCheckInItem) => boolean,
 ): SymptomHistoryEntry[] => {
   const selected = new Set(selectedKeys);
   return items
-    .filter(item => item.group === group && selected.has(item.key))
+    .filter(item => predicate(item) && selected.has(item.key))
     .map(item => ({
       key: item.key,
       name: item.name,
+      kind: item.kind,
+      group: item.group,
+      emoji: item.emoji,
       source: item.source,
     }));
 };
-*/
 
 export const loadSymptomHistoryDay = async (
   identity: RecommendationExperienceIdentity,
@@ -162,13 +164,13 @@ export const loadSymptomHistoryDay = async (
             ({
               status: 'fulfilled',
               value: data,
-            }) as const,
+            } as const),
         )
         .catch(
           () =>
             ({
               status: 'rejected',
-            }) as const,
+            } as const),
         ),
       SymptomsService.getBabyStatisticsClasses({
         date,
@@ -178,18 +180,17 @@ export const loadSymptomHistoryDay = async (
             ({
               status: 'fulfilled',
               value: data,
-            }) as const,
+            } as const),
         )
         .catch(
           () =>
             ({
               status: 'rejected',
-            }) as const,
+            } as const),
         ),
     ]);
 
-  const mommyStatus =
-    experience.capabilities.mommySymptomsSelection.status;
+  const mommyStatus = experience.capabilities.mommySymptomsSelection.status;
   const mommyCounts =
     mommyStatisticsResult.status === 'fulfilled'
       ? countsFromStatistics(mommyStatisticsResult.value)
@@ -198,27 +199,49 @@ export const loadSymptomHistoryDay = async (
           experience.selection.mommySymptomKeys,
         );
   const babyStatus =
-    babyStatisticsResult.status === 'fulfilled'
-      ? 'available'
-      : 'unavailable';
+    babyStatisticsResult.status === 'fulfilled' ? 'available' : 'unavailable';
   const babyCounts =
     babyStatisticsResult.status === 'fulfilled'
       ? countsFromStatistics(babyStatisticsResult.value)
       : emptyClassCounts();
 
   /*
- * Exact baby event history is intentionally disabled. Do not fetch
+   * Exact baby event history is intentionally disabled. Do not fetch
    * getBabyChecklist/getBabySelection here because the history view should
    * expose only class-level statistics.
    */
   const classes = classEntries(mommyCounts, babyCounts);
+  const moods = selectedEntries(
+    experience.moods,
+    experience.selection.moodKeys,
+    item => item.kind === 'mood',
+  );
+  const feelings = selectedEntries(
+    experience.feelings,
+    experience.selection.feelingKeys,
+    item => item.kind === 'wellbeingFeeling',
+  );
+  const physical = selectedEntries(
+    experience.mommySymptoms,
+    experience.selection.mommySymptomKeys,
+    item => item.group === 'physical',
+  );
+  const warning = selectedEntries(
+    experience.mommySymptoms,
+    experience.selection.mommySymptomKeys,
+    item => item.group === 'warning',
+  );
 
   return {
     date,
+    moods,
+    feelings,
+    physical,
+    warning,
+    waterTotalMl: experience.waterDailyTotalMl,
     classes,
     recordState:
-      experience.recordState === 'recorded' ||
-      classes.length > 0
+      experience.recordState === 'recorded' || classes.length > 0
         ? 'recorded'
         : 'unknown',
     mommyStatus,

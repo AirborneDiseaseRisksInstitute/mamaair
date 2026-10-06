@@ -15,6 +15,20 @@ export interface SymptomClassTrendSeries {
   class4: { value: number }[];
 }
 
+export interface SymptomClassStatisticsResult {
+  classes?: Array<{
+    symptom_class: number;
+    class_name?: string;
+    color_flag?: string;
+    quantity: number;
+  }>;
+}
+
+export interface SymptomClassMetadata {
+  className: string;
+  colorFlag?: string;
+}
+
 interface SymptomClassRule {
   classKey: SymptomClassKey;
   terms: readonly string[];
@@ -114,6 +128,70 @@ const emptySeries = (): SymptomClassTrendSeries => ({
   class3: [],
   class4: [],
 });
+
+export const buildCompleteApiSymptomClassTrend = (
+  results: Array<SymptomClassStatisticsResult | null>,
+): SymptomClassTrendSeries | null => {
+  if (results.length !== 7 || results.some(result => result === null)) {
+    return null;
+  }
+  const supportedClasses = new Set([1, 2, 3, 4]);
+  const hasUnsupportedRecordedClass = results.some(result =>
+    (result?.classes ?? []).some(
+      item =>
+        !supportedClasses.has(item.symptom_class) &&
+        typeof item.quantity === 'number' &&
+        item.quantity > 0,
+    ),
+  );
+  if (hasUnsupportedRecordedClass) return null;
+
+  const series = emptySeries();
+  results.forEach(result => {
+    const classes = result?.classes ?? [];
+    const quantity = (symptomClass: number): number => {
+      const value = classes.find(
+        item => item.symptom_class === symptomClass,
+      )?.quantity;
+      return typeof value === 'number' && Number.isFinite(value)
+        ? Math.max(0, value)
+        : 0;
+    };
+
+    series.class1.push({ value: quantity(1) });
+    series.class2.push({ value: quantity(2) });
+    series.class3.push({ value: quantity(3) });
+    series.class4.push({ value: quantity(4) });
+  });
+
+  return series;
+};
+
+export const getApiSymptomClassMetadata = (
+  results: Array<SymptomClassStatisticsResult | null>,
+): Partial<Record<1 | 2 | 3 | 4, SymptomClassMetadata>> => {
+  const metadata: Partial<Record<1 | 2 | 3 | 4, SymptomClassMetadata>> = {};
+  results.forEach(result => {
+    (result?.classes ?? []).forEach(item => {
+      if (
+        ![1, 2, 3, 4].includes(item.symptom_class) ||
+        typeof item.class_name !== 'string' ||
+        item.class_name.trim().length === 0
+      ) {
+        return;
+      }
+      const symptomClass = item.symptom_class as 1 | 2 | 3 | 4;
+      metadata[symptomClass] ??= {
+        className: item.class_name.trim(),
+        colorFlag:
+          typeof item.color_flag === 'string'
+            ? item.color_flag
+            : undefined,
+      };
+    });
+  });
+  return metadata;
+};
 
 export const getSymptomClass = (
   symptomName: string,

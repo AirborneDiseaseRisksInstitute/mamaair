@@ -18,6 +18,7 @@ import {
 import { useTheme, spacing, radius } from '../../theme';
 import { ms, vs } from '../../utils/responsive';
 import { useTranslation } from 'react-i18next';
+import { isValidAuthEmail } from '../../utils/authValidation';
 
 export interface InputRef {
   focus: () => void;
@@ -34,9 +35,6 @@ interface InputProps extends Omit<TextInputProps, 'style'> {
 
 const SHADOW_OFFSET = 4;
 const INPUT_HEIGHT = vs(54);
-
-// Email validation regex
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const InputComponent = forwardRef<InputRef, InputProps>(({
   title,
@@ -62,7 +60,7 @@ const InputComponent = forwardRef<InputRef, InputProps>(({
     if (isEmail && value) {
       const trimmedValue = value.trim();
       if (trimmedValue.length > 0) {
-        setEmailValidation(EMAIL_REGEX.test(trimmedValue) ? 'valid' : 'invalid');
+        setEmailValidation(isValidAuthEmail(trimmedValue) ? 'valid' : 'invalid');
       } else {
         setEmailValidation(null);
       }

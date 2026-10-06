@@ -19,17 +19,6 @@ describe('BottomSheet background', () => {
         stop: jest.fn(),
         reset: jest.fn(),
       })) as typeof Animated.timing);
-    const sequenceSpy = jest
-      .spyOn(Animated, 'sequence')
-      .mockImplementation(((animations: Animated.CompositeAnimation[]) => ({
-        start: (callback?: (result: { finished: boolean }) => void) => {
-          animations.forEach(animation => animation.start());
-          callback?.({ finished: true });
-        },
-        stop: jest.fn(),
-        reset: jest.fn(),
-      })) as typeof Animated.sequence);
-
     let tree: renderer.ReactTestRenderer;
     act(() => {
       tree = renderer.create(
@@ -49,6 +38,59 @@ describe('BottomSheet background', () => {
 
     act(() => tree!.unmount());
     timingSpy.mockRestore();
-    sequenceSpy.mockRestore();
+  });
+
+  it('keeps the sheet mounted until its closing animation finishes', () => {
+    const animationCallbacks: Array<
+      (result: { finished: boolean }) => void
+    > = [];
+    const timingSpy = jest
+      .spyOn(Animated, 'timing')
+      .mockImplementation(((_value: Animated.Value) => ({
+        start: (callback?: (result: { finished: boolean }) => void) => {
+          if (callback) animationCallbacks.push(callback);
+        },
+        stop: jest.fn(),
+        reset: jest.fn(),
+      })) as typeof Animated.timing);
+
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <BottomSheet visible onClose={jest.fn()}>
+          <Text>Sheet content</Text>
+        </BottomSheet>,
+      );
+    });
+
+    act(() => {
+      animationCallbacks.splice(0).forEach(callback =>
+        callback({ finished: true }),
+      );
+    });
+    act(() => {
+      tree!.update(
+        <BottomSheet visible={false} onClose={jest.fn()}>
+          <Text>Sheet content</Text>
+        </BottomSheet>,
+      );
+    });
+
+    expect(
+      tree!.root.findAllByProps({ testID: 'bottom-sheet-surface' }).length,
+    ).toBeGreaterThan(0);
+
+    act(() => {
+      animationCallbacks.splice(0).forEach(callback =>
+        callback({ finished: true }),
+      );
+    });
+
+    expect(
+      tree!.root.findAllByProps({ testID: 'bottom-sheet-surface' }),
+    ).toHaveLength(0);
+
+    act(() => tree!.unmount());
+    timingSpy.mockRestore();
   });
 });

@@ -101,7 +101,13 @@ export const TransitionLoader: React.FC<TransitionLoaderProps> = ({ visible, mes
 
   return (
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+      <Animated.View
+        style={[
+          styles.overlay,
+          theme.mode === 'dark' && styles.darkOverlay,
+          { opacity: fadeAnim },
+        ]}
+      >
         <View style={styles.center}>
           {/* Pulsing rings */}
           <Animated.View
@@ -157,6 +163,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.96)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  darkOverlay: {
+    backgroundColor: 'rgba(18,18,18,0.96)',
   },
   center: {
     width: RING_SIZE + 40,

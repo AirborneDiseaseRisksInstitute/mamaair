@@ -16,8 +16,8 @@ export type EnvironmentalRiskAudience = 'mother' | 'baby';
 
 export interface EnvironmentalRiskTrendPoint {
   date: string;
-  predicted: number;
-  afterSelfCare: number;
+  current: number;
+  delta?: number;
 }
 
 export interface MotherTwinChartModel {
@@ -119,10 +119,18 @@ const dailyLocalCareCounts = (
 };
 
 const dailyBackendCareCounts = (
-  tasks: string[],
+  taskDay: NonNullable<SummaryResponse['task_completions']>[number] | undefined,
 ): Record<WeeklyActionSummaryDomain, number> => {
   const counts = emptyCounts();
-  tasks.forEach(task => {
+  if (taskDay?.counts) {
+    counts.diet = Math.max(0, taskDay.counts.diet.done);
+    counts.activity = Math.max(0, taskDay.counts.activity.done);
+    counts.behaviour = Math.max(0, taskDay.counts.behavior.done);
+    counts.wellbeing = Math.max(0, taskDay.counts.mental.done);
+    return counts;
+  }
+
+  (taskDay?.tasks ?? []).forEach(task => {
     const domain = inferDomainFromBackendTask(task);
     if (domain) counts[domain] += 1;
   });
@@ -170,15 +178,13 @@ const apiRiskReading = (
   summary: SummaryResponse | null,
   audience: EnvironmentalRiskAudience,
 ): EnvironmentalRiskReading | null => {
-  const afterSelfCare = apiCurrentRisk(summary, audience);
-  if (afterSelfCare === null) return null;
+  const current = apiCurrentRisk(summary, audience);
+  if (current === null) return null;
 
   const delta = apiRiskDelta(summary, audience);
   return {
-    predicted: normalizeRisk(
-      delta === null ? afterSelfCare : afterSelfCare - delta,
-    ),
-    afterSelfCare: normalizeRisk(afterSelfCare),
+    current: normalizeRisk(current),
+    delta: delta === null ? undefined : Math.round(delta * 100) / 100,
   };
 };
 
@@ -202,7 +208,6 @@ export const buildMotherTwinChartModel = ({
   weekDates,
   actionCompletions,
   backendSummary,
-  environmentalRiskObservations,
   currentDate,
 }: {
   weekDates: string[];
@@ -211,27 +216,15 @@ export const buildMotherTwinChartModel = ({
     Record<string, DailyActionCompletionRecord>
   >;
   backendSummary: SummaryResponse | null;
-  environmentalRiskObservations: Record<string, EnvironmentalRiskObservation>;
   currentDate: string;
 }): MotherTwinChartModel => {
   const backendTasksByDate = new Map(
-    (backendSummary?.task_completions ?? []).map(item => [
-      item.date,
-      item.tasks.filter(
-        task => typeof task === 'string' && task.trim().length > 0,
-      ),
-    ]),
+    (backendSummary?.task_completions ?? []).map(item => [item.date, item]),
   );
   const currentObservation = buildEnvironmentalRiskObservation(
     backendSummary,
     currentDate,
   );
-  const riskObservations = {
-    ...environmentalRiskObservations,
-    ...(currentObservation
-      ? { [currentObservation.date]: currentObservation }
-      : {}),
-  };
   const careCompletion = CARE_DOMAINS.reduce(
     (acc, domain) => ({
       ...acc,
@@ -250,28 +243,33 @@ export const buildMotherTwinChartModel = ({
   weekDates.forEach(date => {
     const records = actionCompletions[date] ?? {};
     const localCounts = dailyLocalCareCounts(records);
-    const backendTasks = backendTasksByDate.get(date) ?? [];
-    const counts =
-      Object.keys(records).length > 0
-        ? localCounts
-        : dailyBackendCareCounts(backendTasks);
+    const backendCounts = dailyBackendCareCounts(backendTasksByDate.get(date));
+    const counts = CARE_DOMAINS.reduce(
+      (merged, domain) => ({
+        ...merged,
+        [domain]: Math.max(localCounts[domain], backendCounts[domain]),
+      }),
+      emptyCounts(),
+    );
 
     CARE_DOMAINS.forEach(domain => {
       careCompletion[domain].push({ value: counts[domain] });
     });
-
-    (['mother', 'baby'] as const).forEach(audience => {
-      const reading = riskObservations[date]?.[audience];
-      if (reading) {
-        hasEnvironmentalRiskData[audience] = true;
-        environmentalRisk[audience].push({
-          date,
-          predicted: reading.predicted,
-          afterSelfCare: reading.afterSelfCare,
-        });
-      }
-    });
   });
+
+  if (currentObservation) {
+    (['mother', 'baby'] as const).forEach(audience => {
+      const reading = currentObservation[audience];
+      if (!reading) return;
+
+      hasEnvironmentalRiskData[audience] = true;
+      environmentalRisk[audience].push({
+        date: currentObservation.date,
+        current: reading.current,
+        delta: reading.delta,
+      });
+    });
+  }
 
   const hasCareCompletionData = CARE_DOMAINS.some(domain =>
     careCompletion[domain].some(point => point.value > 0),

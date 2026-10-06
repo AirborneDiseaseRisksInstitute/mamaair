@@ -87,7 +87,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
   const styles = useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: '#FFF8F3',
+      backgroundColor: theme.surfaceColor('#FFF8F3'),
     },
     header: {
       flexDirection: 'row',
@@ -160,7 +160,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
     sendButton: {
       paddingHorizontal: spacing('lg'),
       height: 48,
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.neutral300,
@@ -182,7 +182,7 @@ export const ReferAppScreen: React.FC<ReferAppScreenProps> = ({ onBack }) => {
       borderRadius: 8,
       borderWidth: 1,
       borderColor: theme.colors.neutral300,
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       flexDirection: 'row',
       justifyContent: 'center',
       alignItems: 'center',

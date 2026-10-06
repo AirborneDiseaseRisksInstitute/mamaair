@@ -24,6 +24,12 @@ class LocationAccessCoordinator {
     return locationTracker.addTrackingStateListener(listener);
   }
 
+  public addLocationListener(
+    listener: Parameters<typeof locationTracker.addListener>[0],
+  ) {
+    return locationTracker.addListener(listener);
+  }
+
   public isTrackingEnabled(): boolean {
     return locationTracker.isTrackingEnabled();
   }
@@ -102,10 +108,12 @@ class LocationAccessCoordinator {
         if (this.lastQueuedBackendValue === enabled) {
           this.lastQueuedBackendValue = null;
         }
-        console.warn(
-          '[LocationAccess] Failed to sync tracking preference',
-          error,
-        );
+        if (__DEV__) {
+          console.warn(
+            '[LocationAccess] Failed to sync tracking preference',
+            error,
+          );
+        }
       });
   }
 }

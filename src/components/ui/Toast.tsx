@@ -243,13 +243,13 @@ const getVariantStyles = (
       container: {
         backgroundColor: theme.colors.background,
         borderWidth: 1,
-        borderColor: '#C8E6C9',
+        borderColor: theme.borderColor('#C8E6C9'),
       },
       accentBar: {
         backgroundColor: '#4CAF50',
       },
       title: {
-        color: '#2E7D32',
+        color: theme.accentTextColor('#2E7D32'),
       },
       message: {
         color: theme.colors.textSecondary,
@@ -259,13 +259,13 @@ const getVariantStyles = (
       container: {
         backgroundColor: theme.colors.background,
         borderWidth: 1,
-        borderColor: '#FFCDD2',
+        borderColor: theme.borderColor('#FFCDD2'),
       },
       accentBar: {
         backgroundColor: '#E53935',
       },
       title: {
-        color: '#C62828',
+        color: theme.accentTextColor('#C62828'),
       },
       message: {
         color: theme.colors.textSecondary,
@@ -288,4 +288,3 @@ const getVariantStyles = (
       },
     },
   });
-

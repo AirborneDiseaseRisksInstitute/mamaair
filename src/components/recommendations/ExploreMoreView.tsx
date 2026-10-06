@@ -86,6 +86,7 @@ const DOMAIN_CONFIG: Record<
 const DomainIcon: React.FC<{
   domain: DailyActionDomain;
 }> = ({ domain }) => {
+  const theme = useTheme();
   const config = DOMAIN_CONFIG[domain];
   if (config.svg) {
     return <SvgXml xml={config.svg} width={17} height={17} />;
@@ -94,7 +95,7 @@ const DomainIcon: React.FC<{
     <FontAwesomeIcon
       icon={domain === 'wellbeing' ? faBrain : faCircleInfo}
       size={13}
-      color={config.color}
+      color={theme.accentTextColor(config.color)}
     />
   );
 };
@@ -135,7 +136,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
           justifyContent: 'center',
           paddingHorizontal: 10,
           borderRadius: 18,
-          backgroundColor: '#FFF4EA',
+          backgroundColor: theme.surfaceColor('#FFF4EA'),
           gap: 6,
         },
         entryPressed: {
@@ -208,7 +209,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
           marginRight: spacing('xs'),
         },
         domainIconSurface: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         domainName: {
           flex: 1,
@@ -255,7 +256,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
           justifyContent: 'center',
           borderWidth: 1.5,
           borderColor: theme.colors.orange300,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         completionIndicatorDone: {
           borderColor: theme.colors.orange500,
@@ -278,7 +279,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
           paddingHorizontal: spacing('sm'),
           borderLeftWidth: 3,
           borderLeftColor: theme.colors.orange500,
-          backgroundColor: '#FFF7EF',
+          backgroundColor: theme.surfaceColor('#FFF7EF'),
         },
         recommendationHeaderIcon: {
           width: 25,
@@ -287,7 +288,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: spacing('xs'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         recommendationHeaderText: {
           flex: 1,
@@ -377,7 +378,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
       >
         <LinearGradient
           pointerEvents="none"
-          colors={['#FFF0E2', '#F8F0FA']}
+          colors={['#FFF0E2', '#F8F0FA'].map(theme.surfaceColor)}
           locations={[0, 1]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
@@ -458,7 +459,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
                     style={[
                       styles.domainHeader,
                       {
-                        backgroundColor: config.background,
+                        backgroundColor: theme.surfaceColor(config.background),
                         borderLeftColor: config.color,
                       },
                     ]}
@@ -466,7 +467,7 @@ export const ExploreMoreView: React.FC<ExploreMoreViewProps> = ({
                     <View style={[styles.domainIcon, styles.domainIconSurface]}>
                       <DomainIcon domain={domain} />
                     </View>
-                    <Text style={[styles.domainName, { color: config.color }]}>
+                    <Text style={[styles.domainName, { color: theme.accentTextColor(config.color) }]}>
                       {t(`today.domain_${domain}`)}
                     </Text>
                     <Text style={styles.domainCount}>

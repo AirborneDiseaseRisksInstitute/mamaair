@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { AppState, View, StyleSheet } from 'react-native';
-import { ThemeProvider } from '../theme';
+import { AppState, View, StatusBar, StyleSheet } from 'react-native';
+import { ThemeProvider, useTheme } from '../theme';
 import { Navigation } from './Navigation';
 import { ToastProvider } from '../components/ui/Toast';
 import { useLanguageSync } from '../hooks/useLanguageSync';
@@ -12,6 +12,7 @@ import { locationAccessCoordinator } from '../services/tracking/LocationAccessCo
 
 const AppInner: React.FC = () => {
   useLanguageSync();
+  const theme = useTheme();
   const token = useAuthStore(state => state.token);
 
   // Schedule periodic background location upload (while running and, via the
@@ -19,7 +20,15 @@ const AppInner: React.FC = () => {
   useEffect(() => {
     backgroundSync
       .init()
-      .catch(e => console.warn('[BackgroundSync] init failed', e));
+      .catch(e => {
+        if (__DEV__) console.warn('[BackgroundSync] init failed', e);
+      });
+
+    return locationAccessCoordinator.addLocationListener(location => {
+      if (location.state === 'Outdoor') {
+        backgroundSync.scheduleSync();
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -29,8 +38,16 @@ const AppInner: React.FC = () => {
     }
 
     const resumeTracking = () => {
+      backgroundSync
+        .performSync()
+        .catch(error =>
+          __DEV__ &&
+          console.warn('[BackgroundSync] foreground sync failed', error),
+        );
       locationAccessCoordinator.resume().catch(error => {
-        console.warn('[LocationAccess] Failed to resume tracking', error);
+        if (__DEV__) {
+          console.warn('[LocationAccess] Failed to resume tracking', error);
+        }
       });
     };
 
@@ -43,6 +60,10 @@ const AppInner: React.FC = () => {
 
   return (
     <>
+      <StatusBar
+        barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.background}
+      />
       <MommySymptomSyncCoordinator />
       <Navigation />
     </>
@@ -52,17 +73,22 @@ const AppInner: React.FC = () => {
 export const AppRoot: React.FC = () => {
   return (
     <ThemeProvider>
-      <View style={styles.container}>
-        <ToastProvider>
-          <AppInner />
-        </ToastProvider>
-      </View>
+      <AppSurface />
     </ThemeProvider>
   );
 };
 
+const AppSurface: React.FC = () => {
+  const theme = useTheme();
+  return (
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
 });

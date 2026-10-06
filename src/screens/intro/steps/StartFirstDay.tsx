@@ -23,18 +23,18 @@ export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
   }, [profile.pregnancyWeek, t]);
 
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     logoContainer: { alignItems: 'center', paddingTop: spacing('md'), marginTop:24 },
     logo: { width: s(140), height: vs(48), resizeMode: 'contain' },
     content: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
     centerBox: { justifyContent: 'center', alignItems: 'center' },
     svgContainer: { position: 'absolute' },
-    messageBox: { backgroundColor: '#fff', borderRadius: radius('lg'), padding: spacing('lg'), marginHorizontal: spacing('lg'), shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+    messageBox: { backgroundColor: theme.colors.surface, borderRadius: radius('lg'), padding: spacing('lg'), marginHorizontal: spacing('lg'), shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
     tail: { position: 'absolute', bottom: -12, alignSelf: 'center', width: 0, height: 0, borderLeftWidth: 12, borderRightWidth: 12, borderTopWidth: 12, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#fff' },
     title: { fontSize: 24, fontFamily: theme.typography.fontFamily.bold, color: theme.colors.textPrimary, marginBottom: spacing('sm'), textAlign: 'center' },
     message: { fontSize: 16, fontFamily: theme.typography.fontFamily.regular, color: theme.colors.textSecondary, textAlign: 'center', lineHeight: 24 },
     loadingOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' },
-    loadingContainer: { backgroundColor: '#fff', borderRadius: ms(12), padding: ms(24), alignItems: 'center', justifyContent: 'center' },
+    loadingContainer: { backgroundColor: theme.colors.surface, borderRadius: ms(12), padding: ms(24), alignItems: 'center', justifyContent: 'center' },
     loadingText: { marginTop: ms(16), fontSize: 16, fontFamily: theme.typography.fontFamily.medium, color: theme.colors.textPrimary },
   }), [theme]);
 
@@ -49,7 +49,12 @@ export const StartFirstDay: React.FC<StartFirstDayProps> = ({ onNext }) => {
     <SafeAreaView style={styles.container}>
       <OrangeHalo position="center" />
       <View style={styles.logoContainer}>
-        <Image source={require('../../../assets/images/logoBlack.png')} style={styles.logo} />
+        <Image
+          source={theme.mode === 'dark'
+            ? require('../../../assets/images/logoWhite.png')
+            : require('../../../assets/images/logoBlack.png')}
+          style={styles.logo}
+        />
       </View>
       <View style={styles.content}>
         <View style={styles.centerBox}>

@@ -17,6 +17,7 @@ const completeProfile = (): UserProfile => ({
   height: 168,
   weight: 64,
   language: 'en',
+  introLanguageConfirmed: true,
   country: 'KE',
   area: 'Nairobi',
   timezone: 'Africa/Nairobi',

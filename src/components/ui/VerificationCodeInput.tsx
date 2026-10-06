@@ -61,7 +61,7 @@ export const VerificationCodeInput: React.FC<VerificationCodeInputProps> = ({
         errorText: {
           fontSize: 12,
           fontFamily: theme.typography.fontFamily.medium,
-          color: '#FB2C36',
+          color: theme.accentTextColor('#FB2C36'),
           marginTop: spacing('sm'),
           marginLeft: spacing('xs'),
         },

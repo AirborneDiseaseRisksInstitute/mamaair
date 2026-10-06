@@ -1,4 +1,8 @@
-import { QuickSQLiteConnection, open } from 'react-native-quick-sqlite';
+import {
+  NitroSQLiteConnection,
+  SQLiteValue,
+  open,
+} from 'react-native-nitro-sqlite';
 
 const DB_NAME = 'mamaair.sqlite';
 
@@ -12,8 +16,10 @@ export interface LocationPoint {
   isOutdoor: number; // 1 for true, 0 for false
 }
 
+type LocationRow = LocationPoint & Record<string, SQLiteValue>;
+
 class DatabaseService {
-  private db: QuickSQLiteConnection;
+  private db: NitroSQLiteConnection;
 
   constructor() {
     this.db = open({ name: DB_NAME });
@@ -33,9 +39,9 @@ class DatabaseService {
           isOutdoor INTEGER
         );
       `);
-      console.log('Database initialized successfully');
+      if (__DEV__) console.log('Database initialized successfully');
     } catch (e) {
-      console.error('Failed to initialize database', e);
+      if (__DEV__) console.error('Failed to initialize database', e);
     }
   }
 
@@ -47,23 +53,24 @@ class DatabaseService {
         [point.latitude, point.longitude, point.accuracy, point.speed, point.timestamp, point.isOutdoor]
       );
     } catch (e) {
-      console.error('Failed to insert location', e);
+      if (__DEV__) console.error('Failed to insert location', e);
     }
   }
 
   public getAllLocations(): LocationPoint[] {
     try {
-      const result = this.db.execute('SELECT * FROM LocationPoints');
+      const result = this.db.execute<LocationRow>('SELECT * FROM LocationPoints');
       if (!result || !result.rows) return [];
       
       const items: LocationPoint[] = [];
       const len = result.rows.length;
       for (let i = 0; i < len; i++) {
-        items.push(result.rows.item(i) as LocationPoint);
+        const item = result.rows.item(i);
+        if (item) items.push(item);
       }
       return items;
     } catch (e) {
-      console.error('Failed to get locations', e);
+      if (__DEV__) console.error('Failed to get locations', e);
       return [];
     }
   }
@@ -74,7 +81,7 @@ class DatabaseService {
       const placeholders = ids.map(() => '?').join(',');
       this.db.execute(`DELETE FROM LocationPoints WHERE id IN (${placeholders})`, ids);
     } catch (e) {
-      console.error('Failed to delete locations', e);
+      if (__DEV__) console.error('Failed to delete locations', e);
     }
   }
   
@@ -82,7 +89,7 @@ class DatabaseService {
       try {
           this.db.execute('DELETE FROM LocationPoints');
       } catch (e) {
-          console.error('Failed to delete all locations', e);
+          if (__DEV__) console.error('Failed to delete all locations', e);
       }
   }
 }

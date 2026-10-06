@@ -100,6 +100,7 @@ export const UpgradeSubscription: React.FC<UpgradeSubscriptionProps> = ({
         <Animated.View
           style={[
             styles.dialog,
+            { backgroundColor: theme.colors.surface },
             {
               transform: [{ translateY: slideAnim }],
             },

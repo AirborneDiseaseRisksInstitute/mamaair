@@ -1,4 +1,4 @@
-package com.mamaair
+package africa.mamaair.mobile
 
 import android.os.Bundle
 import com.facebook.react.ReactActivity

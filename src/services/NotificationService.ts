@@ -7,6 +7,7 @@ import notifee, {
 } from '@notifee/react-native';
 import { createMMKV } from 'react-native-mmkv';
 import { useUserStore } from '../store/useUserStore';
+import i18n from '../i18n';
 
 const CHANNEL_ID = 'mamaair_reminders';
 const PENDING_ACTION_REMINDER_KEY = 'pending-action-reminder';
@@ -117,7 +118,7 @@ export const registerActionReminderBackgroundHandler = (): void => {
 async function createChannel(): Promise<string> {
   return notifee.createChannel({
     id: CHANNEL_ID,
-    name: 'Health Reminders',
+    name: String(i18n.t('notifications.channel_name')),
     importance: AndroidImportance.HIGH,
   });
 }
@@ -218,6 +219,16 @@ const categoryReminderId = (
   dayIndex: number,
 ): string => `${CATEGORY_REMINDER_PREFIX}${category}_${dayIndex}`;
 
+const categoryReminderBody = (
+  category: ReminderCategory,
+  fallback: string,
+): string =>
+  String(
+    i18n.t(`reminders.${category}_notification`, {
+      defaultValue: fallback,
+    }),
+  );
+
 export const nextWeeklyReminderTimestamp = (
   now: Date,
   dayIndex: number,
@@ -260,7 +271,7 @@ const createCategoryReminderTriggers = async (
       {
         id: categoryReminderId(setting.category, dayIndex),
         title: 'MamaAir',
-        body: setting.body,
+        body: categoryReminderBody(setting.category, setting.body),
         data: {
           kind: 'categoryReminder',
           category: setting.category,
@@ -537,8 +548,8 @@ export async function scheduleRestTimerNotification({
     await notifee.createTriggerNotification(
       {
         id: notificationId,
-        title: 'Your rest is complete',
-        body: `${title} — take a moment before moving on.`,
+        title: String(i18n.t('notifications.rest_complete_title')),
+        body: String(i18n.t('notifications.rest_complete_body', { title })),
         data: {
           kind: 'actionReminder',
           date,
@@ -633,14 +644,14 @@ export async function scheduleCareCadence({
       {
         id: `${CARE_CADENCE_PREFIX}checkin_${dateKey}`,
         at: from,
-        body: 'A gentle check-in can help shape today’s plan.',
+        body: String(i18n.t('notifications.checkin_reminder')),
       },
       ...(to - from >= 120
         ? [
             {
               id: `${CARE_CADENCE_PREFIX}evening_${dateKey}`,
               at: evening,
-              body: 'If it feels useful, one small action can keep your rhythm going.',
+              body: String(i18n.t('notifications.evening_reminder')),
             },
           ]
         : []),
@@ -682,8 +693,8 @@ export async function scheduleCareCadence({
   await notifee.createTriggerNotification(
     {
       id: `${CARE_CADENCE_PREFIX}weekly_recap`,
-      title: 'Your week is ready to review',
-      body: 'Take a calm look at your care rhythm and baby’s week.',
+      title: String(i18n.t('notifications.weekly_review_title')),
+      body: String(i18n.t('notifications.weekly_review_body')),
       android: {
         channelId,
         importance: AndroidImportance.HIGH,

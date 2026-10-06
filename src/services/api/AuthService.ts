@@ -19,6 +19,7 @@ export interface GoogleSignInResponse extends LoginResponse {
 }
 
 export type AuthMessageResponse = {
+  code?: string;
   detail?: string;
   message?: string;
 };
@@ -50,7 +51,11 @@ export const AuthService = {
   ): Promise<AuthMessageResponse> => {
     const response = await api.post<AuthMessageResponse>(
       '/auth/email/register/',
-      { email, password, password_confirm: password },
+      {
+        email,
+        password,
+        password_confirm: password,
+      },
     );
     return response.data;
   },

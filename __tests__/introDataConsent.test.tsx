@@ -20,6 +20,10 @@ jest.mock('../src/config/dev', () => ({ DEV_LOCAL_SESSION: false }));
 jest.mock('../src/theme', () => ({
   spacing: () => 8,
   useTheme: () => ({
+    mode: 'light',
+    surfaceColor: (value: string) => value,
+    borderColor: (value: string) => value,
+    accentTextColor: (value: string) => value,
     colors: { orange500: '#f80', textPrimary: '#111', textSecondary: '#666' },
   }),
 }));

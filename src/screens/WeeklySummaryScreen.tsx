@@ -231,11 +231,23 @@ export const WeeklySummaryScreen: React.FC<
           WEEKS_DATA,
           pregnancyWeek,
         ),
-        nextWeek: getNextWeekPreview(
-          WEEKS_DATA,
-          pregnancyWeek,
-        ),
+        nextWeek: (() => {
+          const next = getNextWeekPreview(
+            WEEKS_DATA,
+            pregnancyWeek,
+          );
+          return next
+            ? {
+                ...next,
+                preview: t(
+                  `home.week_desc_w${String(next.week).padStart(2, '0')}`,
+                ),
+              }
+            : null;
+        })(),
         backendSummary,
+        locale,
+        translate: (key, options) => t(key, options),
         localData: {
           actionCompletions,
           checkIns,
@@ -259,10 +271,12 @@ export const WeeklySummaryScreen: React.FC<
     restTimers,
     dailyMoments,
     identity,
+    locale,
     milestone,
     pregnancyWeek,
     reviewMode,
     summaryEndDate,
+    t,
   ]);
 
   const badges = useMemo(
@@ -270,8 +284,14 @@ export const WeeklySummaryScreen: React.FC<
     [summary],
   );
   const report = useMemo(
-    () => (summary ? buildWeeklyReport(summary) : null),
-    [summary],
+    () =>
+      summary
+        ? buildWeeklyReport(
+            summary,
+            (key, options) => t(key, options),
+          )
+        : null,
+    [summary, t],
   );
   const progression = useMemo(
     () => resolvePregnancyProgression(pregnancyWeek),
@@ -318,7 +338,7 @@ export const WeeklySummaryScreen: React.FC<
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#FFFEFD',
+          backgroundColor: theme.surfaceColor('#FFFEFD'),
         },
         header: {
           minHeight: 58,
@@ -328,7 +348,7 @@ export const WeeklySummaryScreen: React.FC<
           paddingHorizontal: spacing('sm'),
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: theme.colors.neutral200,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         back: {
           width: 48,
@@ -363,7 +383,7 @@ export const WeeklySummaryScreen: React.FC<
           ...StyleSheet.absoluteFillObject,
         },
         heroEyebrow: {
-          color: '#8A3B16',
+          color: theme.accentTextColor('#8A3B16'),
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 10,
           letterSpacing: 0.7,
@@ -371,7 +391,7 @@ export const WeeklySummaryScreen: React.FC<
         },
         heroTitle: {
           marginTop: spacing('xs'),
-          color: '#4B210F',
+          color: theme.accentTextColor('#4B210F'),
           fontFamily: theme.typography.fontFamily.extraBold,
           fontSize: 25,
           lineHeight: 31,
@@ -387,16 +407,18 @@ export const WeeklySummaryScreen: React.FC<
           justifyContent: 'center',
           paddingHorizontal: spacing('sm'),
           borderRadius: radius('md'),
-          backgroundColor: 'rgba(255,255,255,0.7)',
+          backgroundColor: theme.mode === 'dark'
+            ? 'rgba(37,37,37,0.85)'
+            : 'rgba(255,255,255,0.7)',
         },
         heroValue: {
-          color: '#4B210F',
+          color: theme.accentTextColor('#4B210F'),
           fontFamily: theme.typography.fontFamily.extraBold,
           fontSize: 20,
         },
         heroLabel: {
           marginTop: 2,
-          color: '#7B4A32',
+          color: theme.accentTextColor('#7B4A32'),
           fontFamily: theme.typography.fontFamily.regular,
           fontSize: 9,
         },
@@ -446,7 +468,7 @@ export const WeeklySummaryScreen: React.FC<
           minHeight: 105,
           padding: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: theme.colors.neutral200,
         },
@@ -459,16 +481,16 @@ export const WeeklySummaryScreen: React.FC<
           marginBottom: spacing('sm'),
         },
         metricIconHydration: {
-          backgroundColor: '#E8F4FC',
+          backgroundColor: theme.surfaceColor('#E8F4FC'),
         },
         metricIconRest: {
-          backgroundColor: '#F0E9F6',
+          backgroundColor: theme.surfaceColor('#F0E9F6'),
         },
         metricIconExtra: {
-          backgroundColor: '#FFF0E2',
+          backgroundColor: theme.surfaceColor('#FFF0E2'),
         },
         metricIconSleep: {
-          backgroundColor: '#EAF1FC',
+          backgroundColor: theme.surfaceColor('#EAF1FC'),
         },
         metricValue: {
           color: theme.colors.textPrimary,
@@ -485,7 +507,7 @@ export const WeeklySummaryScreen: React.FC<
         domainCard: {
           overflow: 'hidden',
           borderRadius: radius('md'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: theme.colors.neutral200,
         },
@@ -536,7 +558,7 @@ export const WeeklySummaryScreen: React.FC<
           flexDirection: 'row',
           padding: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#F8F3FB',
+          backgroundColor: theme.surfaceColor('#F8F3FB'),
         },
         insightIcon: {
           width: 36,
@@ -545,19 +567,19 @@ export const WeeklySummaryScreen: React.FC<
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: spacing('sm'),
-          backgroundColor: '#EADDF3',
+          backgroundColor: theme.surfaceColor('#EADDF3'),
         },
         insightCopy: {
           flex: 1,
         },
         insightTitle: {
-          color: '#5C3474',
+          color: theme.accentTextColor('#5C3474'),
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 12,
         },
         insightText: {
           marginTop: 3,
-          color: '#6E5978',
+          color: theme.accentTextColor('#6E5978'),
           fontFamily: theme.typography.fontFamily.regular,
           fontSize: 11,
           lineHeight: 17,
@@ -565,7 +587,7 @@ export const WeeklySummaryScreen: React.FC<
         progressCard: {
           overflow: 'hidden',
           borderRadius: radius('lg'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: theme.colors.neutral200,
         },
@@ -582,10 +604,10 @@ export const WeeklySummaryScreen: React.FC<
           marginRight: spacing('sm'),
         },
         progressIconMother: {
-          backgroundColor: '#FFF0E2',
+          backgroundColor: theme.surfaceColor('#FFF0E2'),
         },
         progressIconBaby: {
-          backgroundColor: '#F0E9F6',
+          backgroundColor: theme.surfaceColor('#F0E9F6'),
         },
         progressCopy: {
           flex: 1,
@@ -642,10 +664,10 @@ export const WeeklySummaryScreen: React.FC<
           marginRight: spacing('sm'),
         },
         riskAudienceIconMother: {
-          backgroundColor: '#FFF1E6',
+          backgroundColor: theme.surfaceColor('#FFF1E6'),
         },
         riskAudienceIconChild: {
-          backgroundColor: '#EAF6F2',
+          backgroundColor: theme.surfaceColor('#EAF6F2'),
         },
         riskAudienceLabel: {
           flex: 1,
@@ -663,10 +685,10 @@ export const WeeklySummaryScreen: React.FC<
           fontSize: 12,
         },
         riskChangeLower: {
-          color: '#2E7D4A',
+          color: theme.accentTextColor('#2E7D4A'),
         },
         riskChangeHigher: {
-          color: '#A83149',
+          color: theme.accentTextColor('#A83149'),
         },
         riskChangeStable: {
           color: theme.colors.textSecondary,
@@ -683,7 +705,7 @@ export const WeeklySummaryScreen: React.FC<
           marginTop: spacing('sm'),
           padding: spacing('sm'),
           borderRadius: radius('sm'),
-          backgroundColor: '#EFF8F2',
+          backgroundColor: theme.surfaceColor('#EFF8F2'),
         },
         riskCareImpactIcon: {
           width: 26,
@@ -692,11 +714,11 @@ export const WeeklySummaryScreen: React.FC<
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: spacing('sm'),
-          backgroundColor: '#DDEFE3',
+          backgroundColor: theme.surfaceColor('#DDEFE3'),
         },
         riskCareImpactText: {
           flex: 1,
-          color: '#285F3C',
+          color: theme.accentTextColor('#285F3C'),
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: 11,
           lineHeight: 17,
@@ -736,7 +758,7 @@ export const WeeklySummaryScreen: React.FC<
           marginTop: spacing('sm'),
           padding: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#FFF8EE',
+          backgroundColor: theme.surfaceColor('#FFF8EE'),
         },
         milestoneLabel: {
           color: theme.colors.orange700,
@@ -757,7 +779,7 @@ export const WeeklySummaryScreen: React.FC<
           borderRadius: radius('md'),
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: theme.colors.neutral200,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         systemRow: {
           minHeight: 56,
@@ -795,10 +817,10 @@ export const WeeklySummaryScreen: React.FC<
           marginTop: spacing('sm'),
           padding: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#F8F3FB',
+          backgroundColor: theme.surfaceColor('#F8F3FB'),
         },
         nextWeekLabel: {
-          color: '#70428F',
+          color: theme.accentTextColor('#70428F'),
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 10,
           letterSpacing: 0.4,
@@ -815,10 +837,10 @@ export const WeeklySummaryScreen: React.FC<
           marginTop: spacing('sm'),
           padding: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#F8F3FB',
+          backgroundColor: theme.surfaceColor('#F8F3FB'),
         },
         modeTitle: {
-          color: '#70428F',
+          color: theme.accentTextColor('#70428F'),
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 13,
         },
@@ -834,8 +856,8 @@ export const WeeklySummaryScreen: React.FC<
           padding: spacing('md'),
           borderRadius: radius('md'),
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: '#F0E2D6',
-          backgroundColor: '#FFFFFF',
+          borderColor: theme.borderColor('#F0E2D6'),
+          backgroundColor: theme.colors.surface,
         },
         badgeHeader: {
           flexDirection: 'row',
@@ -859,7 +881,7 @@ export const WeeklySummaryScreen: React.FC<
           alignItems: 'center',
           paddingHorizontal: spacing('sm'),
           borderRadius: 16,
-          backgroundColor: '#FFF4EA',
+          backgroundColor: theme.surfaceColor('#FFF4EA'),
           gap: 5,
         },
         badgeText: {
@@ -874,8 +896,8 @@ export const WeeklySummaryScreen: React.FC<
           padding: spacing('md'),
           borderRadius: radius('md'),
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: '#F0E2D6',
-          backgroundColor: '#FFF8F2',
+          borderColor: theme.borderColor('#F0E2D6'),
+          backgroundColor: theme.surfaceColor('#FFF8F2'),
         },
         shareCopy: {
           flex: 1,
@@ -933,7 +955,7 @@ export const WeeklySummaryScreen: React.FC<
           maxHeight: '84%',
           padding: spacing('lg'),
           borderRadius: radius('lg'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         modalClose: {
           width: 44,
@@ -1056,7 +1078,7 @@ export const WeeklySummaryScreen: React.FC<
       >
         <View style={styles.hero}>
           <LinearGradient
-            colors={['#FFE8C9', '#FFF5E8', '#F7EAF8']}
+            colors={['#FFE8C9', '#FFF5E8', '#F7EAF8'].map(theme.surfaceColor)}
             locations={[0, 0.58, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -1650,7 +1672,9 @@ export const WeeklySummaryScreen: React.FC<
         >
           <View style={styles.modalCard}>
             <Text style={styles.modalEyebrow}>
-              {progression.chapterLabel}
+              {t('home.trimester_label', {
+                number: progression.trimester,
+              })}
             </Text>
             <Text
               accessibilityRole="header"
@@ -1727,7 +1751,11 @@ export const WeeklySummaryScreen: React.FC<
                 accessibilityRole="button"
                 onPress={() => {
                   if (!report) return;
-                  shareWeeklyReport(identity, report).catch(
+                  shareWeeklyReport(
+                    identity,
+                    report,
+                    (key, options) => t(key, options),
+                  ).catch(
                     () => {},
                   );
                 }}

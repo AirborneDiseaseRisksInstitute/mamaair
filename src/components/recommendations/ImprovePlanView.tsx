@@ -47,7 +47,7 @@ export const ImprovePlanView: React.FC<ImprovePlanViewProps> = ({
           justifyContent: 'center',
           marginRight: spacing('sm'),
           borderRadius: 15,
-          backgroundColor: '#F1E8F7',
+          backgroundColor: theme.surfaceColor('#F1E8F7'),
         },
         headingCopy: {
           flex: 1,
@@ -69,7 +69,7 @@ export const ImprovePlanView: React.FC<ImprovePlanViewProps> = ({
           marginTop: spacing('xs'),
           borderLeftWidth: 3,
           borderLeftColor: '#70428F',
-          backgroundColor: '#FAF7FC',
+          backgroundColor: theme.surfaceColor('#FAF7FC'),
         },
         prompt: {
           minHeight: 62,
@@ -78,10 +78,10 @@ export const ImprovePlanView: React.FC<ImprovePlanViewProps> = ({
           paddingHorizontal: spacing('sm'),
           paddingVertical: spacing('sm'),
           borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: '#E7DDEB',
+          borderBottomColor: theme.borderColor('#E7DDEB'),
         },
         promptPressed: {
-          backgroundColor: '#F4EDF8',
+          backgroundColor: theme.surfaceColor('#F4EDF8'),
         },
         promptIcon: {
           width: 28,

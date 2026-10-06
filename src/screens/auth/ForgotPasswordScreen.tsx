@@ -22,6 +22,11 @@ import { mvs, s } from '../../utils/responsive';
 import { FORGOT_PASS_ICON_SVG } from '../../utils/svgIcons';
 import { AuthService } from '../../services/api/AuthService';
 import { getAuthErrorMessage } from '../../utils/authErrors';
+import { isValidAuthEmail } from '../../utils/authValidation';
+import {
+  getRetryAfterSeconds,
+  useAuthRequestCooldown,
+} from '../../hooks/useAuthRequestCooldown';
 
 interface ForgotPasswordScreenProps {
   onBack?: () => void;
@@ -39,6 +44,14 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
   const [loading, setLoading] = useState(false);
 
   const emailInputRef = useRef<InputRef>(null);
+  const requestInFlightRef = useRef(false);
+  const cooldownEmail = step === 'email' ? email : verificationEmail || email;
+  const {
+    secondsRemaining,
+    isCoolingDown,
+    getRemainingSeconds,
+    startCooldown,
+  } = useAuthRequestCooldown('password-reset', cooldownEmail);
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
@@ -84,6 +97,14 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
       fontFamily: theme.typography.fontFamily.medium,
       color: theme.colors.textSecondary,
       textAlign: 'center',
+      marginBottom: spacing('md'),
+      lineHeight: 20,
+    },
+    spamHint: {
+      fontSize: theme.typography.fontSize.sm,
+      fontFamily: theme.typography.fontFamily.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
       marginBottom: spacing('lg'),
       lineHeight: 20,
     },
@@ -96,15 +117,21 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
       fontFamily: theme.typography.fontFamily.bold,
       color: theme.colors.orange500,
     },
+    resendTextDisabled: {
+      color: theme.colors.neutral600,
+    },
   }), [theme]);
 
   const handleResetPassword = async () => {
     const nextEmail = email.trim();
-    if (!nextEmail) return;
+    if (!isValidAuthEmail(nextEmail) || requestInFlightRef.current) return;
+    if (getRemainingSeconds(nextEmail) > 0) return;
+    requestInFlightRef.current = true;
 
     try {
       setLoading(true);
       await AuthService.requestPasswordReset(nextEmail);
+      startCooldown(nextEmail);
       setVerificationEmail(nextEmail);
       setStep('checkEmail');
       showToast({
@@ -113,23 +140,40 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
         message: t('auth.password_reset_email_link_sent', { email: nextEmail }),
       });
     } catch (error: any) {
-      console.error('Password reset request error:', error);
+      if (error?.response?.status === 429) {
+        const retryAfterSeconds = getRetryAfterSeconds(error);
+        startCooldown(nextEmail, retryAfterSeconds);
+        showToast({
+          type: 'error',
+          title: t('auth.too_many_requests_title'),
+          message: t('auth.too_many_requests_message', {
+            seconds: retryAfterSeconds,
+          }),
+        });
+        return;
+      }
+      console.warn('Password reset request failed:', error?.response?.status ?? 'network');
       showToast({
         type: 'error',
         title: t('auth.password_reset_failed_title'),
-        message: getAuthErrorMessage(error, 'passwordReset'),
+        message: getAuthErrorMessage(error, 'passwordReset', key => t(key)),
       });
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   };
 
   const handleResendResetEmail = async () => {
+    if (requestInFlightRef.current) return;
     const nextEmail = verificationEmail || email.trim();
+    if (getRemainingSeconds(nextEmail) > 0) return;
+    requestInFlightRef.current = true;
 
     try {
       setLoading(true);
       await AuthService.requestPasswordReset(nextEmail);
+      startCooldown(nextEmail);
       showToast({
         type: 'success',
         title: t('auth.check_email_title'),
@@ -138,13 +182,26 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
         }),
       });
     } catch (error: any) {
-      console.error('Password reset resend error:', error);
+      if (error?.response?.status === 429) {
+        const retryAfterSeconds = getRetryAfterSeconds(error);
+        startCooldown(nextEmail, retryAfterSeconds);
+        showToast({
+          type: 'error',
+          title: t('auth.too_many_requests_title'),
+          message: t('auth.too_many_requests_message', {
+            seconds: retryAfterSeconds,
+          }),
+        });
+        return;
+      }
+      console.warn('Password reset resend failed:', error?.response?.status ?? 'network');
       showToast({
         type: 'error',
         title: t('auth.password_reset_failed_title'),
-        message: getAuthErrorMessage(error, 'passwordReset'),
+        message: getAuthErrorMessage(error, 'passwordReset', key => t(key)),
       });
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -214,9 +271,19 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
               {/* Reset Password Button */}
               <View style={styles.buttonContainer}>
                 <Button
-                  title={loading ? t('auth.sending_email') : t('auth.send_reset_link')}
+                  title={
+                    loading
+                      ? t('auth.sending_email')
+                      : isCoolingDown
+                        ? t('auth.request_again_in', {
+                            seconds: secondsRemaining,
+                          })
+                        : t('auth.send_reset_link')
+                  }
                   onPress={handleResetPassword}
-                  disabled={loading || !email.trim()}
+                  disabled={
+                    loading || isCoolingDown || !isValidAuthEmail(email)
+                  }
                 />
               </View>
             </>
@@ -227,6 +294,13 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
                   email: verificationEmail,
                 })}
               </Text>
+              <Text
+                testID="email-spam-folder-hint"
+                style={styles.spamHint}
+                allowFontScaling={false}
+              >
+                {t('auth.email_spam_folder_hint')}
+              </Text>
               <View style={styles.buttonContainer}>
                 <Button
                   title={t('auth.go_to_login')}
@@ -235,13 +309,26 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
                 />
               </View>
               <TouchableOpacity
+                testID="forgot-password-resend"
                 style={styles.resendButton}
                 onPress={handleResendResetEmail}
-                disabled={loading}
+                disabled={loading || isCoolingDown}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: loading || isCoolingDown }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.resendText} allowFontScaling={false}>
-                  {loading ? t('auth.sending_email') : t('auth.resend_reset_email')}
+                <Text
+                  style={[
+                    styles.resendText,
+                    isCoolingDown && styles.resendTextDisabled,
+                  ]}
+                  allowFontScaling={false}
+                >
+                  {loading
+                    ? t('auth.sending_email')
+                    : isCoolingDown
+                      ? t('auth.resend_in', { seconds: secondsRemaining })
+                      : t('auth.resend_reset_email')}
                 </Text>
               </TouchableOpacity>
             </>

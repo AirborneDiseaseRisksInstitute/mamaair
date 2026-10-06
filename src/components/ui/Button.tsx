@@ -76,8 +76,8 @@ export const Button: React.FC<ButtonProps> = ({
     : theme.colors.orange500;
 
   const shadowColor = disabled
-    ? theme.colors.neutral600
-    : theme.colors.orange900;
+    ? theme.colors.buttonDisabledDepth
+    : theme.colors.buttonDepth;
 
   const textColor = disabled ? theme.colors.neutral700 : '#FFFFFF';
 

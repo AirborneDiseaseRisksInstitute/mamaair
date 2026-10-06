@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -72,7 +73,6 @@ import {
   type AirExposure,
 } from '../services/api/ExposureService';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
-import { formatLocalDate } from '../utils/dateUtils';
 import { SVG_ICONS } from '../utils/svgIcons';
 import { WEEKS_DATA } from './HomeScreen';
 import {
@@ -107,9 +107,21 @@ import { subscribeToMommySymptomSync } from '../services/recommendationExperienc
 import { type LocationPermissionStatus } from '../services/tracking/LocationTracker';
 import { locationAccessCoordinator } from '../services/tracking/LocationAccessCoordinator';
 import { resolvePlanInputReadiness } from '../utils/planReadiness';
-import { isApiConnectionError } from '../utils/apiErrors';
+import {
+  classifyApiFailure,
+  describeApiError,
+  type ApiFailure,
+  type ApiFailureKind,
+} from '../utils/apiErrors';
+import { useCurrentLocalDate } from '../hooks/useCurrentLocalDate';
+import { useTodayMovement } from '../hooks/useTodayMovement';
+import { TodayMovementCard } from '../components/today/TodayMovementCard';
+import { TodayGreeting } from '../components/today/TodayGreeting';
+import {
+  connectionIssuePresentationReducer,
+  initialConnectionIssuePresentationState,
+} from '../utils/connectionIssuePresentation';
 
-const getTodayDate = (): string => formatLocalDate(new Date());
 const EMPTY_DAILY_MOMENTS: Record<string, DailyMomentRecord> = {};
 
 const DASHBOARD_CAROUSEL_GAP = 12;
@@ -117,6 +129,11 @@ const DASHBOARD_CAROUSEL_PEEK = 24;
 
 const isReleaseVisibleDailyPlanAction = (action: DailyPlanAction): boolean =>
   action.domain !== 'service';
+
+const localDateFromKey = (dateKey: string): Date => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
 
 type DashboardDetailSheet = 'snapshot' | 'risks' | null;
 type DashboardStatus = 'stable' | 'attention' | 'context' | 'unavailable';
@@ -132,6 +149,48 @@ interface TodayScreenProps {
   initialActionKey?: string;
   initialFocus?: 'plan' | 'progress';
 }
+
+type TodayUpdateSource =
+  | 'today'
+  | 'summary'
+  | 'recommendationSnapshots'
+  | 'dailyRecommendations'
+  | 'dailyPlan'
+  | 'recommendationCompletion'
+  | 'dailyTasks'
+  | 'taskCompletion'
+  | 'lifestyle'
+  | 'exposure';
+
+interface TodayUpdateIssue {
+  source: TodayUpdateSource;
+  failure: ApiFailure;
+}
+
+const TODAY_UPDATE_SOURCE_KEYS: Record<TodayUpdateSource, string> = {
+  today: 'today.update_source_today',
+  summary: 'today.update_source_summary',
+  recommendationSnapshots: 'today.update_source_summary',
+  dailyRecommendations: 'today.update_source_recommendations',
+  dailyPlan: 'today.update_source_plan',
+  recommendationCompletion: 'today.update_source_recommendation_progress',
+  dailyTasks: 'today.update_source_plan_tasks',
+  taskCompletion: 'today.update_source_task_progress',
+  lifestyle: 'today.update_source_lifestyle',
+  exposure: 'today.update_source_exposure',
+};
+
+const TODAY_FAILURE_REASON_KEYS: Record<ApiFailureKind, string> = {
+  network: 'today.update_reason_network',
+  timeout: 'today.update_reason_timeout',
+  authentication: 'today.update_reason_authentication',
+  permission: 'today.update_reason_permission',
+  notFound: 'today.update_reason_not_found',
+  validation: 'today.update_reason_validation',
+  rateLimit: 'today.update_reason_rate_limit',
+  server: 'today.update_reason_server',
+  unknown: 'today.update_reason_unknown',
+};
 
 const selectedItemSummary = (
   keys: string[],
@@ -204,7 +263,15 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       );
     const [showLocationSheet, setShowLocationSheet] = useState(false);
     const [isDashboardLoading, setIsDashboardLoading] = useState(true);
-    const [showConnectionSheet, setShowConnectionSheet] = useState(false);
+    const [connectionIssuePresentation, updateConnectionIssuePresentation] =
+      useReducer(
+        connectionIssuePresentationReducer,
+        initialConnectionIssuePresentationState,
+      );
+    const [todayUpdateIssues, setTodayUpdateIssues] = useState<
+      TodayUpdateIssue[]
+    >([]);
+    const [isConnectionRetrying, setIsConnectionRetrying] = useState(false);
     const [
       isPresentationMotherBabyContext,
       setIsPresentationMotherBabyContext,
@@ -228,6 +295,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     const pageScrollRef = useRef<ScrollView | null>(null);
     const planSectionY = useRef(0);
     const appliedFocusKey = useRef<string | null>(null);
+    const connectionRetryInFlight = useRef(false);
+    const latestRefreshRequest = useRef(0);
 
     const dashboardViewportWidth = Math.max(
       280,
@@ -249,7 +318,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       [dashboardCardHeight],
     );
 
-    const date = useMemo(() => getTodayDate(), []);
+    const date = useCurrentLocalDate();
     const storedCheckIn = useRecommendationExperienceStore(
       state => state.checkIns[date] ?? null,
     );
@@ -274,6 +343,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       }),
       [profile.backendUserId, profile.email],
     );
+    const movement = useTodayMovement(
+      date,
+      String(identity.backendUserId ?? identity.email ?? 'signed-out'),
+    );
+    const beginMovementLoad = movement.beginLoad;
     const currentWeek =
       getCurrentPregnancyWeek(
         profile.pregnancyWeek,
@@ -284,16 +358,19 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
 
     const currentDateLabel = useMemo(
       () =>
-        new Date().toLocaleDateString(locale, {
+        localDateFromKey(date).toLocaleDateString(locale, {
           weekday: 'short',
           day: 'numeric',
           month: 'short',
           year: 'numeric',
         }),
-      [locale],
+      [date, locale],
     );
 
     const refreshToday = useCallback(async () => {
+      const completeMovementLoad = beginMovementLoad();
+      const refreshRequest = latestRefreshRequest.current + 1;
+      latestRefreshRequest.current = refreshRequest;
       setIsDashboardLoading(true);
       if (planInputReadiness.ready) {
         setDailyPlanLoadStatus(current =>
@@ -332,21 +409,75 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         planLoad.status === 'fulfilled' ? planLoad.value : null;
       const directSummary =
         summaryLoad.status === 'fulfilled' ? summaryLoad.value : null;
+      const movementFailure = planInputReadiness.ready
+        ? planResult?.issues.find(
+            issue => issue.capability === 'recommendationSnapshots',
+          )?.failure ??
+          (planLoad.status === 'rejected'
+            ? classifyApiFailure(planLoad.reason)
+            : null)
+        : summaryLoad.status === 'rejected'
+        ? classifyApiFailure(summaryLoad.reason)
+        : null;
+      completeMovementLoad(
+        planResult?.summary ?? directSummary,
+        movementFailure,
+      );
       const checkInExperience =
         checkInLoad.status === 'fulfilled' ? checkInLoad.value : null;
       const lifestyleData =
         lifestyleLoad.status === 'fulfilled' ? lifestyleLoad.value : null;
       const airExposureData =
         exposureLoad.status === 'fulfilled' ? exposureLoad.value : null;
-      const hasConnectionError =
-        Boolean(planResult?.connectionError) ||
-        [planLoad, summaryLoad, lifestyleLoad, exposureLoad].some(
-          result =>
-            result.status === 'rejected' &&
-            isApiConnectionError(result.reason),
-        );
+      const networkLoads: Array<[string, PromiseSettledResult<unknown>]> = [
+        ['dailyPlan', planLoad],
+        ['summary', summaryLoad],
+        ['lifestyle', lifestyleLoad],
+        ['exposure', exposureLoad],
+      ];
+      const updateIssues: TodayUpdateIssue[] = [
+        ...(planResult?.issues ?? []).map(issue => ({
+          source: issue.capability as TodayUpdateSource,
+          failure: issue.failure,
+        })),
+        ...networkLoads.flatMap(([source, result]) =>
+          result.status === 'rejected'
+            ? [
+                {
+                  source: source as TodayUpdateSource,
+                  failure: classifyApiFailure(result.reason),
+                },
+              ]
+            : [],
+        ),
+      ];
+      const hasUpdateIssue = updateIssues.length > 0;
 
-      setShowConnectionSheet(hasConnectionError);
+      if (__DEV__ && hasUpdateIssue) {
+        const diagnostics = networkLoads
+          .filter(
+            (entry): entry is [string, PromiseRejectedResult] =>
+              entry[1].status === 'rejected',
+          )
+          .map(
+            ([label, result]) => `${label}: ${describeApiError(result.reason)}`,
+          );
+
+        console.warn(
+          '[Today] Update issues shown',
+          diagnostics.length > 0
+            ? diagnostics.join(' | ')
+            : 'nested daily plan capability failed',
+        );
+      }
+
+      if (refreshRequest === latestRefreshRequest.current) {
+        setTodayUpdateIssues(updateIssues);
+        updateConnectionIssuePresentation({
+          type: 'refreshFinished',
+          hasIssue: hasUpdateIssue,
+        });
+      }
 
       const pregnancyWeek =
         getCurrentPregnancyWeek(
@@ -416,18 +547,44 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           endDate: date,
           milestone,
           backendSummary: completedPresentation?.summary ?? directSummary,
+          locale,
+          translate: (key, options) => t(key, options),
         }).streakDays,
       );
       setIsDashboardLoading(false);
     }, [
+      beginMovementLoad,
       date,
       identity,
       hasLocationPermission,
+      locale,
       t,
       profile.pregnancyWeek,
       profile.pregnancyWeekSetDate,
       planInputReadiness,
     ]);
+
+    const handleConnectionRetry = useCallback(() => {
+      if (connectionRetryInFlight.current) return;
+
+      connectionRetryInFlight.current = true;
+      setIsConnectionRetrying(true);
+      refreshToday()
+        .catch(error => {
+          setIsDashboardLoading(false);
+          setTodayUpdateIssues([
+            { source: 'today', failure: classifyApiFailure(error) },
+          ]);
+          updateConnectionIssuePresentation({
+            type: 'refreshFinished',
+            hasIssue: true,
+          });
+        })
+        .finally(() => {
+          connectionRetryInFlight.current = false;
+          setIsConnectionRetrying(false);
+        });
+    }, [refreshToday]);
 
     useFocusEffect(
       useCallback(() => {
@@ -472,11 +629,17 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     }, []);
 
     useEffect(() => {
-      refreshToday().catch(() => {
+      refreshToday().catch(error => {
         setDailyPlan(null);
         setDailyPlanLoadStatus('unavailable');
         setIsDashboardLoading(false);
-        setShowConnectionSheet(true);
+        setTodayUpdateIssues([
+          { source: 'today', failure: classifyApiFailure(error) },
+        ]);
+        updateConnectionIssuePresentation({
+          type: 'refreshFinished',
+          hasIssue: true,
+        });
       });
       if (planInputReadiness.ready) {
         DailyCheckinService.ensureCheckin(date);
@@ -612,6 +775,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
               endDate: date,
               milestone,
               backendSummary: summary,
+              locale,
+              translate: (key, options) => t(key, options),
             }).streakDays,
           );
           return true;
@@ -624,7 +789,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           return false;
         }
       },
-      [currentWeek, dailyPlan, date, identity, showToast, summary, t],
+      [currentWeek, dailyPlan, date, identity, locale, showToast, summary, t],
     );
 
     const handleToggleAction = useCallback(
@@ -700,7 +865,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
     const waterProgress = Math.min(
       100,
       hydrationTarget > 0
-        ? Math.round(
+        ? Math.floor(
             ((checkIn?.waterDailyTotalMl ?? 0) / hydrationTarget) * 100,
           )
         : 0,
@@ -849,7 +1014,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         return t('today.status_unavailable');
       }
       if (delta === 0) return t('today.no_change');
-      return `${Math.abs(delta).toFixed(1)}% ${t(
+      return `${Math.abs(delta).toFixed(1)} ${t(
         delta < 0 ? 'today.decrease' : 'today.increase',
       )}`;
     };
@@ -891,7 +1056,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         StyleSheet.create({
           container: {
             flex: 1,
-            backgroundColor: '#FFFFFF',
+            backgroundColor: theme.colors.background,
           },
           pageGradient: {
             ...StyleSheet.absoluteFillObject,
@@ -904,7 +1069,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             paddingVertical: spacing('xs'),
             borderBottomWidth: StyleSheet.hairlineWidth,
             borderBottomColor: theme.colors.neutral200,
-            backgroundColor: 'rgba(255, 255, 255, 0.97)',
+            backgroundColor: theme.mode === 'dark'
+              ? 'rgba(29,29,29,0.97)'
+              : 'rgba(255, 255, 255, 0.97)',
           },
           backButton: {
             width: 48,
@@ -935,21 +1102,21 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             marginTop: spacing('md'),
             borderRadius: radius('lg'),
             borderWidth: 1,
-            borderColor: '#E8A4A4',
-            backgroundColor: '#FFF1F1',
+            borderColor: theme.borderColor('#E8A4A4'),
+            backgroundColor: theme.surfaceColor('#FFF1F1'),
             gap: spacing('sm'),
           },
           warningCopy: {
             flex: 1,
           },
           warningTitle: {
-            color: '#852525',
+            color: theme.accentTextColor('#852525'),
             fontFamily: theme.typography.fontFamily.extraBold,
             fontSize: 15,
           },
           warningBody: {
             marginTop: spacing('xs'),
-            color: '#6E2B2B',
+            color: theme.accentTextColor('#6E2B2B'),
             fontFamily: theme.typography.fontFamily.regular,
             fontSize: 13,
             lineHeight: 19,
@@ -961,8 +1128,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             marginTop: spacing('md'),
             borderRadius: radius('lg'),
             borderWidth: 1,
-            borderColor: '#F0C78A',
-            backgroundColor: '#FFF8EA',
+            borderColor: theme.borderColor('#F0C78A'),
+            backgroundColor: theme.surfaceColor('#FFF8EA'),
             gap: spacing('sm'),
           },
           importantGuidanceTitle: {
@@ -987,7 +1154,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             fontSize: 20,
           },
           dashboardCarouselShell: {
-            marginTop: spacing('md'),
+            marginTop: spacing('xs'),
           },
           dashboardCarousel: {
             overflow: 'visible',
@@ -1017,7 +1184,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             width: 7,
             height: 5,
             borderRadius: 3,
-            backgroundColor: '#D8D2CF',
+            backgroundColor: theme.surfaceColor('#D8D2CF'),
           },
           pageIndicatorActive: {
             width: 22,
@@ -1027,8 +1194,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             padding: spacing('md'),
             borderRadius: 24,
             borderWidth: StyleSheet.hairlineWidth,
-            borderColor: '#E9E5E2',
-            backgroundColor: '#FFFFFF',
+            borderColor: theme.borderColor('#E9E5E2'),
+            backgroundColor: theme.colors.surface,
             shadowColor: '#5F4858',
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.1,
@@ -1057,7 +1224,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           liveDivider: {
             height: StyleSheet.hairlineWidth,
             marginVertical: spacing('sm'),
-            backgroundColor: '#ECE9E6',
+            backgroundColor: theme.surfaceColor('#ECE9E6'),
           },
           signalsHeader: {
             flexDirection: 'row',
@@ -1078,7 +1245,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             marginTop: spacing('md'),
             paddingHorizontal: spacing('sm'),
             borderRadius: 16,
-            backgroundColor: '#F7F6F5',
+            backgroundColor: theme.surfaceColor('#F7F6F5'),
           },
           careStatusIcon: {
             width: 34,
@@ -1087,7 +1254,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             alignItems: 'center',
             justifyContent: 'center',
             marginRight: spacing('sm'),
-            backgroundColor: '#FFFFFF',
+            backgroundColor: theme.colors.surface,
           },
           careStatusCopy: {
             flex: 1,
@@ -1257,7 +1424,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             marginTop: spacing('sm'),
             overflow: 'hidden',
             borderRadius: 14,
-            backgroundColor: '#FAF9F7',
+            backgroundColor: theme.surfaceColor('#FAF9F7'),
           },
           checkInUtilityItem: {
             flex: 1,
@@ -1282,10 +1449,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             backgroundColor: theme.colors.orange50,
           },
           checkInUtilityIconWarning: {
-            backgroundColor: '#FFF0F0',
+            backgroundColor: theme.surfaceColor('#FFF0F0'),
           },
           checkInUtilityIconRest: {
-            backgroundColor: '#F3EAF8',
+            backgroundColor: theme.surfaceColor('#F3EAF8'),
           },
           checkInUtilityCopy: {
             flex: 1,
@@ -1306,7 +1473,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             lineHeight: 14,
           },
           checkInUtilityWarning: {
-            color: '#8A2525',
+            color: theme.accentTextColor('#8A2525'),
           },
           checkInUtilityChevron: {
             marginLeft: 3,
@@ -1406,8 +1573,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             padding: spacing('md'),
             borderRadius: 24,
             borderWidth: StyleSheet.hairlineWidth,
-            borderColor: '#E7E0E9',
-            backgroundColor: '#FFFFFF',
+            borderColor: theme.borderColor('#E7E0E9'),
+            backgroundColor: theme.colors.surface,
             shadowColor: '#654676',
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.1,
@@ -1442,7 +1609,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             alignItems: 'center',
             justifyContent: 'center',
             marginRight: spacing('sm'),
-            backgroundColor: '#F3EAF8',
+            backgroundColor: theme.surfaceColor('#F3EAF8'),
           },
           weekHeaderCopy: {
             flex: 1,
@@ -1458,10 +1625,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             paddingHorizontal: spacing('sm'),
             paddingVertical: 6,
             borderRadius: 14,
-            backgroundColor: '#FFF0E2',
+            backgroundColor: theme.surfaceColor('#FFF0E2'),
           },
           weekBadgeText: {
-            color: '#A84E13',
+            color: theme.accentTextColor('#A84E13'),
             fontFamily: theme.typography.fontFamily.bold,
             fontSize: 10,
           },
@@ -1490,7 +1657,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             alignItems: 'center',
             paddingVertical: spacing('sm'),
             borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: '#F0E5DC',
+            borderBottomColor: theme.borderColor('#F0E5DC'),
           },
           systemRowLast: {
             borderBottomWidth: 0,
@@ -1502,7 +1669,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             alignItems: 'center',
             justifyContent: 'center',
             marginRight: spacing('sm'),
-            backgroundColor: '#FFF0E2',
+            backgroundColor: theme.surfaceColor('#FFF0E2'),
           },
           systemCopy: {
             flex: 1,
@@ -1528,7 +1695,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             flex: 1,
             overflow: 'hidden',
             borderRadius: 3,
-            backgroundColor: '#F5D7BE',
+            backgroundColor: theme.surfaceColor('#F5D7BE'),
           },
           systemProgressFill: {
             height: 5,
@@ -1543,7 +1710,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             marginTop: spacing('sm'),
             paddingTop: spacing('sm'),
             borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: '#E7E0E9',
+            borderTopColor: theme.borderColor('#E7E0E9'),
             gap: spacing('xs'),
           },
           weekActionText: {
@@ -1572,6 +1739,27 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             fontSize: 14,
             lineHeight: 21,
           },
+          connectionIssueList: {
+            marginTop: spacing('md'),
+            gap: spacing('sm'),
+          },
+          connectionIssueRow: {
+            padding: spacing('sm'),
+            borderRadius: radius('sm'),
+            backgroundColor: theme.colors.neutral100,
+          },
+          connectionIssueSource: {
+            color: theme.colors.textPrimary,
+            fontFamily: theme.typography.fontFamily.bold,
+            fontSize: 13,
+          },
+          connectionIssueReason: {
+            marginTop: 3,
+            color: theme.colors.textSecondary,
+            fontFamily: theme.typography.fontFamily.regular,
+            fontSize: 12,
+            lineHeight: 18,
+          },
           connectionRetry: {
             minHeight: 48,
             flexDirection: 'row',
@@ -1581,6 +1769,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             marginTop: spacing('lg'),
             borderRadius: radius('md'),
             backgroundColor: theme.colors.orange500,
+          },
+          connectionRetryDisabled: {
+            opacity: 0.6,
           },
           connectionRetryText: {
             color: '#FFFFFF',
@@ -1661,12 +1852,12 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             marginBottom: spacing('md'),
             padding: spacing('md'),
             borderRadius: radius('md'),
-            backgroundColor: '#FFF8F2',
+            backgroundColor: theme.surfaceColor('#FFF8F2'),
           },
           recordedSymptomsWarning: {
             borderWidth: 1,
-            borderColor: '#E8B3B3',
-            backgroundColor: '#FFF4F4',
+            borderColor: theme.borderColor('#E8B3B3'),
+            backgroundColor: theme.surfaceColor('#FFF4F4'),
           },
           recordedSymptomsHeader: {
             flexDirection: 'row',
@@ -1689,7 +1880,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           },
           symptomWarningNote: {
             marginTop: spacing('sm'),
-            color: '#8A2525',
+            color: theme.accentTextColor('#8A2525'),
             fontFamily: theme.typography.fontFamily.regular,
             fontSize: 12,
             lineHeight: 18,
@@ -1701,7 +1892,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             justifyContent: 'center',
             marginTop: spacing('sm'),
             borderRadius: 21,
-            backgroundColor: '#FFFFFF',
+            backgroundColor: theme.colors.surface,
             gap: spacing('xs'),
           },
           historyButtonText: {
@@ -1737,7 +1928,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       <SafeAreaView style={styles.container}>
         <LinearGradient
           pointerEvents="none"
-          colors={['#FFFFFF', '#FFFEFD', '#FAFAFC']}
+          colors={['#FFFFFF', '#FFFEFD', '#FAFAFC'].map(theme.surfaceColor)}
           locations={[0, 0.62, 1]}
           style={styles.pageGradient}
         />
@@ -1807,6 +1998,18 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
               </View>
             </View>
           ) : null}
+
+          <TodayGreeting name={profile.name} />
+
+          <TodayMovementCard
+            distanceMeters={movement.reading.distanceMeters}
+            fetchedAt={movement.reading.fetchedAt}
+            loading={movement.reading.loading}
+            failure={movement.reading.failure}
+            trackingActive={movement.trackingActive}
+            onRefresh={movement.refresh}
+            onEnableTracking={() => setShowLocationSheet(true)}
+          />
 
           <View style={styles.dashboardCarouselShell}>
             <ScrollView
@@ -2323,6 +2526,19 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
             </View>
           )}
 
+          {shouldShowPostPlanAd({
+            totalTasks,
+            doneTasks,
+            dailyWinVisible: showDailyWin,
+            hasMedicalAlert: medicalSafetyAlerts.length > 0,
+          }) ? (
+            <InlineAd
+              key={`${identity.backendUserId ?? identity.email ?? 'local'}:${date}`}
+              date={date}
+              identity={identity}
+            />
+          ) : null}
+
           {dailyPlanLoadStatus !== 'needsInput' ? (
             <ImprovePlanView
               prompts={improvePlanPrompts}
@@ -2331,14 +2547,6 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           ) : null}
 
           <EveningWindDown date={date} identity={identity} />
-          {shouldShowPostPlanAd({
-            totalTasks,
-            doneTasks,
-            dailyWinVisible: showDailyWin,
-            hasMedicalAlert: medicalSafetyAlerts.length > 0,
-          }) ? (
-            <InlineAd date={date} identity={identity} />
-          ) : null}
         </ScrollView>
 
         <TodayQuickCheckInSheet
@@ -2531,40 +2739,54 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
         </BottomSheet>
 
         <BottomSheet
-          visible={showConnectionSheet}
-          onClose={() => setShowConnectionSheet(false)}
+          visible={connectionIssuePresentation.visible}
+          onClose={() =>
+            updateConnectionIssuePresentation({ type: 'dismissed' })
+          }
           showHandle
         >
           <View accessibilityViewIsModal style={styles.connectionSheet}>
             <Text style={styles.connectionTitle}>
-              {t('today.connection_issue_title')}
+              {t('today.update_issue_title')}
             </Text>
             <Text style={styles.connectionBody}>
-              {t('today.connection_issue_body')}
+              {t('today.update_issue_body')}
             </Text>
+            <View style={styles.connectionIssueList}>
+              {todayUpdateIssues.map((issue, index) => (
+                <View
+                  key={`${issue.source}-${issue.failure.kind}-${index}`}
+                  style={styles.connectionIssueRow}
+                >
+                  <Text style={styles.connectionIssueSource}>
+                    {t(TODAY_UPDATE_SOURCE_KEYS[issue.source])}
+                  </Text>
+                  <Text style={styles.connectionIssueReason}>
+                    {t(TODAY_FAILURE_REASON_KEYS[issue.failure.kind])}
+                  </Text>
+                </View>
+              ))}
+            </View>
             <Pressable
               accessibilityRole="button"
-              onPress={() => {
-                setShowConnectionSheet(false);
-                refreshToday().catch(() => {
-                  setIsDashboardLoading(false);
-                  setShowConnectionSheet(true);
-                });
-              }}
-              style={styles.connectionRetry}
+              accessibilityState={{ disabled: isConnectionRetrying }}
+              disabled={isConnectionRetrying}
+              onPress={handleConnectionRetry}
+              style={[
+                styles.connectionRetry,
+                isConnectionRetrying && styles.connectionRetryDisabled,
+              ]}
             >
-              <FontAwesomeIcon
-                icon={faRotateRight}
-                size={14}
-                color="#FFFFFF"
-              />
+              <FontAwesomeIcon icon={faRotateRight} size={14} color="#FFFFFF" />
               <Text style={styles.connectionRetryText}>
                 {t('feeling_checkin.try_again')}
               </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              onPress={() => setShowConnectionSheet(false)}
+              onPress={() =>
+                updateConnectionIssuePresentation({ type: 'dismissed' })
+              }
               style={styles.connectionClose}
             >
               <Text style={styles.connectionCloseText}>
@@ -2580,7 +2802,6 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
           onAllow={handleLocationAllow}
           onNotNow={handleLocationDecline}
         />
-
       </SafeAreaView>
     );
   },

@@ -27,8 +27,10 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
         // Just check the status, don't auto-navigate
         // User should manually press the button to proceed
         setChecking(false);
-      } catch (error) { 
-        console.error('Error checking notification status:', error); 
+      } catch (error) {
+        if (__DEV__) {
+          console.error('Error checking notification status:', error);
+        }
         setChecking(false);
       }
     };
@@ -49,13 +51,17 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
         // Open system settings directly so user can fix it
         Linking.openSettings();
       }
-    } catch (error) { console.error('Error requesting notification permission:', error); }
+    } catch (error) {
+      if (__DEV__) {
+        console.error('Error requesting notification permission:', error);
+      }
+    }
   };
 
   const CARD_HEIGHT = vs(110);
 
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
     contentWrapper: { paddingHorizontal: spacing('md'), paddingTop: HEADER_CLEARANCE },
     descriptionText: { fontSize: 16, fontFamily: theme.typography.fontFamily.regular, color: theme.colors.textPrimary, textAlign: 'center', lineHeight: 24, marginBottom: spacing('xl'), marginTop:32 },
@@ -63,7 +69,7 @@ export const IntroStep12: React.FC<IntroStep12Props> = ({ onEnableNotifications,
     cardContainer: { position: 'relative', width: '100%', marginTop: spacing('lg'), paddingBottom: SHADOW_OFFSET_2 },
     cardShadow2: { position: 'absolute', top: SHADOW_OFFSET_2, left: 4, right: 4, height: CARD_HEIGHT, borderRadius: radius('md'), backgroundColor: theme.colors.orange300 || '#FFB366' },
     cardShadow1: { position: 'absolute', top: SHADOW_OFFSET_1, left: 2, right: 2, height: CARD_HEIGHT, borderRadius: radius('md'), backgroundColor: theme.colors.orange500 },
-    card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: radius('md'), borderWidth: 1, borderColor: theme.colors.orange500, padding: spacing('md'), minHeight: CARD_HEIGHT, zIndex: 2 },
+    card: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.surface, borderRadius: radius('md'), borderWidth: 1, borderColor: theme.colors.orange500, padding: spacing('md'), minHeight: CARD_HEIGHT, zIndex: 2 },
     cardImage: { width: s(80), height: s(80), borderRadius: radius('sm'), marginRight: spacing('md') },
     cardContent: { flex: 1 },
     cardTitle: { fontSize: 14, fontFamily: theme.typography.fontFamily.bold, color: theme.colors.textPrimary, lineHeight: 20, marginBottom: spacing('xs') },

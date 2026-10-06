@@ -22,6 +22,7 @@ export interface IntroFlowProfile {
   height?: number | null;
   weight?: number | null;
   language?: string | null;
+  introLanguageConfirmed?: boolean;
   country?: string | null;
   area?: string | null;
   timezone?: string | null;
@@ -53,7 +54,8 @@ export const INTRO_STEP_FLOW: IntroFlowStep[] = [
   {
     fromIndex: 4,
     screen: 'IntroStep04',
-    isComplete: profile => Boolean(profile.language),
+    isComplete: profile =>
+      Boolean(profile.language && profile.introLanguageConfirmed === true),
   },
   {
     fromIndex: 2,

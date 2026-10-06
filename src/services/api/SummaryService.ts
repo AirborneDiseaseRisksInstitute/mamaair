@@ -39,6 +39,18 @@ export interface SummarySymptomClassStatistics {
   classes?: SummarySymptomClassStatistic[];
 }
 
+export interface SummaryTaskCompletionCategoryCount {
+  done: number;
+  total: number;
+}
+
+export interface SummaryTaskCompletionCounts {
+  diet: SummaryTaskCompletionCategoryCount;
+  activity: SummaryTaskCompletionCategoryCount;
+  behavior: SummaryTaskCompletionCategoryCount;
+  mental: SummaryTaskCompletionCategoryCount;
+}
+
 export interface SummaryResponse {
   aq_weather_uv?: any;
   mom_exposure?: {
@@ -64,7 +76,9 @@ export interface SummaryResponse {
   };
   week_info?: {
     week?: number;
+    locale?: string;
     text?: string;
+    source?: string;
   };
   daily_exposure_level?: string;
   daily_checkins?: string[];
@@ -94,6 +108,7 @@ export interface SummaryResponse {
   task_completions?: Array<{
     date: string;
     tasks: string[];
+    counts?: SummaryTaskCompletionCounts;
   }>;
   exposure_history?: {
     start_date: string;
@@ -107,8 +122,9 @@ export interface SummaryResponse {
 }
 
 export const SummaryService = {
-  getSummary: async (): Promise<SummaryResponse> => {
+  getSummary: async (): Promise<SummaryResponse | null> => {
     const response = await api.get('/summary/');
-    return response.data;
+    // The API uses 204 to indicate that this user has no exposure data yet.
+    return response.data ?? null;
   },
 };

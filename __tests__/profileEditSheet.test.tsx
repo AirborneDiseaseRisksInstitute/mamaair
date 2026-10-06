@@ -90,6 +90,10 @@ jest.mock('../src/theme', () => ({
   spacing: () => 8,
   radius: () => 8,
   useTheme: () => ({
+    mode: 'light',
+    surfaceColor: (value: string) => value,
+    borderColor: (value: string) => value,
+    accentTextColor: (value: string) => value,
     colors: {
       background: '#fff',
       neutral300: '#ddd',

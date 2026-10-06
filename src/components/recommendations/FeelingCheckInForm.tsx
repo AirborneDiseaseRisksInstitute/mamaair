@@ -1,10 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import {
   faCheck,
@@ -20,6 +15,7 @@ import type {
 } from '../../types/recommendationExperience';
 import { resolveCheckInOptionIcon } from './checkInOptionIcons';
 import { HydrationQuickAdd } from './HydrationQuickAdd';
+import { feelingCheckInItemLabel } from '../../utils/feelingCheckInLabels';
 
 interface FeelingCheckInFormProps {
   step: CheckInItemGroup;
@@ -28,26 +24,26 @@ interface FeelingCheckInFormProps {
   onChange: (selection: FeelingCheckInSelection) => void;
   disabled?: boolean;
   showNoneOption?: boolean;
+  wellbeingSection?: 'all' | 'mood' | 'feelings';
+  compact?: boolean;
 }
 
-const sortItems = (
-  items: FeelingCheckInItem[],
-): FeelingCheckInItem[] =>
+const sortItems = (items: FeelingCheckInItem[]): FeelingCheckInItem[] =>
   [...items].sort(
     (a, b) =>
       (a.displayPriority ?? Number.MAX_SAFE_INTEGER) -
       (b.displayPriority ?? Number.MAX_SAFE_INTEGER),
   );
 
-export const FeelingCheckInForm: React.FC<
-  FeelingCheckInFormProps
-> = ({
+export const FeelingCheckInForm: React.FC<FeelingCheckInFormProps> = ({
   step,
   experience,
   selection,
   onChange,
   disabled = false,
   showNoneOption = true,
+  wellbeingSection = 'all',
+  compact = false,
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
@@ -59,10 +55,7 @@ export const FeelingCheckInForm: React.FC<
     warning: false,
   });
 
-  const moods = useMemo(
-    () => sortItems(experience.moods),
-    [experience.moods],
-  );
+  const moods = useMemo(() => sortItems(experience.moods), [experience.moods]);
   const feelings = useMemo(
     () => sortItems(experience.feelings),
     [experience.feelings],
@@ -70,18 +63,14 @@ export const FeelingCheckInForm: React.FC<
   const physicalSymptoms = useMemo(
     () =>
       sortItems(
-        experience.mommySymptoms.filter(
-          item => item.group === 'physical',
-        ),
+        experience.mommySymptoms.filter(item => item.group === 'physical'),
       ),
     [experience.mommySymptoms],
   );
   const warningSymptoms = useMemo(
     () =>
       sortItems(
-        experience.mommySymptoms.filter(
-          item => item.group === 'warning',
-        ),
+        experience.mommySymptoms.filter(item => item.group === 'warning'),
       ),
     [experience.mommySymptoms],
   );
@@ -101,12 +90,12 @@ export const FeelingCheckInForm: React.FC<
           padding: spacing('md'),
           marginBottom: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#FFF0F0',
+          backgroundColor: theme.surfaceColor('#FFF0F0'),
           gap: spacing('sm'),
         },
         warningLeadText: {
           flex: 1,
-          color: '#8A2525',
+          color: theme.accentTextColor('#8A2525'),
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: 13,
           lineHeight: 19,
@@ -139,10 +128,40 @@ export const FeelingCheckInForm: React.FC<
           borderRadius: 14,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: theme.colors.neutral200,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         optionWide: {
           flexBasis: '100%',
+        },
+        compactOption: {
+          flexBasis: 'auto',
+          flexGrow: 0,
+          maxWidth: '100%',
+          minHeight: 44,
+          borderRadius: 22,
+          paddingHorizontal: spacing('md'),
+        },
+        compactLabel: {
+          flex: 0,
+          flexShrink: 1,
+        },
+        compactList: {
+          flexDirection: 'column',
+          gap: 0,
+        },
+        compactRow: {
+          flexBasis: 'auto',
+          flexGrow: 0,
+          borderRadius: 0,
+          borderWidth: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.neutral200,
+          paddingVertical: spacing('md'),
+        },
+        unchecked: {
+          borderWidth: 1,
+          borderColor: theme.colors.neutral300,
+          backgroundColor: 'transparent',
         },
         optionPressed: {
           opacity: 0.78,
@@ -153,12 +172,12 @@ export const FeelingCheckInForm: React.FC<
           backgroundColor: theme.colors.orange50,
         },
         warningOption: {
-          backgroundColor: '#FFFFFF',
-          borderColor: '#E2BFC2',
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.borderColor('#E2BFC2'),
         },
         warningOptionSelected: {
           borderColor: '#C73A3A',
-          backgroundColor: '#FFE8E8',
+          backgroundColor: theme.surfaceColor('#FFE8E8'),
         },
         optionIcon: {
           width: 28,
@@ -176,7 +195,7 @@ export const FeelingCheckInForm: React.FC<
           lineHeight: 18,
         },
         warningOptionLabel: {
-          color: '#571919',
+          color: theme.accentTextColor('#571919'),
         },
         check: {
           width: 20,
@@ -198,7 +217,7 @@ export const FeelingCheckInForm: React.FC<
           borderRadius: 14,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: theme.colors.neutral300,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         noneOptionSelected: {
           borderColor: theme.colors.orange500,
@@ -224,16 +243,12 @@ export const FeelingCheckInForm: React.FC<
     [theme],
   );
 
-  const selectedKeysForStep = (
-    targetStep: CheckInItemGroup,
-  ): string[] => {
+  const selectedKeysForStep = (targetStep: CheckInItemGroup): string[] => {
     if (targetStep === 'wellbeing') {
       return [...selection.moodKeys, ...selection.feelingKeys];
     }
     const items =
-      targetStep === 'physical'
-        ? physicalSymptoms
-        : warningSymptoms;
+      targetStep === 'physical' ? physicalSymptoms : warningSymptoms;
     const keys = new Set(items.map(item => item.key));
     return selection.mommySymptomKeys.filter(key => keys.has(key));
   };
@@ -247,10 +262,7 @@ export const FeelingCheckInForm: React.FC<
         feelingKeys: [],
       });
     } else {
-      const items =
-        step === 'physical'
-          ? physicalSymptoms
-          : warningSymptoms;
+      const items = step === 'physical' ? physicalSymptoms : warningSymptoms;
       const groupKeys = new Set(items.map(item => item.key));
       onChange({
         ...selection,
@@ -286,10 +298,7 @@ export const FeelingCheckInForm: React.FC<
     }));
   };
 
-  const renderOption = (
-    item: FeelingCheckInItem,
-    warning = false,
-  ) => {
+  const renderOption = (item: FeelingCheckInItem, warning = false) => {
     const field =
       item.kind === 'mood'
         ? selection.moodKeys
@@ -297,22 +306,24 @@ export const FeelingCheckInForm: React.FC<
         ? selection.feelingKeys
         : selection.mommySymptomKeys;
     const selected = field.includes(item.key);
-    const useWideTile =
-      item.kind === 'mommySymptom' || item.name.length > 24;
+    const label = feelingCheckInItemLabel(item, t);
+    const useWideTile = item.kind === 'mommySymptom' || label.length > 24;
     const iconPresentation = resolveCheckInOptionIcon(item);
 
     return (
       <Pressable
         key={item.key}
         accessibilityRole="checkbox"
-        accessibilityLabel={item.name}
+        accessibilityLabel={label}
         accessibilityState={{ checked: selected, disabled }}
         disabled={disabled}
         onPress={() => toggleItem(item)}
         style={({ pressed }) => [
           styles.option,
+          compact && item.kind !== 'mommySymptom' && styles.compactOption,
           useWideTile && styles.optionWide,
           warning && styles.warningOption,
+          compact && item.kind === 'mommySymptom' && styles.compactRow,
           selected && styles.optionSelected,
           selected && warning && styles.warningOptionSelected,
           pressed && styles.optionPressed,
@@ -322,37 +333,36 @@ export const FeelingCheckInForm: React.FC<
           style={[
             styles.optionIcon,
             {
-              backgroundColor:
-                iconPresentation.backgroundColor,
+              backgroundColor: theme.surfaceColor(iconPresentation.backgroundColor),
             },
           ]}
         >
           <FontAwesomeIcon
             icon={iconPresentation.icon}
-            color={iconPresentation.color}
+            color={theme.accentTextColor(iconPresentation.color)}
             size={13}
           />
         </View>
         <Text
           style={[
             styles.optionLabel,
+            compact && item.kind !== 'mommySymptom' && styles.compactLabel,
             warning && styles.warningOptionLabel,
           ]}
         >
-          {item.name}
+          {label}
         </Text>
-        {selected ? (
+        {selected || compact ? (
           <View
             style={[
               styles.check,
               warning && styles.warningCheck,
+              !selected && styles.unchecked,
             ]}
           >
-            <FontAwesomeIcon
-              icon={faCheck}
-              color="#FFFFFF"
-              size={10}
-            />
+            {selected ? (
+              <FontAwesomeIcon icon={faCheck} color="#FFFFFF" size={10} />
+            ) : null}
           </View>
         ) : null}
       </Pressable>
@@ -361,8 +371,7 @@ export const FeelingCheckInForm: React.FC<
 
   const renderNone = () => {
     const selected =
-      noneSelected[step] &&
-      selectedKeysForStep(step).length === 0;
+      noneSelected[step] && selectedKeysForStep(step).length === 0;
     return (
       <Pressable
         accessibilityRole="checkbox"
@@ -376,12 +385,7 @@ export const FeelingCheckInForm: React.FC<
           pressed && styles.optionPressed,
         ]}
       >
-        <Text
-          style={[
-            styles.noneText,
-            selected && styles.noneTextSelected,
-          ]}
-        >
+        <Text style={[styles.noneText, selected && styles.noneTextSelected]}>
           {selected ? '✓  ' : ''}
           {t('feeling_checkin.none_of_these')}
         </Text>
@@ -390,29 +394,39 @@ export const FeelingCheckInForm: React.FC<
   };
 
   if (step === 'wellbeing') {
-    const total = moods.length + feelings.length;
+    const showMoods = wellbeingSection !== 'feelings';
+    const showFeelings = wellbeingSection !== 'mood';
+    const total =
+      (showMoods ? moods.length : 0) + (showFeelings ? feelings.length : 0);
 
     return (
       <>
         <View style={styles.section}>
-          <Text style={styles.groupTitle}>
-            {t('feeling_checkin.everyday_feelings')}
-          </Text>
-          <View style={styles.options}>
-            {moods.map(item => renderOption(item))}
-          </View>
+          {showMoods ? (
+            <>
+              {wellbeingSection === 'all' ? (
+                <Text style={styles.groupTitle}>
+                  {t('feeling_checkin.everyday_feelings')}
+                </Text>
+              ) : null}
+              <View style={styles.options}>
+                {moods.map(item => renderOption(item))}
+              </View>
+            </>
+          ) : null}
 
-          <Text
-            style={[
-              styles.groupTitle,
-              styles.groupSpacing,
-            ]}
-          >
-            {t('feeling_checkin.energy_and_rest')}
-          </Text>
-          <View style={styles.options}>
-            {feelings.map(item => renderOption(item))}
-          </View>
+          {showFeelings ? (
+            <>
+              {wellbeingSection === 'all' ? (
+                <Text style={[styles.groupTitle, styles.groupSpacing]}>
+                  {t('feeling_checkin.energy_and_rest')}
+                </Text>
+              ) : null}
+              <View style={styles.options}>
+                {feelings.map(item => renderOption(item))}
+              </View>
+            </>
+          ) : null}
           {total === 0 ? (
             <Text style={styles.emptyText}>
               {t('feeling_checkin.no_options')}
@@ -421,35 +435,29 @@ export const FeelingCheckInForm: React.FC<
           {showNoneOption ? renderNone() : null}
         </View>
 
-        <HydrationQuickAdd
-          currentTotalMl={experience.waterDailyTotalMl}
-          goalMl={experience.waterGoalMl}
-          selectedIncrementMl={selection.waterIncrementMl}
-          disabled={disabled}
-          onSelect={amount =>
-            onChange({
-              ...selection,
-              waterIncrementMl: amount,
-            })
-          }
-        />
+        {wellbeingSection === 'all' ? (
+          <HydrationQuickAdd
+            currentTotalMl={experience.waterDailyTotalMl}
+            goalMl={experience.waterGoalMl}
+            selectedIncrementMl={selection.waterIncrementMl}
+            disabled={disabled}
+            onSelect={amount =>
+              onChange({
+                ...selection,
+                waterIncrementMl: amount,
+              })
+            }
+          />
+        ) : null}
       </>
     );
   }
 
-  const items =
-    step === 'physical'
-      ? physicalSymptoms
-      : warningSymptoms;
+  const items = step === 'physical' ? physicalSymptoms : warningSymptoms;
   const warning = step === 'warning';
 
   return (
-    <View
-      style={[
-        styles.section,
-        warning && styles.warningSection,
-      ]}
-    >
+    <View style={[styles.section, warning && styles.warningSection]}>
       {warning ? (
         <View style={styles.warningLead}>
           <FontAwesomeIcon
@@ -463,15 +471,11 @@ export const FeelingCheckInForm: React.FC<
         </View>
       ) : null}
       {items.length > 0 ? (
-        <View style={styles.options}>
-          {items.map(item =>
-            renderOption(item, warning),
-          )}
+        <View style={[styles.options, compact && styles.compactList]}>
+          {items.map(item => renderOption(item, warning))}
         </View>
       ) : (
-        <Text style={styles.emptyText}>
-          {t('feeling_checkin.no_options')}
-        </Text>
+        <Text style={styles.emptyText}>{t('feeling_checkin.no_options')}</Text>
       )}
       {showNoneOption ? renderNone() : null}
     </View>

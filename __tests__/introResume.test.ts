@@ -5,6 +5,17 @@ describe('intro resume', () => {
     expect(resolveIntroEntryStep({})).toBe('IntroStep01');
   });
 
+  it('shows the intro language review when login selected but did not confirm it', () => {
+    expect(
+      resolveIntroEntryStep({
+        name: 'Mary',
+        email: 'mary@example.com',
+        language: 'fr',
+        introLanguageConfirmed: false,
+      }),
+    ).toBe('IntroStep04');
+  });
+
   it('resumes an existing profile at only the first missing section', () => {
     expect(
       resolveIntroEntryStep({
@@ -14,6 +25,7 @@ describe('intro resume', () => {
         height: 168,
         weight: 64,
         language: 'en',
+        introLanguageConfirmed: true,
         country: 'KE',
         area: 'urban',
         timezone: 'Africa/Nairobi',

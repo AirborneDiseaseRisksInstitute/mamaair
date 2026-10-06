@@ -27,7 +27,7 @@ export const IntroStep05Timezone: React.FC<IntroStep05TimezoneProps> = ({ onNext
   }, []);
 
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
     contentWrapper: { paddingHorizontal: spacing('md'), paddingTop: HEADER_CLEARANCE },
     questionText: { fontSize: 18, fontFamily: theme.typography.fontFamily.medium, color: theme.colors.textPrimary, marginBottom: spacing('lg'), textAlign: 'left' },

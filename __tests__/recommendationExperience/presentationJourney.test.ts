@@ -365,6 +365,52 @@ describe('reference journey history', () => {
     expect(summary.days.slice(0, 6).every(day => !day.active)).toBe(true);
   });
 
+  it('uses structured backend completion totals and weekly hydration readings', () => {
+    const summary = loadWeeklySummaryExperience({
+      identity: { backendUserId: 'structured-summary-user' },
+      pregnancyWeek: 19,
+      endDate: '2026-07-26',
+      milestone: 'Week 19',
+      backendSummary: {
+        task_completions: [
+          {
+            date: '2026-07-26',
+            tasks: ['opaque-task-code'],
+            counts: {
+              diet: { done: 1, total: 2 },
+              activity: { done: 1, total: 1 },
+              behavior: { done: 0, total: 1 },
+              mental: { done: 1, total: 1 },
+            },
+          },
+        ],
+      },
+      hydrationReadings: {
+        '2026-07-26': { amountMl: 2100, goalMl: 2000 },
+      },
+      localData: {
+        checkIns: {},
+        actionCompletions: {},
+        restTimers: {},
+        dailyMoments: {},
+      },
+    });
+
+    expect(summary.days[6]).toMatchObject({
+      primaryCompleted: 3,
+      primaryTotal: 5,
+      hydrationMl: 2100,
+      hydrationGoalMl: 2000,
+      domains: {
+        diet: true,
+        activity: true,
+        behaviour: false,
+        wellbeing: true,
+      },
+    });
+    expect(summary.hydrationDays).toBe(1);
+  });
+
   it('summarizes only available action, symptom level, and risk data', () => {
     const summary = loadWeeklySummaryExperience({
       identity: { backendUserId: 'summary-user' },
@@ -441,11 +487,11 @@ describe('reference journey history', () => {
     ]);
     expect(summary.symptomTrend).toBe('Level 1: 2 · Level 2: 1 · Level 3: 1');
     expect(summary.riskSummary).toEqual({
-      identifiedRisks: ['Mother: preeclampsia', 'Baby: growth restriction'],
-      completedActionImpact: -7,
+      identifiedRisks: ['Mother: preeclampsia', 'Child: growth restriction'],
+      completedActionImpact: 0,
       motherRiskDelta: -6,
       babyRiskDelta: -9,
     });
-    expect(summary.motherProgress).toContain('Completed action impact: -7%.');
+    expect(summary.motherProgress).not.toContain('Completed action impact');
   });
 });

@@ -15,6 +15,7 @@ import { useTheme, spacing, radius } from '../../theme';
 import { Input, Button, OrangeHalo, type InputRef, useToast, LanguagePickerSheet } from '../../components/ui';
 import { AuthService } from '../../services/api/AuthService';
 import { getAuthErrorMessage } from '../../utils/authErrors';
+import { isValidAuthEmail } from '../../utils/authValidation';
 import { s, vs, ms, mvs } from '../../utils/responsive';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -33,7 +34,7 @@ import type { LegalDocumentKind } from '../../content/legalDocuments';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface SignInScreenProps {
-  onLogin?: (email: string, password: string) => void;
+  onLogin?: (email: string) => void;
   onForgotPassword?: () => void;
   onGoogleSignIn?: () => void;
   onSignUp?: () => void;
@@ -60,12 +61,11 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
 
   const emailInputRef = useRef<InputRef>(null);
   const passwordInputRef = useRef<InputRef>(null);
+  const requestInFlightRef = useRef(false);
 
   React.useEffect(() => {
     GoogleSignin.configure({
       webClientId: '212373353528-fe2pe6nb9i7n65gm306lsp5lno1ep68n.apps.googleusercontent.com',
-      offlineAccess: true,
-      forceCodeForRefreshToken: true,
     });
   }, []);
 
@@ -76,6 +76,9 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
   }, [profile.language]);
 
   const handleGoogleLogin = async () => {
+    if (requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
+    let signInStage: 'google' | 'backend' | 'secureStorage' = 'google';
     try {
       setLoading(true);
       await GoogleSignin.hasPlayServices();
@@ -84,12 +87,14 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
       if (isSuccessResponse(response)) {
         const idToken = response.data.idToken;
         if (idToken) {
+          signInStage = 'backend';
           const authResponse = await AuthService.googleSignIn(idToken);
-          setTokens(authResponse.access, authResponse.refresh);
+          signInStage = 'secureStorage';
+          await setTokens(authResponse.access, authResponse.refresh);
           if (authResponse.user?.email) {
             setEmailStore(authResponse.user.email);
           }
-          onLogin?.(authResponse.user?.email || '', '');
+          onLogin?.(authResponse.user?.email || '');
         } else {
           showToast({
             type: 'error',
@@ -101,6 +106,17 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
         // sign in was cancelled by user
       }
     } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[GoogleSignIn] Failed', {
+          stage: signInStage,
+          nativeCode: signInStage === 'google' ? error?.code : undefined,
+          httpStatus: error?.response?.status,
+          backendCode: error?.response?.data?.code,
+          backendDetail:
+            error?.response?.data?.detail ?? error?.response?.data?.message,
+          requestId: error?.response?.headers?.['x-request-id'],
+        });
+      }
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.SIGN_IN_CANCELLED:
@@ -117,22 +133,23 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
             });
             break;
           default:
-            console.error('Google Sign-In Error', error);
+            console.warn('Google Sign-In failed:', error.code);
             showToast({
               type: 'error',
               title: t('auth.google_sign_in_error'),
-              message: getAuthErrorMessage(error, 'google'),
+              message: getAuthErrorMessage(error, 'google', key => t(key)),
             });
         }
       } else {
-        console.error('Google Sign-In Error', error);
+        console.warn('Google Sign-In failed');
         showToast({
           type: 'error',
           title: t('auth.google_sign_in_error'),
-          message: getAuthErrorMessage(error, 'google'),
+          message: getAuthErrorMessage(error, 'google', key => t(key)),
         });
       }
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -279,21 +296,23 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
   }), [theme]);
 
   const handleLogin = async () => {
-    if (email.trim() && password.trim()) {
+    if (isValidAuthEmail(email) && password.trim() && !requestInFlightRef.current) {
+      requestInFlightRef.current = true;
       try {
         setLoading(true);
         const nextEmail = email.trim();
-        const response = await AuthService.login(nextEmail, password.trim());
+        const response = await AuthService.login(nextEmail, password);
 
         if (response.access && response.refresh) {
-          setTokens(response.access, response.refresh);
+          await setTokens(response.access, response.refresh);
           setEmailStore(nextEmail);
+          setPassword('');
           showToast({
             type: 'success',
             title: t('auth.logged_in_title'),
             message: t('auth.logged_in_message'),
           });
-          onLogin?.(nextEmail, password);
+          onLogin?.(nextEmail);
         } else {
           showToast({
             type: 'error',
@@ -302,13 +321,14 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
           });
         }
       } catch (error: any) {
-        console.error('Login error:', error);
+        console.warn('Login failed:', error?.response?.status ?? 'network');
         showToast({
           type: 'error',
           title: t('auth.login_failed'),
-          message: getAuthErrorMessage(error, 'login'),
+          message: getAuthErrorMessage(error, 'login', key => t(key)),
         });
       } finally {
+        requestInFlightRef.current = false;
         setLoading(false);
       }
     }
@@ -362,7 +382,9 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
             {/* Logo */}
             <View style={styles.logoContainer}>
               <Image
-                source={require('../../assets/images/logoBlack.png')}
+                source={theme.mode === 'dark'
+                  ? require('../../assets/images/logoWhite.png')
+                  : require('../../assets/images/logoBlack.png')}
                 style={styles.logo}
               />
             </View>
@@ -410,7 +432,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
               <Button
                 title={loading ? t('auth.logging_in') : t('auth.log_in')}
                 onPress={handleLogin}
-                disabled={loading || !email.trim() || !password.trim()}
+                disabled={loading || !isValidAuthEmail(email) || !password.trim()}
               />
             </View>
 
@@ -435,6 +457,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
 
             {/* Google Sign In Button */}
             <TouchableOpacity
+              testID="signin-google"
               style={styles.googleButton}
               onPress={handleGoogleLogin}
               disabled={loading}

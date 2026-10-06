@@ -87,8 +87,8 @@ export class IndoorOutdoorClassifier {
         this.lastApiCheckTime = Date.now();
         this.lastApiCheckLocation = { latitude: location.latitude, longitude: location.longitude };
         return newState;
-      } catch (error) {
-        console.error('HERE API Call failed', error);
+      } catch {
+        if (__DEV__) console.error('HERE API Call failed');
         return this.lastApiBasedState;
       }
     }

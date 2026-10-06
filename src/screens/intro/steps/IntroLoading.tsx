@@ -66,7 +66,7 @@ export const IntroLoading: React.FC<IntroLoadingProps> = ({ onComplete }) => {
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.background,
         },
         content: {
           flex: 1,
@@ -83,7 +83,7 @@ export const IntroLoading: React.FC<IntroLoadingProps> = ({ onComplete }) => {
         hintText: {
           maxWidth: 360,
           marginTop: spacing('sm'),
-          color: '#4F4A47',
+          color: theme.accentTextColor('#4F4A47'),
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: 15,
           lineHeight: 23,
@@ -103,8 +103,8 @@ export const IntroLoading: React.FC<IntroLoadingProps> = ({ onComplete }) => {
           paddingVertical: spacing('sm'),
           borderRadius: 22,
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: '#F0E9E4',
-          backgroundColor: '#FFFFFF',
+          borderColor: theme.borderColor('#F0E9E4'),
+          backgroundColor: theme.colors.surface,
           shadowColor: '#8C4A22',
           shadowOffset: { width: 0, height: 7 },
           shadowOpacity: 0.09,
@@ -113,7 +113,7 @@ export const IntroLoading: React.FC<IntroLoadingProps> = ({ onComplete }) => {
         },
         loadingText: {
           marginBottom: spacing('xs'),
-          color: '#6F6864',
+          color: theme.accentTextColor('#6F6864'),
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: 13,
           lineHeight: 18,
@@ -123,7 +123,7 @@ export const IntroLoading: React.FC<IntroLoadingProps> = ({ onComplete }) => {
           height: 9,
           overflow: 'hidden',
           borderRadius: 999,
-          backgroundColor: '#F7E8DD',
+          backgroundColor: theme.surfaceColor('#F7E8DD'),
         },
         progressFill: {
           height: '100%',

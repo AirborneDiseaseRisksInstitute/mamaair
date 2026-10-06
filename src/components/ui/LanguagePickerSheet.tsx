@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { BottomSheet } from './BottomSheet';
-import { Button } from './Button';
 import { useTheme, spacing } from '../../theme';
 import { ENGLISH_FLAG_SVG, FRENCH_FLAG_SVG, SWAHILI_FLAG_SVG } from '../../utils/svgIcons';
 
@@ -28,12 +27,6 @@ export const LanguagePickerSheet: React.FC<LanguagePickerSheetProps> = ({
 }) => {
   const { t } = useTranslation();
   const theme = useTheme();
-  const [localSelected, setLocalSelected] = useState<string | null>(selectedLanguage);
-
-  // Sync when external selection changes (e.g. pre-select from login choice in intro)
-  useEffect(() => {
-    if (visible) setLocalSelected(selectedLanguage);
-  }, [visible, selectedLanguage]);
 
   const styles = StyleSheet.create({
     title: {
@@ -91,10 +84,12 @@ export const LanguagePickerSheet: React.FC<LanguagePickerSheetProps> = ({
       borderRadius: 5,
       backgroundColor: theme.colors.orange500,
     },
-    confirmButton: {
-      marginTop: spacing('md'),
-    },
   });
+
+  const handleSelect = (language: string) => {
+    onConfirm(language);
+    onClose();
+  };
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
@@ -103,12 +98,14 @@ export const LanguagePickerSheet: React.FC<LanguagePickerSheetProps> = ({
       </Text>
 
       {LANGUAGES.map((lang) => {
-        const isSelected = localSelected === lang.value;
+        const isSelected = selectedLanguage === lang.value;
         return (
           <TouchableOpacity
             key={lang.value}
+            accessibilityRole="button"
+            testID={`language-picker-${lang.value}`}
             style={[styles.option, isSelected && styles.optionSelected]}
-            onPress={() => setLocalSelected(lang.value)}
+            onPress={() => handleSelect(lang.value)}
             activeOpacity={0.7}
           >
             <View style={styles.flag}>
@@ -126,14 +123,6 @@ export const LanguagePickerSheet: React.FC<LanguagePickerSheetProps> = ({
           </TouchableOpacity>
         );
       })}
-
-      <View style={styles.confirmButton}>
-        <Button
-          title={t('lang_picker.confirm')}
-          onPress={() => { if (localSelected) onConfirm(localSelected); }}
-          disabled={!localSelected}
-        />
-      </View>
     </BottomSheet>
   );
 };

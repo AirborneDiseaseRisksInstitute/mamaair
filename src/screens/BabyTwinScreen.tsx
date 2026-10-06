@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,11 @@ import { WEEKS_DATA } from './HomeScreen';
 import { getFetalSystemTimeline } from '../services/recommendationExperience/DevelopmentProgressRepository';
 import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
 import { getBabyTwinWeekImage } from '../utils/babyTwinWeekImage';
+import {
+  SummaryService,
+  type SummaryResponse,
+} from '../services/api/SummaryService';
+import { DEV_LOCAL_SESSION } from '../config/dev';
 
 interface BabyTwinScreenProps {
   onBack?: () => void;
@@ -32,13 +37,47 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ICON_SIZE = 40;
 export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
   const theme = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { profile } = useUserStore();
-  const currentWeek =
+  const [weekInfo, setWeekInfo] = useState<
+    SummaryResponse['week_info'] | null
+  >(null);
+  const profileWeek =
     getCurrentPregnancyWeek(
       profile.pregnancyWeek,
       profile.pregnancyWeekSetDate,
     ) ?? 1;
+  const apiWeek = weekInfo?.week;
+  const currentWeek =
+    typeof apiWeek === 'number' && apiWeek >= 1 && apiWeek <= 40
+      ? apiWeek
+      : profileWeek;
+  const resolvedLanguage = i18n.resolvedLanguage ?? i18n.language;
+  const weekInfoLanguage = weekInfo?.locale
+    ?.split(/[-_]/)[0]
+    .toLowerCase();
+  const milestoneText =
+    weekInfo?.week === currentWeek &&
+    typeof weekInfo.text === 'string' &&
+    weekInfo.text.trim().length > 0 &&
+    (!weekInfoLanguage || resolvedLanguage.startsWith(weekInfoLanguage))
+      ? weekInfo.text.trim()
+      : t(`home.week_desc_w${String(currentWeek).padStart(2, '0')}`);
+
+  useEffect(() => {
+    if (DEV_LOCAL_SESSION) return;
+    let active = true;
+    SummaryService.getSummary()
+      .then(summary => {
+        if (active) setWeekInfo(summary?.week_info ?? null);
+      })
+      .catch(() => {
+        // The local profile and translated reference copy remain available.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const weekLabel = currentWeek
     ? t('home.week_label', { week: currentWeek })
     : '–';
@@ -77,7 +116,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
       paddingHorizontal: spacing('md'),
       paddingTop: 50,
       paddingBottom: spacing('md'),
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.08,
@@ -165,7 +204,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
     },
     // Baby System Progress styles
     systemProgressCard: {
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderRadius: 16,
       padding: spacing('lg'),
       marginTop: spacing('lg'),
@@ -224,7 +263,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
     systemCard: {
       width: '47%',
       aspectRatio: 1,
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderRadius: 12,
       padding: spacing('md'),
       alignItems: 'center',
@@ -244,7 +283,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
       marginBottom: spacing('xs'),
     },
     systemIconContainerComplete: {
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderRadius: 20,
       padding: spacing('xs'),
       width: ICON_SIZE + spacing('sm'),
@@ -307,7 +346,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
     giftCard: {
       width: '48%',
       aspectRatio: 1,
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderRadius: 12,
       borderWidth: 1,
       borderColor: theme.colors.orange300,
@@ -421,9 +460,7 @@ export const BabyTwinScreen: React.FC<BabyTwinScreenProps> = ({ onBack }) => {
 
         {/* Description Text */}
         <Text style={styles.descriptionText} allowFontScaling={false}>
-          {t(
-            `home.week_desc_w${String(currentWeek).padStart(2, '0')}`,
-          )}
+          {milestoneText}
         </Text>
 
         {/* Baby System Progress Card */}

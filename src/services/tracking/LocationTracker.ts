@@ -191,7 +191,7 @@ export class LocationTracker {
         return;
       }
       this.resumeIfEnabled().catch(error => {
-        console.warn('[LocationTracker] Retry failed', error);
+        if (__DEV__) console.warn('[LocationTracker] Retry failed', error);
       });
     }, delay);
   }
@@ -269,7 +269,7 @@ export class LocationTracker {
           await this.handleNewLocation(position);
         },
         error => {
-          console.error('Location error', error);
+          if (__DEV__) console.error('Location error', error);
           if (watchId !== null && this.watchId === watchId) {
             this.clearActiveWatch();
             this.scheduleRetry();
@@ -306,7 +306,7 @@ export class LocationTracker {
       speed: speed || 0,
     });
 
-    console.log(`Classified location as: ${state}`);
+    if (__DEV__) console.log(`Classified location as: ${state}`);
 
     if (state === 'Outdoor') {
       databaseService.insertLocation({

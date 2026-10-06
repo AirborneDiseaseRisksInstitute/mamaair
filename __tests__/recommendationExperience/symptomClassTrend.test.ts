@@ -1,5 +1,7 @@
 import {
+  buildCompleteApiSymptomClassTrend,
   buildDevelopmentSymptomClassTrend,
+  getApiSymptomClassMetadata,
   getSymptomClass,
 } from '../../src/services/recommendationExperience/SymptomClassTrendRepository';
 import type { FeelingCheckInRecord } from '../../src/types/recommendationExperience';
@@ -23,6 +25,63 @@ const emptyRecord = (
 });
 
 describe('symptom class trend', () => {
+  it('rejects a partial API week instead of drawing failed days as zero', () => {
+    const completeDay = {
+      classes: [{ symptom_class: 1, quantity: 2 }],
+    };
+    expect(
+      buildCompleteApiSymptomClassTrend([
+        completeDay,
+        completeDay,
+        null,
+        completeDay,
+        completeDay,
+        completeDay,
+        completeDay,
+      ]),
+    ).toBeNull();
+  });
+
+  it('builds daily class points only for a complete API week', () => {
+    const trend = buildCompleteApiSymptomClassTrend(
+      Array.from({ length: 7 }, (_, index) => ({
+        classes: [{ symptom_class: 2, quantity: index }],
+      })),
+    );
+
+    expect(trend?.class2.map(point => point.value)).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
+    expect(trend?.class1.every(point => point.value === 0)).toBe(true);
+  });
+
+  it('uses API class names and rejects recorded classes the chart cannot represent', () => {
+    const supportedDay = {
+      classes: [
+        {
+          symptom_class: 1,
+          class_name: 'Acute & Emergency Indicators',
+          color_flag: 'critical_red',
+          quantity: 1,
+        },
+      ],
+    };
+    const results = Array.from({ length: 7 }, () => supportedDay);
+
+    expect(getApiSymptomClassMetadata(results)).toEqual({
+      1: {
+        className: 'Acute & Emergency Indicators',
+        colorFlag: 'critical_red',
+      },
+    });
+    expect(
+      buildCompleteApiSymptomClassTrend([
+        ...results.slice(0, 6),
+        { classes: [{ symptom_class: 5, quantity: 1 }] },
+      ]),
+    ).toBeNull();
+  });
+
   it.each([
     ['Vaginal bleeding', 'class1'],
     ['Persistent fatigue or weakness', 'class2'],

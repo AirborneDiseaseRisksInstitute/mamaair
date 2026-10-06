@@ -1,14 +1,9 @@
 import axios from 'axios';
-import { storage } from '../../store/useAuthStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { resetToAuthLoading } from '../../App/navigationRef';
 import { DEV_LOCAL_SESSION } from '../../config/dev';
 
 const BASE_URL = 'https://api.mamaair.work/api';
-
-// Single source of truth for the mobile API key (was duplicated below).
-// NOTE: this is still shipped in the bundle — moving it to env/secure storage
-// and per-device auth is tracked separately and needs backend coordination.
-const API_KEY = 'super-secret-mobile-key';
 
 // Custom transformResponse: axios's default calls JSON.parse on any response with
 // Content-Type: application/json — including 204 No Content bodies, which throws.
@@ -25,7 +20,6 @@ const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-    'X-API-Key': API_KEY,
   },
   transformResponse: [safeJsonTransform],
 });
@@ -48,7 +42,7 @@ const isAuthEndpoint = (url?: string) =>
   Boolean(url && AUTH_ENDPOINT_PREFIXES.some(prefix => url.includes(prefix)));
 
 api.interceptors.request.use(config => {
-  const token = storage.getString('auth_token');
+  const token = useAuthStore.getState().token;
   if (!DEV_LOCAL_SESSION && token && !isAuthEndpoint(config.url)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -94,10 +88,19 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    const refreshToken = storage.getString('auth_refresh_token');
+    const currentAccessToken = useAuthStore.getState().token;
+    const requestAuthorization = original.headers?.Authorization;
+    if (
+      requestAuthorization &&
+      currentAccessToken &&
+      requestAuthorization !== `Bearer ${currentAccessToken}`
+    ) {
+      return Promise.reject(error);
+    }
+
+    const refreshToken = useAuthStore.getState().refreshToken;
     if (!refreshToken) {
-      storage.remove('auth_token');
-      storage.remove('auth_refresh_token');
+      await useAuthStore.getState().clearSession().catch(() => {});
       resetToAuthLoading();
       return Promise.reject(error);
     }
@@ -120,20 +123,31 @@ api.interceptors.response.use(
       const { data } = await axios.post(
         `${BASE_URL}/auth/token/refresh/`,
         { refresh: refreshToken },
-        { headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY } },
+        { headers: { 'Content-Type': 'application/json' } },
       );
 
-      const newToken: string = data.access;
-      storage.set('auth_token', newToken);
+      const newToken: string = data?.access;
+      if (!newToken) {
+        throw new Error('Token refresh returned no access token.');
+      }
+      if (useAuthStore.getState().refreshToken !== refreshToken) {
+        throw new Error('Auth session changed during token refresh.');
+      }
+      await useAuthStore.getState().setToken(newToken);
       drainQueue(null, newToken);
 
       original.headers.Authorization = `Bearer ${newToken}`;
       return api(original);
     } catch (refreshError) {
       drainQueue(refreshError, null);
-      storage.remove('auth_token');
-      storage.remove('auth_refresh_token');
-      resetToAuthLoading();
+      const status = (refreshError as any)?.response?.status;
+      if (
+        useAuthStore.getState().refreshToken === refreshToken &&
+        (status === 400 || status === 401 || status === 403)
+      ) {
+        await useAuthStore.getState().clearSession().catch(() => {});
+        resetToAuthLoading();
+      }
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

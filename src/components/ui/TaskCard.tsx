@@ -73,7 +73,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const styles = useMemo(() => StyleSheet.create({
     card: {
-      backgroundColor: '#FFF',
+      backgroundColor: theme.colors.surface,
       borderRadius: 12,
       padding: spacing('md'),
       marginTop: spacing('md'),
@@ -91,7 +91,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: config.backgroundColor,
+      backgroundColor: theme.surfaceColor(config.backgroundColor),
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -138,20 +138,20 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       gap: spacing('xs'),
     },
     delayButton: {
-      backgroundColor: '#FFF9E6',
+      backgroundColor: theme.surfaceColor('#FFF9E6'),
     },
     reminderButton: {
-      backgroundColor: '#E3F2FD',
+      backgroundColor: theme.surfaceColor('#E3F2FD'),
     },
     buttonText: {
       fontSize: 14,
       fontFamily: theme.typography.fontFamily.medium,
     },
     delayButtonText: {
-      color: '#FF9800',
+      color: theme.accentTextColor('#FF9800'),
     },
     reminderButtonText: {
-      color: '#2196F3',
+      color: theme.accentTextColor('#2196F3'),
     },
   }), [theme, checked, config, hideIcon]);
 

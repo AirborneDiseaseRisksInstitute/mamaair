@@ -113,9 +113,16 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
   const level = airExposure
     ? resolveAirQualityLevel(airExposure)
     : 'unavailable';
-  const tone = locationPermissionRequired
+  const baseTone = locationPermissionRequired
     ? LOCATION_PERMISSION_TONE
     : TONES[level];
+  const tone = theme.mode === 'dark'
+    ? {
+        ...baseTone,
+        accentDark: theme.accentTextColor(baseTone.accentDark),
+        gradient: baseTone.gradient.map(theme.surfaceColor),
+      }
+    : baseTone;
   const {
     circleTop,
     contentTopPadding,
@@ -290,7 +297,7 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
             contentAnimatedStyle,
           ]}
         >
-          <View style={styles.appLogoContainer}>
+          <View style={[styles.appLogoContainer, { backgroundColor: theme.colors.orange50 }]}>
             <Image
               source={appLogoSource}
               style={styles.appLogo}
@@ -329,7 +336,7 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
           <Text
             style={[
               styles.guidance,
-              { maxWidth: contentWidth },
+              { maxWidth: contentWidth, color: theme.colors.textSecondary },
             ]}
             allowFontScaling={false}
           >
@@ -338,7 +345,7 @@ export const AirQualityPulseToast: React.FC<AirQualityPulseToastProps> = ({
           <Text
             style={[
               styles.detailsHint,
-              { maxWidth: contentWidth },
+              { maxWidth: contentWidth, color: theme.colors.textTertiary },
             ]}
             allowFontScaling={false}
           >

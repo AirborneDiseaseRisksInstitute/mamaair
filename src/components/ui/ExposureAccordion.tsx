@@ -155,7 +155,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing('sm'),
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.colors.surface,
     },
     headerExpanded: {
       paddingBottom: spacing('md'),
@@ -220,7 +220,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       alignItems: 'center',
     },
     content: {
-      backgroundColor: '#F8F8F8',
+      backgroundColor: theme.surfaceColor('#F8F8F8'),
       borderRadius: 16,
       padding: spacing('md'),
       marginTop: spacing('xs'),
@@ -269,7 +269,7 @@ export const ExposureAccordion: React.FC<ExposureAccordionProps> = ({
       justifyContent: 'center',
       marginTop: spacing('xs'),
       borderRadius: 20,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.colors.surface,
     },
     historyButtonText: {
       color: theme.colors.orange700,

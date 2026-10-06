@@ -1,5 +1,5 @@
 const mockDeleteAccount = jest.fn();
-const mockClearSession = jest.fn();
+const mockClearSession = jest.fn().mockResolvedValue(undefined);
 const mockClearOwnerData = jest.fn();
 const mockClearPending = jest.fn();
 const mockDeleteLocations = jest.fn();

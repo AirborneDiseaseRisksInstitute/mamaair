@@ -67,7 +67,7 @@ export const NotificationTimeSettings: React.FC<NotificationTimeSettingsProps> =
     () =>
       StyleSheet.create({
         card: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: radius('lg'),
           padding: spacing('md'),
           marginBottom: spacing('xl'),

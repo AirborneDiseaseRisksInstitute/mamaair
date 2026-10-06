@@ -45,13 +45,24 @@ import {
   type SummaryResponse,
 } from '../api/SummaryService';
 import { TaskCompletionService } from '../api/TaskCompletionService';
-import { isApiConnectionError } from '../../utils/apiErrors';
+import {
+  classifyApiFailure,
+  describeApiError,
+  isApiConnectionError,
+  type ApiFailure,
+} from '../../utils/apiErrors';
 
 interface CapabilityLoad<T> {
   configuredStatus: ConfiguredCapabilityStatus;
   status: CapabilityStatus;
   data: T | null;
   connectionError: boolean;
+  issue: ApiFailure | null;
+}
+
+export interface DailyPlanLoadIssue {
+  capability: RecommendationCapability;
+  failure: ApiFailure;
 }
 
 interface ComposeDailyPlanInput {
@@ -80,6 +91,7 @@ export interface DailyPlanLoadResult {
   summary: SummaryResponse | null;
   advice: AdviceResponse | null;
   connectionError: boolean;
+  issues: DailyPlanLoadIssue[];
 }
 
 interface DailyPlanLoadOptions {
@@ -137,6 +149,7 @@ const loadConfiguredCapability = async <T>(
       status: explicitStatus,
       data: null,
       connectionError: false,
+      issue: null,
     };
   }
 
@@ -146,16 +159,32 @@ const loadConfiguredCapability = async <T>(
       status: 'available',
       data: await loader(),
       connectionError: false,
+      issue: null,
     };
   } catch (error) {
+    const connectionError = isApiConnectionError(error);
+    const issue = classifyApiFailure(error);
+    if (__DEV__) {
+      console.warn(
+        `[DailyPlan] ${capability} capability unavailable`,
+        describeApiError(error),
+      );
+    }
     return {
       configuredStatus,
       status: 'unavailable',
       data: null,
-      connectionError: isApiConnectionError(error),
+      connectionError,
+      issue,
     };
   }
 };
+
+const capabilityIssue = <T>(
+  capability: RecommendationCapability,
+  load: CapabilityLoad<T> | null,
+): DailyPlanLoadIssue[] =>
+  load?.issue ? [{ capability, failure: load.issue }] : [];
 
 const normalizeMetadata = (value?: string): string =>
   (value ?? '')
@@ -405,37 +434,10 @@ const numberValue = (...values: unknown[]): number | undefined => {
 
 const roundImpact = (value: number): number => Math.round(value * 100) / 100;
 
-const riskImpactFromSummary = (
-  summary: SummaryResponse | null,
-): number | undefined => {
-  const values = [summary?.risks_delta?.mom, summary?.risks_delta?.baby].filter(
-    (value): value is number =>
-      typeof value === 'number' && Number.isFinite(value),
-  );
-  const totalDecrease = values
-    .filter(value => value < 0)
-    .reduce((total, value) => total + value, 0);
-  return totalDecrease < 0 ? roundImpact(totalDecrease) : undefined;
-};
-
 const activeRiskImpactActions = (
   experience: DailyPlanExperience,
 ): DailyPlanAction[] =>
   experience.primaryActions.filter(action => action.domain !== 'service');
-
-const distributedImpacts = (total: number, count: number): number[] => {
-  if (count <= 0) return [];
-  const totalHundredths = Math.round(total * 100);
-  const sign = totalHundredths < 0 ? -1 : 1;
-  const absoluteTotal = Math.abs(totalHundredths);
-  const base = Math.floor(absoluteTotal / count);
-  const remainder = absoluteTotal % count;
-
-  return Array.from({ length: count }, (_, index) => {
-    const receivesRemainder = index >= count - remainder;
-    return (sign * (base + (receivesRemainder ? 1 : 0))) / 100;
-  });
-};
 
 const backendActionRiskImpact = (
   action: DailyPlanApiAction,
@@ -468,68 +470,31 @@ const backendActionRiskImpact = (
 
 const withRiskImpactDisplay = (
   experience: DailyPlanExperience,
-  totalRiskImpact: number | undefined,
 ): DailyPlanExperience => {
   if (!RISK_IMPACT_DISPLAY_ENABLED) return experience;
 
-  const actionKeys = new Set(
-    activeRiskImpactActions(experience).map(action => action.key),
-  );
-  const existingBackendImpactTotal = activeRiskImpactActions(experience)
+  const eligibleActions = activeRiskImpactActions(experience);
+  const backendImpactActions = eligibleActions
     .filter(action => action.riskImpact?.source === 'backendAction')
-    .reduce((total, action) => total + (action.riskImpact?.value ?? 0), 0);
-  const totalValue =
-    totalRiskImpact !== undefined
-      ? totalRiskImpact
-      : existingBackendImpactTotal !== 0
-      ? roundImpact(existingBackendImpactTotal)
-      : undefined;
+  const totalValue = roundImpact(
+    backendImpactActions.reduce(
+      (total, action) => total + (action.riskImpact?.value ?? 0),
+      0,
+    ),
+  );
 
-  if (totalValue === undefined || actionKeys.size === 0) {
+  if (totalValue === 0 || backendImpactActions.length === 0) {
     return experience;
   }
-
-  const missingActionKeys = activeRiskImpactActions(experience)
-    .filter(action => !action.riskImpact)
-    .map(action => action.key);
-  const allocatedValues = distributedImpacts(
-    roundImpact(totalValue - existingBackendImpactTotal),
-    missingActionKeys.length,
-  );
-  const allocatedByKey = new Map(
-    missingActionKeys.map((key, index) => [key, allocatedValues[index]]),
-  );
-
-  const applyImpact = (action: DailyPlanAction): DailyPlanAction => {
-    if (!actionKeys.has(action.key) || action.riskImpact) return action;
-    const value = allocatedByKey.get(action.key);
-    if (value === undefined) return action;
-    return {
-      ...action,
-      riskImpact: {
-        value,
-        source: 'allocatedSummary',
-      },
-    };
-  };
-  const additionalActions = emptyAdditionalActions();
-  (Object.keys(experience.additionalActions) as DailyActionDomain[]).forEach(
-    domain => {
-      additionalActions[domain] =
-        experience.additionalActions[domain].map(applyImpact);
-    },
-  );
 
   return {
     ...experience,
     riskImpact: {
-      totalValue: roundImpact(totalValue),
-      source:
-        totalRiskImpact !== undefined ? 'summaryRisksDelta' : 'backendAction',
-      missingBackendActionValues: missingActionKeys.length > 0,
+      totalValue,
+      source: 'backendAction',
+      missingBackendActionValues:
+        backendImpactActions.length < eligibleActions.length,
     },
-    primaryActions: experience.primaryActions.map(applyImpact),
-    additionalActions,
   };
 };
 
@@ -986,8 +951,7 @@ export const composeBackendDailyPlan = (
     nonActionableRecommendations,
   );
 
-  return withRiskImpactDisplay(
-    {
+  return withRiskImpactDisplay({
       date: input.plan.date,
       timezone: input.plan.timezone || undefined,
       source: hasAdviceActions
@@ -1011,9 +975,7 @@ export const composeBackendDailyPlan = (
       guidanceRecommendations: guidanceBuckets.guidanceRecommendations,
       optionalSupportRecommendations:
         guidanceBuckets.optionalSupportRecommendations,
-    },
-    hasAdviceActions ? undefined : input.totalRiskImpact,
-  );
+    });
 };
 
 export const composeDailyPlan = (
@@ -1032,13 +994,15 @@ export const composeDailyPlan = (
         completedTaskCodes,
         input.localActionCompletions,
       );
+      const purposeKey = enrichment
+        ? `daily_task_enrichment.${task.code}.purpose`
+        : `daily_task_enrichment.domain.${domain}`;
+      const translate = input.translate ?? ((_translationKey, fallback) => fallback);
       const purpose =
-        input.translate?.(
-          `daily_task_enrichment.${task.code}.purpose`,
+        translate(
+          purposeKey,
           enrichment?.purpose ?? DAILY_TASK_DOMAIN_PURPOSE[domain],
-        ) ??
-        enrichment?.purpose ??
-        DAILY_TASK_DOMAIN_PURPOSE[domain];
+        );
 
       return {
         key,
@@ -1059,8 +1023,7 @@ export const composeDailyPlan = (
     input.recommendations,
   );
 
-  return withRiskImpactDisplay(
-    {
+  return withRiskImpactDisplay({
       date: input.date,
       source: 'legacy',
       primaryActions,
@@ -1068,9 +1031,7 @@ export const composeDailyPlan = (
       supportActions: [],
       backendCompletedTaskCodes: input.backendCompletedTaskCodes,
       ...recommendationBuckets,
-    },
-    input.totalRiskImpact,
-  );
+    });
 };
 
 export const loadDailyPlanExperience = async (
@@ -1087,6 +1048,7 @@ export const loadDailyPlanExperience = async (
       summary: null,
       advice: null,
       connectionError: false,
+      issues: [],
       experience: {
         date,
         primaryActions: [],
@@ -1126,6 +1088,15 @@ export const loadDailyPlanExperience = async (
       dailyPlanLoad.connectionError ||
       recommendationCompletionLoad?.connectionError,
   );
+  const issues = [
+    ...capabilityIssue('recommendationSnapshots', summaryLoad),
+    ...capabilityIssue('dailyRecommendations', adviceLoad),
+    ...capabilityIssue('dailyPlan', dailyPlanLoad),
+    ...capabilityIssue(
+      'recommendationCompletion',
+      recommendationCompletionLoad,
+    ),
+  ];
 
   if ((dailyPlanLoad.status === 'available' && dailyPlanLoad.data) || advice) {
     const dailyPlanAvailable =
@@ -1146,7 +1117,7 @@ export const loadDailyPlanExperience = async (
       recommendationSnapshotId: advice?.id,
       recommendationCompletions: recommendationCompletionLoad?.data ?? [],
       dailyPlanAvailable,
-      totalRiskImpact: riskImpactFromSummary(summary),
+      totalRiskImpact: undefined,
     });
 
     if (dailyPlanAvailable || experience.primaryActions.length > 0) {
@@ -1161,6 +1132,7 @@ export const loadDailyPlanExperience = async (
         summary,
         advice,
         connectionError,
+        issues,
         experience,
       };
     }
@@ -1175,6 +1147,7 @@ export const loadDailyPlanExperience = async (
       summary,
       advice,
       connectionError,
+      issues,
       experience: {
         date,
         primaryActions: [],
@@ -1201,7 +1174,7 @@ export const loadDailyPlanExperience = async (
     backendCompletedTaskCodes: completedTasksLoad.data ?? [],
     localActionCompletions: currentStore.actionCompletions[date] ?? {},
     recommendations: advice?.recommendations ?? [],
-    totalRiskImpact: riskImpactFromSummary(summary),
+    totalRiskImpact: undefined,
     translate: options.translate,
   });
 
@@ -1219,6 +1192,11 @@ export const loadDailyPlanExperience = async (
       connectionError ||
       dailyTasksLoad.connectionError ||
       completedTasksLoad.connectionError,
+    issues: [
+      ...issues,
+      ...capabilityIssue('dailyTasks', dailyTasksLoad),
+      ...capabilityIssue('taskCompletion', completedTasksLoad),
+    ],
     experience,
   };
 };

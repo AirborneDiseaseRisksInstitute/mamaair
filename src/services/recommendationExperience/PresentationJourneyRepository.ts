@@ -16,6 +16,7 @@ import type {
 } from '../../types/recommendationExperience';
 import type { AirExposure } from '../api/ExposureService';
 import type { SummaryResponse } from '../api/SummaryService';
+import type { WeeklyHydrationReadings } from './WeeklyHydrationRepository';
 import {
   PRESENTATION_DATA_VERSION,
   selectPresentationDay,
@@ -33,13 +34,40 @@ const DOMAIN_ORDER: WeeklyActionSummaryDomain[] = [
 
 const WEEKLY_ACTION_DOMAINS: WeeklyActionSummaryDomain[] = DOMAIN_ORDER;
 
+const summaryCountDomain: Record<
+  WeeklyActionSummaryDomain,
+  keyof NonNullable<
+    NonNullable<SummaryResponse['task_completions']>[number]['counts']
+  >
+> = {
+  diet: 'diet',
+  activity: 'activity',
+  behaviour: 'behavior',
+  wellbeing: 'mental',
+};
+
+const validCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
 const isEveningWindDownMoment = (moment: { key: string }): boolean =>
   moment.key.startsWith('evening-');
 
 const dateAtMidnight = (value: string): Date => new Date(`${value}T00:00:00`);
 
-const labelForDate = (value: string): string =>
-  dateAtMidnight(value).toLocaleDateString('en-US', {
+type Translate = (
+  key: string,
+  options?: Record<string, unknown>,
+) => string;
+
+const translated = (
+  translate: Translate | undefined,
+  key: string,
+  fallback: string,
+  options?: Record<string, unknown>,
+): string => translate?.(key, options) ?? fallback;
+
+const labelForDate = (value: string, locale = 'en-US'): string =>
+  dateAtMidnight(value).toLocaleDateString(locale, {
     weekday: 'short',
   });
 
@@ -312,36 +340,6 @@ const weeklyActionSummary = (
   return summary;
 };
 
-const completedActionImpact = (
-  days: WeeklySummaryDay[],
-  actionCompletions: Record<
-    string,
-    Record<string, DailyActionCompletionRecord>
-  >,
-): number => {
-  const weekDates = new Set(days.map(day => day.date));
-  const value = Object.entries(actionCompletions).reduce(
-    (sum, [date, records]) => {
-      if (!weekDates.has(date)) return sum;
-      return (
-        sum +
-        Object.values(records)
-          .filter(record => record.completed || record.state === 'completed')
-          .reduce(
-            (recordSum, record) =>
-              recordSum +
-              (validNumber(record.riskImpactValue)
-                ? record.riskImpactValue
-                : 0),
-            0,
-          )
-      );
-    },
-    0,
-  );
-  return Math.round(value * 100) / 100;
-};
-
 type SymptomLevel = 1 | 2 | 3 | 4;
 
 interface SymptomClassStatisticsItem {
@@ -443,12 +441,28 @@ const symptomLevelSummary = (
     .filter(item => item.total > 0);
 };
 
-const formatSymptomTrend = (levels: WeeklySymptomLevelSummary[]): string =>
-  levels.map(item => `Level ${item.level}: ${item.total}`).join(' · ');
+const formatSymptomTrend = (
+  levels: WeeklySymptomLevelSummary[],
+  translate?: Translate,
+): string =>
+  levels
+    .map(item =>
+      translated(
+        translate,
+        'weekly_summary.report_symptom_level',
+        `Level ${item.level}: ${item.total}`,
+        {
+          level: item.level,
+          total: item.total,
+        },
+      ),
+    )
+    .join(' · ');
 
 const riskNames = (
   risks: Record<string, unknown> | undefined,
-  prefix: string,
+  audience: 'mother' | 'child',
+  translate?: Translate,
 ): string[] =>
   Object.entries(risks ?? {})
     .filter(([, value]) => {
@@ -457,15 +471,31 @@ const riskNames = (
       if (typeof value === 'number') return value !== 0;
       return true;
     })
-    .map(([key]) => `${prefix}: ${key.replace(/[_-]+/g, ' ')}`);
+    .map(([key]) => {
+      const fallbackAudience = audience === 'mother' ? 'Mother' : 'Child';
+      return translated(
+        translate,
+        'weekly_summary.report_identified_risk',
+        `${fallbackAudience}: ${key.replace(/[_-]+/g, ' ')}`,
+        {
+          audience: translated(
+            translate,
+            `weekly_summary.risk_${audience}`,
+            fallbackAudience,
+          ),
+          risk: key.replace(/[_-]+/g, ' '),
+        },
+      );
+    });
 
 const weeklyRiskSummary = (
   backendSummary: SummaryResponse | null,
   impact: number,
+  translate?: Translate,
 ): WeeklyRiskSummary | null => {
   const identifiedRisks = [
-    ...riskNames(backendSummary?.mom_exposure?.risks, 'Mother'),
-    ...riskNames(backendSummary?.baby_exposure?.risks, 'Baby'),
+    ...riskNames(backendSummary?.mom_exposure?.risks, 'mother', translate),
+    ...riskNames(backendSummary?.baby_exposure?.risks, 'child', translate),
   ];
   const motherRiskDelta = validNumber(backendSummary?.risks_delta?.mom)
     ? backendSummary?.risks_delta?.mom
@@ -491,31 +521,83 @@ const weeklyRiskSummary = (
   };
 };
 
-const formatSignedPercent = (value: number): string =>
-  `${value > 0 ? '+' : ''}${value}%`;
+const formatSignedValue = (value: number): string =>
+  `${value > 0 ? '+' : ''}${value}`;
 
-const formatRiskSummaryText = (summary: WeeklyRiskSummary | null): string => {
+const formatRiskSummaryText = (
+  summary: WeeklyRiskSummary | null,
+  translate?: Translate,
+): string => {
   if (!summary) return '';
   const parts: string[] = [];
   if (summary.identifiedRisks.length > 0) {
-    parts.push(`Identified risks: ${summary.identifiedRisks.join(', ')}.`);
+    parts.push(
+      translated(
+        translate,
+        'weekly_summary.report_identified_risks',
+        `Identified risks: ${summary.identifiedRisks.join(', ')}.`,
+        {
+          risks: summary.identifiedRisks.join(', '),
+        },
+      ),
+    );
   }
   const deltas = [
     summary.motherRiskDelta !== undefined
-      ? `mother ${formatSignedPercent(summary.motherRiskDelta)}`
+      ? translated(
+          translate,
+          'weekly_summary.report_risk_delta',
+          `mother ${formatSignedValue(summary.motherRiskDelta)}`,
+          {
+            audience: translated(
+              translate,
+              'weekly_summary.risk_mother',
+              'Mother',
+            ),
+            value: formatSignedValue(summary.motherRiskDelta),
+          },
+        )
       : null,
     summary.babyRiskDelta !== undefined
-      ? `baby ${formatSignedPercent(summary.babyRiskDelta)}`
+      ? translated(
+          translate,
+          'weekly_summary.report_risk_delta',
+          `baby ${formatSignedValue(summary.babyRiskDelta)}`,
+          {
+            audience: translated(
+              translate,
+              'weekly_summary.risk_child',
+              'Child',
+            ),
+            value: formatSignedValue(summary.babyRiskDelta),
+          },
+        )
       : null,
   ].filter((item): item is string => item !== null);
   if (deltas.length > 0) {
-    parts.push(`Risk change: ${deltas.join(', ')}.`);
+    parts.push(
+      translated(
+        translate,
+        'weekly_summary.report_risk_change',
+        `Risk change: ${deltas.join(', ')}.`,
+        {
+          changes: deltas.join(', '),
+        },
+      ),
+    );
   }
   if (summary.completedActionImpact !== 0) {
     parts.push(
-      `Completed action impact: ${formatSignedPercent(
-        summary.completedActionImpact,
-      )}.`,
+      translated(
+        translate,
+        'weekly_summary.report_action_impact',
+        `Completed action impact: ${formatSignedValue(
+          summary.completedActionImpact,
+        )}.`,
+        {
+          value: formatSignedValue(summary.completedActionImpact),
+        },
+      ),
     );
   }
   return parts.join(' ');
@@ -529,6 +611,9 @@ export const loadWeeklySummaryExperience = ({
   fetalSystems = [],
   nextWeek = null,
   backendSummary = null,
+  hydrationReadings = null,
+  locale = 'en-US',
+  translate,
   localData,
 }: {
   identity: RecommendationExperienceIdentity;
@@ -538,6 +623,9 @@ export const loadWeeklySummaryExperience = ({
   fetalSystems?: FetalSystemProgress[];
   nextWeek?: WeeklySummaryNextWeek | null;
   backendSummary?: SummaryResponse | null;
+  hydrationReadings?: WeeklyHydrationReadings | null;
+  locale?: string;
+  translate?: Translate;
   localData?: Pick<
     ReturnType<typeof useRecommendationExperienceStore.getState>,
     'checkIns' | 'actionCompletions' | 'restTimers' | 'dailyMoments'
@@ -587,12 +675,15 @@ export const loadWeeklySummaryExperience = ({
     const backendCompletedTasks = (backendTaskDay?.tasks ?? []).filter(
       task => typeof task === 'string' && task.trim().length > 0,
     );
+    const backendCounts = backendTaskDay?.counts;
     const backendDomains = DOMAIN_ORDER.reduce(
       (acc, domain) => ({
         ...acc,
-        [domain]: backendCompletedTasks.some(task =>
-          task.toLowerCase().includes(domain),
-        ),
+        [domain]: backendCounts
+          ? (backendCounts[summaryCountDomain[domain]]?.done ?? 0) > 0
+          : backendCompletedTasks.some(task =>
+              task.toLowerCase().includes(domain),
+            ),
       }),
       {} as Record<DailyActionDomain, boolean>,
     );
@@ -652,6 +743,35 @@ export const loadWeeklySummaryExperience = ({
     const completedPrimaryRecords = Object.values(records).filter(
       record => record.kind === 'primary',
     );
+    const backendCompletedCount = backendCounts
+      ? Object.values(backendCounts).reduce(
+          (sum, count) => sum + (validCount(count.done) ? count.done : 0),
+          0,
+        )
+      : backendCompletedTasks.length;
+    const backendTotalCount = backendCounts
+      ? Object.values(backendCounts).reduce(
+          (sum, count) => sum + (validCount(count.total) ? count.total : 0),
+          0,
+        )
+      : backendCompletedTasks.length;
+    const primaryCompleted =
+      backendTaskDay !== undefined
+        ? Math.max(backendCompletedCount, actualCompleted)
+        : hasPrimaryRecords
+        ? actualCompleted
+        : 0;
+    const primaryTotal =
+      backendTaskDay !== undefined
+        ? Math.max(
+            backendTotalCount,
+            completedPrimaryRecords.length,
+            primaryCompleted,
+          )
+        : hasPrimaryRecords
+        ? completedPrimaryRecords.length
+        : 0;
+    const hydrationReading = hydrationReadings?.[date];
     const emptyDomains: Record<DailyActionDomain, boolean> = {
       diet: false,
       activity: false,
@@ -662,28 +782,20 @@ export const loadWeeklySummaryExperience = ({
 
     return {
       date,
-      label: labelForDate(date),
+      label: labelForDate(date, locale),
       active:
         backendCheckIn ||
-        backendCompletedTasks.length > 0 ||
+        backendCompletedCount > 0 ||
         (hasPersistedDayData
           ? hasActualActivity || timerSessions > 0 || hasCompletedMoment
           : false),
-      primaryCompleted:
-        backendTaskDay !== undefined
-          ? backendCompletedTasks.length
-          : hasPrimaryRecords
-          ? actualCompleted
-          : 0,
-      primaryTotal:
-        backendTaskDay !== undefined
-          ? completedPrimaryRecords.length
-          : hasPrimaryRecords
-          ? completedPrimaryRecords.length
-          : 0,
+      primaryCompleted,
+      primaryTotal,
       extraCompleted: hasExtraRecords ? actualExtraCompleted : 0,
-      hydrationMl: checkIn?.waterDailyTotalMl ?? 0,
-      hydrationGoalMl: 0,
+      hydrationMl:
+        hydrationReading?.amountMl ?? checkIn?.waterDailyTotalMl ?? 0,
+      hydrationGoalMl:
+        checkIn?.waterGoalMl ?? hydrationReading?.goalMl ?? 0,
       restSessions:
         hasTimerRecords || hasRestMomentRecords
           ? timerSessions + restMoments
@@ -691,25 +803,25 @@ export const loadWeeklySummaryExperience = ({
       sleepLogged: hasSleepRecords ? sleepLogged : false,
       moodLabel: checkIn
         ? checkIn.moodKeys.length
-          ? 'Mood recorded'
-          : 'No mood update'
-        : 'No mood update',
+          ? translated(translate, 'weekly_summary.mood_recorded', 'Mood recorded')
+          : translated(translate, 'weekly_summary.no_mood_update', 'No mood update')
+        : translated(translate, 'weekly_summary.no_mood_update', 'No mood update'),
       feelingLabel: checkIn
         ? checkIn.feelingKeys.length
-          ? 'Feeling recorded'
-          : 'No feeling update'
-        : 'No feeling update',
+          ? translated(translate, 'weekly_summary.feeling_recorded', 'Feeling recorded')
+          : translated(translate, 'weekly_summary.no_feeling_update', 'No feeling update')
+        : translated(translate, 'weekly_summary.no_feeling_update', 'No feeling update'),
       symptomLabel: checkIn
         ? checkIn.mommySymptomKeys.length
-          ? 'Physical changes logged'
-          : 'No physical changes reported'
-        : 'No feeling update',
+          ? translated(translate, 'weekly_summary.physical_changes_logged', 'Physical changes logged')
+          : translated(translate, 'weekly_summary.no_physical_changes', 'No physical changes reported')
+        : translated(translate, 'weekly_summary.no_feeling_update', 'No feeling update'),
       domains: DOMAIN_ORDER.reduce(
         (acc, domain) => ({
           ...acc,
           [domain]:
             backendTaskDay !== undefined
-              ? backendDomains[domain]
+              ? backendDomains[domain] || actualDomains[domain]
               : hasPrimaryRecords
               ? actualDomains[domain]
               : emptyDomains[domain],
@@ -733,12 +845,13 @@ export const loadWeeklySummaryExperience = ({
   );
   const actionSummary = weeklyActionSummary(days, store.actionCompletions);
   const symptomLevels = symptomLevelSummary(backendSummary);
-  const symptomTrend = formatSymptomTrend(symptomLevels);
+  const symptomTrend = formatSymptomTrend(symptomLevels, translate);
   const riskSummary = weeklyRiskSummary(
     backendSummary,
-    completedActionImpact(days, store.actionCompletions),
+    0,
+    translate,
   );
-  const riskSummaryText = formatRiskSummaryText(riskSummary);
+  const riskSummaryText = formatRiskSummaryText(riskSummary, translate);
 
   let streakDays = 0;
   for (let index = days.length - 1; index >= 0; index -= 1) {

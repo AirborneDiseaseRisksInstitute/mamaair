@@ -9,6 +9,10 @@ export const markInitialLanguagePromptSeen = (): void => {
   userStorage.set(INITIAL_LANGUAGE_PROMPT_SEEN_KEY, true);
 };
 
+export const resetInitialLanguagePrompt = (): void => {
+  userStorage.remove(INITIAL_LANGUAGE_PROMPT_SEEN_KEY);
+};
+
 export const consumeInitialLanguagePrompt = (
   hasExistingLanguage: boolean,
 ): boolean => {

@@ -1,9 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -23,6 +18,10 @@ import {
   faChevronLeft,
   faChevronRight,
   faCircleExclamation,
+  faDroplet,
+  faFaceSmile,
+  faLeaf,
+  faPersonPregnant,
   faRotateRight,
   faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
@@ -33,17 +32,19 @@ import {
   loadSymptomHistoryDay,
   type SymptomHistoryDay,
   type SymptomHistoryClassEntry,
+  type SymptomHistoryEntry,
 } from '../services/recommendationExperience/SymptomHistoryRepository';
 import type { SymptomClassKey } from '../services/recommendationExperience/SymptomClassTrendRepository';
 import type { RecommendationExperienceIdentity } from '../types/recommendationExperience';
 import { formatLocalDate } from '../utils/dateUtils';
+import { feelingCheckInItemLabel } from '../utils/feelingCheckInLabels';
+import { resolveCheckInOptionIcon } from '../components/recommendations/checkInOptionIcons';
 
 interface SymptomsHistoryScreenProps {
   onBack?: () => void;
 }
 
-const localDate = (date = new Date()): string =>
-  formatLocalDate(date);
+const localDate = (date = new Date()): string => formatLocalDate(date);
 
 const addDays = (value: string, amount: number): string => {
   const date = new Date(`${value}T00:00:00`);
@@ -66,23 +67,22 @@ const CLASS_LABEL_KEYS: Record<SymptomClassKey, string> = {
   class4: 'mother.lifestyle',
 };
 
-export const SymptomsHistoryScreen: React.FC<
-  SymptomsHistoryScreenProps
-> = ({ onBack }) => {
+export const SymptomsHistoryScreen: React.FC<SymptomsHistoryScreenProps> = ({
+  onBack,
+}) => {
   const theme = useTheme();
   const { t, i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage === 'fr'
-    ? 'fr-FR'
-    : i18n.resolvedLanguage === 'sw'
+  const locale =
+    i18n.resolvedLanguage === 'fr'
+      ? 'fr-FR'
+      : i18n.resolvedLanguage === 'sw'
       ? 'sw-KE'
       : 'en-US';
   const insets = useSafeAreaInsets();
   const profile = useUserStore(state => state.profile);
   const today = useMemo(() => localDate(), []);
   const [date, setDate] = useState(today);
-  const [day, setDay] = useState<SymptomHistoryDay | null>(
-    null,
-  );
+  const [day, setDay] = useState<SymptomHistoryDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -116,7 +116,7 @@ export const SymptomsHistoryScreen: React.FC<
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#FFF9F5',
+          backgroundColor: theme.surfaceColor('#FFF9F5'),
         },
         header: {
           minHeight: 60,
@@ -126,7 +126,7 @@ export const SymptomsHistoryScreen: React.FC<
           paddingHorizontal: spacing('sm'),
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: theme.colors.neutral200,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         back: {
           width: 48,
@@ -144,7 +144,7 @@ export const SymptomsHistoryScreen: React.FC<
           flexDirection: 'row',
           alignItems: 'center',
           padding: spacing('md'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         dateButton: {
           width: 42,
@@ -174,12 +174,12 @@ export const SymptomsHistoryScreen: React.FC<
           padding: spacing('sm'),
           marginBottom: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#FFF3E7',
+          backgroundColor: theme.surfaceColor('#FFF3E7'),
           gap: spacing('sm'),
         },
         onlineNoticeText: {
           flex: 1,
-          color: '#805025',
+          color: theme.accentTextColor('#805025'),
           fontFamily: theme.typography.fontFamily.regular,
           fontSize: 12,
           lineHeight: 18,
@@ -202,10 +202,10 @@ export const SymptomsHistoryScreen: React.FC<
           backgroundColor: theme.colors.orange50,
         },
         warningIcon: {
-          backgroundColor: '#FFF0F0',
+          backgroundColor: theme.surfaceColor('#FFF0F0'),
         },
         babyIcon: {
-          backgroundColor: '#F4EEFA',
+          backgroundColor: theme.surfaceColor('#F4EEFA'),
         },
         sectionTitle: {
           flex: 1,
@@ -223,7 +223,7 @@ export const SymptomsHistoryScreen: React.FC<
           borderRadius: radius('md'),
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: theme.colors.neutral200,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         row: {
           minHeight: 50,
@@ -244,6 +244,17 @@ export const SymptomsHistoryScreen: React.FC<
           marginRight: spacing('sm'),
           backgroundColor: theme.colors.orange500,
         },
+        detailIcon: {
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing('sm'),
+        },
+        waterIcon: {
+          backgroundColor: theme.surfaceColor('#E8F7FC'),
+        },
         warningCheck: {
           backgroundColor: '#B93838',
         },
@@ -262,7 +273,7 @@ export const SymptomsHistoryScreen: React.FC<
           paddingHorizontal: spacing('lg'),
           paddingVertical: spacing('xl'),
           borderRadius: radius('lg'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         emptyIcon: {
           width: 52,
@@ -312,86 +323,119 @@ export const SymptomsHistoryScreen: React.FC<
     [insets.bottom, insets.top, theme],
   );
 
-  /*
-   * Exact event history is disabled for this release. Keep the old
-   * list renderer here so it can be restored if policy changes.
-   *
-   * const renderSection = (
-   *   title: string,
-   *   entries: SymptomHistoryEntry[],
-   *   kind: 'physical' | 'warning' | 'baby',
-   * ) => {
-   *   if (entries.length === 0) return null;
-   *   const icon =
-   *     kind === 'warning'
-   *       ? faTriangleExclamation
-   *       : kind === 'baby'
-   *       ? faBaby
-   *       : faPersonPregnant;
-   *   const color =
-   *     kind === 'warning'
-   *       ? '#B93838'
-   *       : kind === 'baby'
-   *       ? '#7A4B96'
-   *       : theme.colors.orange500;
-   *
-   *   return (
-   *     <View style={styles.section}>
-   *       <View style={styles.sectionHeader}>
-   *         <View
-   *           style={[
-   *             styles.sectionIcon,
-   *             kind === 'warning' && styles.warningIcon,
-   *             kind === 'baby' && styles.babyIcon,
-   *           ]}
-   *         >
-   *           <FontAwesomeIcon icon={icon} size={14} color={color} />
-   *         </View>
-   *         <Text style={styles.sectionTitle}>{title}</Text>
-   *         <Text style={styles.count}>
-   *           {t('symptoms.recorded_count', {
-   *             count: entries.length,
-   *           })}
-   *         </Text>
-   *       </View>
-   *       <View style={styles.list}>
-   *         {entries.map((entry, index) => (
-   *           <View
-   *             key={entry.key}
-   *             style={[
-   *               styles.row,
-   *               index > 0 && styles.rowBorder,
-   *             ]}
-   *           >
-   *             <View
-   *               style={[
-   *                 styles.check,
-   *                 kind === 'warning' && styles.warningCheck,
-   *               ]}
-   *             >
-   *               <FontAwesomeIcon
-   *                 icon={faCheck}
-   *                 size={10}
-   *                 color="#FFFFFF"
-   *               />
-   *             </View>
-   *             <Text style={styles.name}>{entry.name}</Text>
-   *           </View>
-   *         ))}
-   *       </View>
-   *     </View>
-   *   );
-   * };
-   */
-
-  const renderClassSection = (
-    entries: SymptomHistoryClassEntry[],
+  const renderDetailSection = (
+    title: string,
+    entries: SymptomHistoryEntry[],
+    kind: 'mood' | 'wellbeing' | 'physical' | 'warning',
   ) => {
     if (entries.length === 0) return null;
-    const totalCount = entries.reduce(
-      (sum, entry) => sum + entry.total,
-      0,
+
+    const sectionPresentation = {
+      mood: {
+        icon: faFaceSmile,
+        color: theme.accentTextColor('#76508F'),
+        backgroundColor: theme.surfaceColor('#F4EEFA'),
+      },
+      wellbeing: {
+        icon: faLeaf,
+        color: theme.accentTextColor('#2D7B46'),
+        backgroundColor: theme.surfaceColor('#EAF6EE'),
+      },
+      physical: {
+        icon: faPersonPregnant,
+        color: theme.colors.orange500,
+        backgroundColor: theme.colors.orange50,
+      },
+      warning: {
+        icon: faTriangleExclamation,
+        color: theme.accentTextColor('#B93838'),
+        backgroundColor: theme.surfaceColor('#FFF0F0'),
+      },
+    }[kind];
+
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <View
+            style={[
+              styles.sectionIcon,
+              { backgroundColor: sectionPresentation.backgroundColor },
+            ]}
+          >
+            <FontAwesomeIcon
+              icon={sectionPresentation.icon}
+              size={14}
+              color={sectionPresentation.color}
+            />
+          </View>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={styles.count}>
+            {t('symptoms.recorded_count', {
+              count: entries.length,
+            })}
+          </Text>
+        </View>
+        <View style={styles.list}>
+          {entries.map((entry, index) => {
+            const optionPresentation = resolveCheckInOptionIcon(entry);
+            return (
+              <View
+                key={entry.key}
+                style={[styles.row, index > 0 && styles.rowBorder]}
+              >
+                <View
+                  style={[
+                    styles.detailIcon,
+                    {
+                      backgroundColor: theme.surfaceColor(optionPresentation.backgroundColor),
+                    },
+                  ]}
+                >
+                  <FontAwesomeIcon
+                    icon={optionPresentation.icon}
+                    size={14}
+                    color={theme.accentTextColor(optionPresentation.color)}
+                  />
+                </View>
+                <Text style={styles.name}>
+                  {feelingCheckInItemLabel(entry, t)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
     );
+  };
+
+  const renderWaterSection = (waterTotalMl: number) => {
+    if (waterTotalMl <= 0) return null;
+
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <View style={[styles.sectionIcon, styles.waterIcon]}>
+            <FontAwesomeIcon icon={faDroplet} size={14} color="#179FD2" />
+          </View>
+          <Text style={styles.sectionTitle}>{t('symptoms.water')}</Text>
+        </View>
+        <View style={styles.list}>
+          <View style={styles.row}>
+            <View style={[styles.detailIcon, styles.waterIcon]}>
+              <FontAwesomeIcon icon={faDroplet} size={14} color="#179FD2" />
+            </View>
+            <Text style={styles.name}>
+              {t('symptoms.water_amount', { amount: waterTotalMl })}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderClassSection = (entries: SymptomHistoryClassEntry[]) => {
+    if (entries.length === 0) return null;
+    const totalCount = entries.reduce((sum, entry) => sum + entry.total, 0);
 
     return (
       <View style={styles.section}>
@@ -416,22 +460,10 @@ export const SymptomsHistoryScreen: React.FC<
           {entries.map((entry, index) => (
             <View
               key={entry.key}
-              style={[
-                styles.row,
-                index > 0 && styles.rowBorder,
-              ]}
+              style={[styles.row, index > 0 && styles.rowBorder]}
             >
-              <View
-                style={[
-                  styles.check,
-                  styles.warningCheck,
-                ]}
-              >
-                <FontAwesomeIcon
-                  icon={faCheck}
-                  size={10}
-                  color="#FFFFFF"
-                />
+              <View style={[styles.check, styles.warningCheck]}>
+                <FontAwesomeIcon icon={faCheck} size={10} color="#FFFFFF" />
               </View>
               <View style={styles.classCopy}>
                 <Text style={styles.name}>
@@ -455,10 +487,14 @@ export const SymptomsHistoryScreen: React.FC<
     );
   };
 
-  const total = day?.classes.reduce(
-    (sum, entry) => sum + entry.total,
-    0,
-  ) ?? 0;
+  const total = day?.classes.reduce((sum, entry) => sum + entry.total, 0) ?? 0;
+  const detailCount = day
+    ? day.moods.length +
+      day.feelings.length +
+      day.physical.length +
+      day.warning.length
+    : 0;
+  const hasDetails = detailCount > 0 || (day?.waterTotalMl ?? 0) > 0;
   return (
     <SafeAreaView edges={[]} style={styles.container}>
       <View style={styles.header}>
@@ -512,10 +548,7 @@ export const SymptomsHistoryScreen: React.FC<
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator
-            size="large"
-            color={theme.colors.orange500}
-          />
+          <ActivityIndicator size="large" color={theme.colors.orange500} />
         </View>
       ) : failed || !day ? (
         <View style={styles.center}>
@@ -532,11 +565,7 @@ export const SymptomsHistoryScreen: React.FC<
             onPress={load}
             style={styles.retry}
           >
-            <FontAwesomeIcon
-              icon={faRotateRight}
-              size={13}
-              color="#FFFFFF"
-            />
+            <FontAwesomeIcon icon={faRotateRight} size={13} color="#FFFFFF" />
             <Text style={styles.retryText}>
               {t('feeling_checkin.try_again')}
             </Text>
@@ -547,30 +576,26 @@ export const SymptomsHistoryScreen: React.FC<
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {total > 0 ? (
+          {hasDetails || total > 0 ? (
             <>
+              {renderDetailSection(t('symptoms.mood'), day.moods, 'mood')}
+              {renderDetailSection(
+                t('feeling_checkin.wellbeing'),
+                day.feelings,
+                'wellbeing',
+              )}
+              {renderWaterSection(day.waterTotalMl)}
+              {renderDetailSection(
+                t('symptoms.physical_symptoms'),
+                day.physical,
+                'physical',
+              )}
+              {renderDetailSection(
+                t('symptoms.warning_signs'),
+                day.warning,
+                'warning',
+              )}
               {renderClassSection(day.classes)}
-              {/*
-                Exact symptom sections are disabled for this release.
-
-                <>
-                  {renderSection(
-                    t('symptoms.physical_symptoms'),
-                    day.physical,
-                    'physical',
-                  )}
-                  {renderSection(
-                    t('symptoms.warning_signs'),
-                    day.warning,
-                    'warning',
-                  )}
-                  {renderSection(
-                    t('symptoms.baby_symptoms'),
-                    day.baby,
-                    'baby',
-                  )}
-                </>
-              */}
             </>
           ) : (
             <View style={styles.empty}>

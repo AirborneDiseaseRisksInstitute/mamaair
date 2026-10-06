@@ -29,7 +29,7 @@ const clearDeletedAccountData = async (): Promise<void> => {
   ProductAnalytics.clearPending(identity);
   databaseService.deleteAllLocations();
   locationAccessCoordinator.resetForSignedOutSession();
-  useAuthStore.getState().clearSession();
+  await useAuthStore.getState().clearSession().catch(() => {});
   await clearUserNotifications();
 };
 

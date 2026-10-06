@@ -32,8 +32,7 @@ describe('exposure history capability handling', () => {
     expect(result.points).toEqual([]);
   });
 
-  it('uses already-loaded summary history after a temporary history failure', async () => {
-    historyMock.mockRejectedValue(new Error('offline'));
+  it('uses already-loaded summary history without another API request', async () => {
     const result = await loadExposureTrend({
       endDate: '2026-07-27',
       pregnancyWeek: 19,
@@ -50,9 +49,10 @@ describe('exposure history capability handling', () => {
       },
     });
 
-    expect(result.status).toBe('unavailable');
+    expect(result.status).toBe('available');
     expect(result.source).toBe('summary');
     expect(result.points).toHaveLength(2);
+    expect(historyMock).not.toHaveBeenCalled();
   });
 
   it('keeps valid history values ahead of reference values', async () => {

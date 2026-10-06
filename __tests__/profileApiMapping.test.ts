@@ -16,6 +16,7 @@ const profile = (): UserProfile => ({
   height: 168,
   weight: 64,
   language: 'en',
+  introLanguageConfirmed: true,
   country: 'KE',
   area: 'peri-urban',
   timezone: 'Africa/Nairobi',

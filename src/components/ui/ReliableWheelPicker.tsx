@@ -7,6 +7,7 @@ import React, {
 import {
   Animated,
   FlatList,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -53,6 +54,12 @@ interface WheelItemProps {
   textStyle?: StyleProp<TextStyle>;
   visibleRest: number;
 }
+
+const SCROLL_IDLE_DELAY_MS = 100;
+const DEFAULT_DECELERATION_RATE = Platform.select<'fast' | number>({
+  android: 0.97,
+  default: 'fast',
+});
 
 const createSymmetricRange = (
   visibleRest: number,
@@ -172,7 +179,7 @@ const WheelItem: React.FC<WheelItemProps> = ({
 export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
   containerProps,
   containerStyle,
-  decelerationRate = 'fast',
+  decelerationRate = DEFAULT_DECELERATION_RATE,
   flatListProps,
   itemHeight = 40,
   itemStyle,
@@ -190,6 +197,13 @@ export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
   const scrollY = useRef(
     new Animated.Value(selectedIndex * itemHeight),
   ).current;
+  const currentOffsetRef = useRef(selectedIndex * itemHeight);
+  const selectedIndexRef = useRef(selectedIndex);
+  const positionedIndexRef = useRef(selectedIndex);
+  const hasPositionedRef = useRef(false);
+  const isScrollingRef = useRef(false);
+  const shouldSettleWhenIdleRef = useRef(false);
+  const scrollIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [isListReady, setIsListReady] = useState(false);
   const { onLayout: onContainerLayout, ...restContainerProps } =
@@ -233,11 +247,21 @@ export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
   }, [options.length, selectedIndex]);
 
   useEffect(() => {
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
+
+  useEffect(() => () => {
+    if (scrollIdleTimerRef.current !== null) {
+      clearTimeout(scrollIdleTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
     if (layoutWidth <= 0) {
       return;
     }
 
-    // BottomSheet reveals its content with a native opacity animation. On
+    // BottomSheet reveals its content with a native entrance animation. On
     // Android/Fabric an Animated.FlatList mounted during that animation can
     // stay undrawn until the first touch. Mount it just after the reveal.
     const timer = setTimeout(() => {
@@ -248,11 +272,18 @@ export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
   }, [layoutWidth]);
 
   useEffect(() => {
-    if (layoutWidth <= 0 || !isListReady) {
+    if (layoutWidth <= 0 || !isListReady || isScrollingRef.current) {
+      return;
+    }
+
+    if (hasPositionedRef.current && positionedIndexRef.current === selectedIndex) {
       return;
     }
 
     const offset = selectedIndex * itemHeight;
+    hasPositionedRef.current = true;
+    positionedIndexRef.current = selectedIndex;
+    currentOffsetRef.current = offset;
     scrollY.setValue(offset);
     flatListRef.current?.scrollToOffset({ offset, animated: false });
   }, [isListReady, itemHeight, layoutWidth, scrollY, selectedIndex]);
@@ -261,26 +292,81 @@ export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
     onContainerLayout?.(event);
     const width = Math.round(event.nativeEvent.layout.width);
     if (width > 0 && width !== layoutWidth) {
+      hasPositionedRef.current = false;
       setIsListReady(false);
       setLayoutWidth(width);
     }
   };
 
+  const clearScrollIdleTimer = () => {
+    if (scrollIdleTimerRef.current !== null) {
+      clearTimeout(scrollIdleTimerRef.current);
+      scrollIdleTimerRef.current = null;
+    }
+  };
+
+  const settleSelection = (offset: number) => {
+    isScrollingRef.current = false;
+    const offsetY = Math.min(
+      itemHeight * (options.length - 1),
+      Math.max(offset, 0),
+    );
+    const nextIndex = Math.round(offsetY / itemHeight);
+    const snappedOffset = nextIndex * itemHeight;
+
+    if (Math.abs(offset - snappedOffset) > 1) {
+      flatListRef.current?.scrollToOffset({
+        offset: snappedOffset,
+        animated: true,
+      });
+    }
+
+    currentOffsetRef.current = snappedOffset;
+    positionedIndexRef.current = nextIndex;
+
+    if (nextIndex !== selectedIndexRef.current) {
+      selectedIndexRef.current = nextIndex;
+      onChange(nextIndex);
+    }
+  };
+
+  const scheduleSettleWhenIdle = () => {
+    clearScrollIdleTimer();
+    scrollIdleTimerRef.current = setTimeout(() => {
+      scrollIdleTimerRef.current = null;
+      if (!shouldSettleWhenIdleRef.current) return;
+
+      shouldSettleWhenIdleRef.current = false;
+      settleSelection(currentOffsetRef.current);
+    }, SCROLL_IDLE_DELAY_MS);
+  };
+
+  const handleScroll = (
+    event: NativeSyntheticEvent<NativeScrollEvent>,
+  ) => {
+    currentOffsetRef.current = event.nativeEvent.contentOffset.y;
+    if (shouldSettleWhenIdleRef.current) {
+      scheduleSettleWhenIdle();
+    }
+  };
+
+  const handleScrollEndDrag = (
+    event: NativeSyntheticEvent<NativeScrollEvent>,
+  ) => {
+    currentOffsetRef.current = event.nativeEvent.contentOffset.y;
+    // Android can omit or delay momentum callbacks while native snapping is
+    // still moving. Waiting for a quiet scroll window avoids committing an
+    // intermediate row and interrupting a long fling.
+    shouldSettleWhenIdleRef.current = true;
+    scheduleSettleWhenIdle();
+  };
+
   const handleMomentumScrollEnd = (
     event: NativeSyntheticEvent<NativeScrollEvent>,
   ) => {
-    const offsetY = Math.min(
-      itemHeight * (options.length - 1),
-      Math.max(event.nativeEvent.contentOffset.y, 0),
-    );
-    const lowerIndex = Math.floor(offsetY / itemHeight);
-    const remainder = offsetY % itemHeight;
-    const nextIndex =
-      remainder > itemHeight / 2 ? lowerIndex + 1 : lowerIndex;
-
-    if (nextIndex !== selectedIndex) {
-      onChange(nextIndex);
-    }
+    shouldSettleWhenIdleRef.current = false;
+    clearScrollIdleTimer();
+    settleSelection(event.nativeEvent.contentOffset.y);
   };
 
   // Keep initialScrollIndex as the only initial positioning mechanism.
@@ -343,9 +429,22 @@ export const ReliableWheelPicker: React.FC<ReliableWheelPickerProps> = ({
           scrollEventThrottle={16}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: false },
+            {
+              useNativeDriver: true,
+              listener: handleScroll,
+            },
           )}
-          onScrollEndDrag={handleMomentumScrollEnd}
+          onScrollBeginDrag={() => {
+            shouldSettleWhenIdleRef.current = false;
+            clearScrollIdleTimer();
+            isScrollingRef.current = true;
+          }}
+          onMomentumScrollBegin={() => {
+            clearScrollIdleTimer();
+            isScrollingRef.current = true;
+            shouldSettleWhenIdleRef.current = true;
+          }}
+          onScrollEndDrag={handleScrollEndDrag}
           onMomentumScrollEnd={handleMomentumScrollEnd}
         />
       ) : null}

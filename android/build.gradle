@@ -43,3 +43,17 @@ allprojects {
         maven { url("https://www.jitpack.io") }
     }
 }
+
+// react-native-worklets 0.12.2 and react-native-reanimated 4.6.0 trigger an
+// Android lint 8.8 crash while lint analyses their Gradle scripts ("Cannot
+// find a KaModule for the VirtualFile"). App lint and every other dependency
+// lint task remain enabled.
+subprojects { subproject ->
+    if (subproject.name in ["react-native-worklets", "react-native-reanimated"]) {
+        subproject.tasks.matching { task ->
+            task.name.startsWith("lintAnalyze")
+        }.configureEach {
+            enabled = false
+        }
+    }
+}

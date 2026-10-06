@@ -8,9 +8,16 @@ import {
 } from 'react-native';
 import { useTheme, spacing } from '../theme';
 import { Button, Input, DatePicker, HeightWeightPicker, WeekCycleView } from '../components/ui';
+import { useTranslation } from 'react-i18next';
 
 export const ComponentShowcaseScreen: React.FC = () => {
   const theme = useTheme();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage === 'fr'
+    ? 'fr-FR'
+    : i18n.resolvedLanguage === 'sw'
+    ? 'sw-KE'
+    : 'en-US';
   const [buttonPressCount, setButtonPressCount] = useState(0);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,36 +38,36 @@ export const ComponentShowcaseScreen: React.FC = () => {
       >
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            Component Showcase
+            {t('showcase.title')}
           </Text>
           <Text
             style={[styles.subtitle, { color: theme.colors.textSecondary }]}
            allowFontScaling={false}>
-            List of built components
+            {t('showcase.subtitle')}
           </Text>
         </View>
 
         {/* Button Component Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            Button
+            {t('showcase.button_section')}
           </Text>
           <Text
             style={[styles.sectionDescription, { color: theme.colors.textSecondary }]}
            allowFontScaling={false}>
-            Main application button
+            {t('showcase.button_description')}
           </Text>
 
           <View style={styles.componentContainer}>
             <Button
-              title="Normal Button"
+              title={t('showcase.normal_button')}
               onPress={() => setButtonPressCount((prev) => prev + 1)}
             />
 
             <View style={styles.spacing} />
 
             <Button
-              title="Disabled Button"
+              title={t('showcase.disabled_button')}
               onPress={() => {}}
               disabled={true}
             />
@@ -73,7 +80,7 @@ export const ComponentShowcaseScreen: React.FC = () => {
                     { color: theme.colors.orange500 },
                   ]}
                  allowFontScaling={false}>
-                  Button pressed {buttonPressCount} time{buttonPressCount > 1 ? 's' : ''}
+                  {t('showcase.button_pressed', { count: buttonPressCount })}
                 </Text>
               </View>
             )}
@@ -83,34 +90,34 @@ export const ComponentShowcaseScreen: React.FC = () => {
         {/* Input Component Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            Input
+            {t('showcase.input_section')}
           </Text>
           <Text
             style={[styles.sectionDescription, { color: theme.colors.textSecondary }]}
            allowFontScaling={false}>
-            Text input field with label and shadow
+            {t('showcase.input_description')}
           </Text>
 
           <View style={styles.componentContainer}>
             <Input
-              title="Email"
-              placeholder="yourmain@some.com"
+              title={t('auth.email')}
+              placeholder={t('auth.email_placeholder')}
               type="email"
               value={email}
               onChangeText={setEmail}
             />
 
             <Input
-              title="Password"
-              placeholder="Enter your password"
+              title={t('auth.password')}
+              placeholder={t('auth.password_placeholder')}
               type="password"
               value={password}
               onChangeText={setPassword}
             />
 
             <Input
-              title="Name"
-              placeholder="Enter your name"
+              title={t('intro.step02_name')}
+              placeholder={t('intro.step02_name_placeholder')}
               type="text"
             />
           </View>
@@ -119,17 +126,17 @@ export const ComponentShowcaseScreen: React.FC = () => {
         {/* DatePicker Component Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            DatePicker
+            {t('showcase.date_picker_section')}
           </Text>
           <Text
             style={[styles.sectionDescription, { color: theme.colors.textSecondary }]}
            allowFontScaling={false}>
-            Date picker with bottom sheet animation
+            {t('showcase.date_picker_description')}
           </Text>
 
           <View style={styles.componentContainer}>
             <Button
-              title="Open Date Picker"
+              title={t('showcase.open_date_picker')}
               onPress={() => setDatePickerVisible(true)}
             />
 
@@ -141,7 +148,9 @@ export const ComponentShowcaseScreen: React.FC = () => {
                     { color: theme.colors.orange500 },
                   ]}
                  allowFontScaling={false}>
-                  Selected: {selectedDate.toLocaleDateString()}
+                  {t('showcase.selected_date', {
+                    date: selectedDate.toLocaleDateString(locale),
+                  })}
                 </Text>
               </View>
             )}
@@ -151,17 +160,17 @@ export const ComponentShowcaseScreen: React.FC = () => {
         {/* HeightWeightPicker Component Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            HeightWeightPicker
+            {t('showcase.height_weight_section')}
           </Text>
           <Text
             style={[styles.sectionDescription, { color: theme.colors.textSecondary }]}
            allowFontScaling={false}>
-            Height and weight picker with BMI calculation
+            {t('showcase.height_weight_description')}
           </Text>
 
           <View style={styles.componentContainer}>
             <Button
-              title="Open Height & Weight Picker"
+              title={t('showcase.open_height_weight_picker')}
               onPress={() => setHeightWeightPickerVisible(true)}
             />
 
@@ -173,7 +182,10 @@ export const ComponentShowcaseScreen: React.FC = () => {
                     { color: theme.colors.orange500 },
                   ]}
                  allowFontScaling={false}>
-                  Height: {selectedHeight}cm, Weight: {selectedWeight}kg
+                  {t('showcase.height_weight_value', {
+                    height: selectedHeight,
+                    weight: selectedWeight,
+                  })}
                 </Text>
               </View>
             )}
@@ -183,18 +195,30 @@ export const ComponentShowcaseScreen: React.FC = () => {
         {/* WeekCycleView Component Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]} allowFontScaling={false}>
-            WeekCycleView
+            {t('showcase.week_cycle_section')}
           </Text>
           <Text
             style={[styles.sectionDescription, { color: theme.colors.textSecondary }]}
            allowFontScaling={false}>
-            Weekly cycle view with circle and week days
+            {t('showcase.week_cycle_description')}
           </Text>
 
           <View style={styles.componentContainer}>
             <View style={styles.weekCycleContainer}>
               <WeekCycleView
                 reversed={weekCycleReversed}
+                weekDays={[
+                  'day_mon',
+                  'day_tue',
+                  'day_wed',
+                  'day_thu',
+                  'day_fri',
+                  'day_sat',
+                  'day_sun',
+                ].map(day => ({
+                  day: t(`common.${day}`),
+                  icons: ['heart', 'basket', 'running'] as const,
+                }))}
                 circleIcons={[
                   { index: 0, iconPath: 'heartSystem.svg', percentage: 25 },
                   { index: 3, iconPath: 'brainSystem.svg', percentage: 50 },
@@ -206,7 +230,11 @@ export const ComponentShowcaseScreen: React.FC = () => {
             <View style={styles.spacing} />
 
             <Button
-              title={weekCycleReversed ? 'Normal Layout' : 'Reversed Layout'}
+              title={t(
+                weekCycleReversed
+                  ? 'showcase.normal_layout'
+                  : 'showcase.reversed_layout',
+              )}
               onPress={() => setWeekCycleReversed(!weekCycleReversed)}
             />
           </View>
@@ -215,12 +243,12 @@ export const ComponentShowcaseScreen: React.FC = () => {
         {/* Placeholder for future components */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]} allowFontScaling={false}>
-            Upcoming Components...
+            {t('showcase.upcoming_components')}
           </Text>
           <Text
             style={[styles.sectionDescription, { color: theme.colors.textTertiary }]}
            allowFontScaling={false}>
-            New components will be added here
+            {t('showcase.upcoming_description')}
           </Text>
         </View>
       </ScrollView>
@@ -305,4 +333,3 @@ const styles = StyleSheet.create({
     borderRadius: spacing('md'),
   },
 });
-

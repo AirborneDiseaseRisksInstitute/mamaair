@@ -86,10 +86,10 @@ export const EveningWindDown: React.FC<EveningWindDownProps> = ({
           alignItems: 'center',
           paddingHorizontal: spacing('sm'),
           paddingVertical: spacing('xs'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         headingPressed: {
-          backgroundColor: '#FAF7FC',
+          backgroundColor: theme.surfaceColor('#FAF7FC'),
         },
         headingIcon: {
           width: 30,
@@ -98,7 +98,7 @@ export const EveningWindDown: React.FC<EveningWindDownProps> = ({
           justifyContent: 'center',
           marginRight: spacing('sm'),
           borderRadius: 15,
-          backgroundColor: '#F1E8F7',
+          backgroundColor: theme.surfaceColor('#F1E8F7'),
         },
         headingCopy: {
           flex: 1,
@@ -112,12 +112,12 @@ export const EveningWindDown: React.FC<EveningWindDownProps> = ({
           paddingHorizontal: spacing('xs'),
           paddingVertical: 3,
           borderRadius: 8,
-          color: '#70428F',
+          color: theme.accentTextColor('#70428F'),
           fontFamily: theme.typography.fontFamily.bold,
           fontSize: 9,
           letterSpacing: 0.5,
           textTransform: 'uppercase',
-          backgroundColor: '#F8F3FB',
+          backgroundColor: theme.surfaceColor('#F8F3FB'),
         },
         chevron: {
           width: 28,
@@ -135,7 +135,7 @@ export const EveningWindDown: React.FC<EveningWindDownProps> = ({
         },
         separation: {
           marginTop: 1,
-          color: '#70428F',
+          color: theme.accentTextColor('#70428F'),
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: 9,
           lineHeight: 13,
@@ -143,8 +143,8 @@ export const EveningWindDown: React.FC<EveningWindDownProps> = ({
         rows: {
           paddingLeft: spacing('md'),
           borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: '#EADFED',
-          backgroundColor: '#FDFCFE',
+          borderTopColor: theme.borderColor('#EADFED'),
+          backgroundColor: theme.surfaceColor('#FDFCFE'),
         },
         item: {
           minHeight: 46,
@@ -155,7 +155,7 @@ export const EveningWindDown: React.FC<EveningWindDownProps> = ({
           borderBottomColor: theme.colors.neutral200,
         },
         itemComplete: {
-          backgroundColor: '#FAF7FC',
+          backgroundColor: theme.surfaceColor('#FAF7FC'),
         },
         checkbox: {
           width: 20,
@@ -164,9 +164,9 @@ export const EveningWindDown: React.FC<EveningWindDownProps> = ({
           justifyContent: 'center',
           marginRight: spacing('sm'),
           borderWidth: 1.5,
-          borderColor: '#B89ACB',
+          borderColor: theme.borderColor('#B89ACB'),
           borderRadius: 6,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         checkboxComplete: {
           borderColor: '#70428F',

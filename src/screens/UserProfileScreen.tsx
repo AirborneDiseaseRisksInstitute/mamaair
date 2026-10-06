@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   Dimensions,
   Modal,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
@@ -22,8 +21,6 @@ import {
   faHospital,
   faChevronRight,
   faGift,
-  faRightFromBracket,
-  faTrashCan,
   faTimes,
   faShield,
   faCheck,
@@ -40,14 +37,12 @@ import {
   BottomSheetOption,
   Button,
   FixedButtonContainer,
-  useToast,
 } from '../components/ui';
 import {
   ProfileEditSheet,
   type ProfileEditSection,
 } from '../components/profile/ProfileEditSheet';
 import { useUserStore } from '../store/useUserStore';
-import { useAuthStore } from '../store/useAuthStore';
 import { FIXED_BUTTON_AREA_HEIGHT, ms } from '../utils/responsive';
 import { formatLocalDate } from '../utils/dateUtils';
 import { responsiveUtils } from '../utils/responsiveUtils';
@@ -62,7 +57,6 @@ import {
   type SummaryResponse,
 } from '../services/api/SummaryService';
 import { DEV_LOCAL_SESSION } from '../config/dev';
-import { AccountDeletionService } from '../services/account/AccountDeletionService';
 import { HEALTHCARE_SERVICE_REQUESTS_ENABLED } from '../config/recommendationExperience';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -97,8 +91,6 @@ interface UserProfileScreenProps {
   onNavigateToPrivacySettings?: () => void;
   onNavigateToPlanBirthday?: () => void;
   onNavigateToSymptomsHistory?: () => void;
-  onLogout?: () => void;
-  onAccountDeleted?: () => void;
 }
 
 export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
@@ -112,12 +104,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   onNavigateToPrivacySettings,
   onNavigateToPlanBirthday,
   onNavigateToSymptomsHistory,
-  onLogout,
-  onAccountDeleted,
 }) => {
   const theme = useTheme();
   const { t, i18n } = useTranslation();
-  const { showToast } = useToast();
   const locale =
     i18n.resolvedLanguage === 'fr'
       ? 'fr-FR'
@@ -136,8 +125,6 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const dailyMoments = useRecommendationExperienceStore(
     state => state.dailyMoments,
   );
-  const { logout } = useAuthStore();
-  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const { countries, languages } = useMetaChoices();
   const [isProfileEditMenuVisible, setIsProfileEditMenuVisible] =
     useState(false);
@@ -157,61 +144,6 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
   // Photo picker sheet
   const [isPhotoSheetVisible, setIsPhotoSheetVisible] = useState(false);
-
-  const confirmLogout = () => {
-    Alert.alert(t('profile.logout_confirm_title'), t('profile.logout_confirm_message'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('profile.menu_logout'),
-        style: 'destructive',
-        onPress: () => {
-          logout();
-          onLogout?.();
-        },
-      },
-    ]);
-  };
-
-  const deleteAccount = async () => {
-    if (isDeletingAccount) return;
-    setIsDeletingAccount(true);
-    try {
-      const status = await AccountDeletionService.deleteCurrentAccount();
-      if (status === 'unconfirmed') {
-        showToast({
-          type: 'info',
-          title: t('settings.delete_account_unconfirmed_title'),
-          message: t('settings.delete_account_unconfirmed_message'),
-          duration: 5000,
-        });
-      }
-      onAccountDeleted?.();
-    } catch {
-      showToast({
-        type: 'error',
-        title: t('settings.delete_account_failed_title'),
-        message: t('settings.delete_account_failed_message'),
-      });
-    } finally {
-      setIsDeletingAccount(false);
-    }
-  };
-
-  const confirmDeleteAccount = () => {
-    if (isDeletingAccount) return;
-    Alert.alert(
-      t('settings.delete_account_confirm_title'),
-      t('settings.delete_account_confirm_message'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('settings.delete_account_confirm_action'),
-          style: 'destructive',
-          onPress: deleteAccount,
-        },
-      ],
-    );
-  };
 
   const handlePickPhotoCamera = () => {
     setIsPhotoSheetVisible(false);
@@ -300,6 +232,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         endDate: formatLocalDate(new Date()),
         milestone: '',
         backendSummary,
+        locale,
+        translate: (key, options) => t(key, options),
         localData: {
           checkIns,
           actionCompletions,
@@ -314,7 +248,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       currentPregnancyWeek,
       dailyMoments,
       experienceIdentity,
+      locale,
       restTimers,
+      t,
     ],
   );
 
@@ -335,7 +271,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.background,
         },
         header: {
           flexDirection: 'row',
@@ -344,7 +280,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           paddingHorizontal: spacing('md'),
           paddingTop: 50,
           paddingBottom: spacing('md'),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.08,
@@ -362,7 +298,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           paddingTop: spacing('lg'),
         },
         profileCard: {
-          backgroundColor: '#FFF',
+          backgroundColor: theme.colors.surface,
           borderRadius: 12,
           padding: spacing('lg'),
           shadowColor: '#000',
@@ -449,13 +385,13 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           color: theme.colors.textPrimary,
         },
         digitalTwinCard: {
-          backgroundColor: '#E6F2FF',
+          backgroundColor: theme.surfaceColor('#E6F2FF'),
           borderRadius: 12,
           paddingVertical: 12,
           paddingHorizontal: 16,
           marginTop: spacing('lg'),
           borderWidth: 1,
-          borderColor: '#B3D9FF',
+          borderColor: theme.borderColor('#B3D9FF'),
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 1 },
           shadowOpacity: 0.05,
@@ -464,7 +400,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         },
 
         babyTwinCard: {
-          backgroundColor: '#FFF0E5',
+          backgroundColor: theme.surfaceColor('#FFF0E5'),
           borderRadius: 12,
           paddingVertical: 12,
           paddingHorizontal: 16,
@@ -510,7 +446,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         digitalTwinTitle: {
           fontSize: responsiveUtils.getFixedFontSize(16),
           fontFamily: theme.typography.fontFamily.bold,
-          color: '#4A9EFF',
+          color: theme.accentTextColor('#4A9EFF'),
           marginBottom: spacing('xs'),
           flex: 1,
         },
@@ -536,7 +472,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           height: 60,
           borderRadius: '50%',
           borderWidth: 2,
-          borderColor: '#B3D9FF',
+          borderColor: theme.borderColor('#B3D9FF'),
         },
 
         babyImageCircle: {
@@ -549,7 +485,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           borderColor: '#FF9144',
         },
         settingsCard: {
-          backgroundColor: '#FFF',
+          backgroundColor: theme.colors.surface,
           borderRadius: 12,
           marginTop: spacing('lg'),
           shadowColor: '#000',
@@ -673,7 +609,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           opacity: 0.95,
         },
         healthServiceButton: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderRadius: 30,
           paddingVertical: 14,
           paddingHorizontal: 36,
@@ -745,7 +681,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           borderColor: theme.colors.neutral200,
           padding: spacing('md'),
           marginBottom: spacing('lg'),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
         },
         healthServiceChip: {
           alignSelf: 'flex-start',
@@ -754,12 +690,12 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           paddingVertical: 10,
           paddingHorizontal: 12,
           borderRadius: 18,
-          backgroundColor: '#FFE8D1',
+          backgroundColor: theme.surfaceColor('#FFE8D1'),
           marginBottom: spacing('md'),
           maxWidth: '100%',
         },
         healthServiceChipSelected: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderWidth: 1,
           borderColor: theme.colors.orange500,
         },
@@ -767,7 +703,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           width: 26,
           height: 26,
           borderRadius: 13,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: spacing('sm'),
@@ -800,8 +736,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           padding: spacing('md'),
           borderRadius: 14,
           borderWidth: 1,
-          borderColor: '#B8D6FF',
-          backgroundColor: '#EAF3FF',
+          borderColor: theme.borderColor('#B8D6FF'),
+          backgroundColor: theme.surfaceColor('#EAF3FF'),
         },
         healthRequestConsentIcon: {
           width: 32,
@@ -818,7 +754,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         healthRequestConsentLabel: {
           fontSize: 16,
           fontFamily: theme.typography.fontFamily.bold,
-          color: '#2E6BFF',
+          color: theme.accentTextColor('#2E6BFF'),
           marginBottom: spacing('xs'),
         },
         healthRequestConsentSubtitle: {
@@ -846,7 +782,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           marginBottom: spacing('lg'),
         },
         healthRequestAgreementLinkText: {
-          color: '#4285F4',
+          color: theme.accentTextColor('#4285F4'),
           textDecorationLine: 'underline',
           fontFamily: theme.typography.fontFamily.regular,
           fontSize: 14,
@@ -865,7 +801,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           borderRadius: 12,
           borderWidth: 1,
           borderColor: theme.colors.neutral200,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           paddingVertical: 14,
           paddingHorizontal: 16,
         },
@@ -875,7 +811,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           color: theme.colors.textSecondary,
         },
         healthRequestBottomBar: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderTopWidth: 1,
           borderTopColor: theme.colors.neutral200,
           paddingTop: spacing('md'),
@@ -908,7 +844,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           paddingHorizontal: spacing('xl'),
         },
         successCard: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 20,
           paddingTop: 32,
           paddingBottom: 24,
@@ -951,7 +887,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         successTitle: {
           fontSize: 22,
           fontFamily: theme.typography.fontFamily.bold,
-          color: '#2E7D32',
+          color: theme.accentTextColor('#2E7D32'),
           marginBottom: 8,
           textAlign: 'center',
         },
@@ -998,7 +934,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         agreementServicesBox: {
           marginHorizontal: spacing('md'),
           maxHeight: ms(280),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 12,
           borderWidth: 1,
           borderColor: theme.colors.neutral200,
@@ -1138,7 +1074,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   {t('profile.height')}:
                 </Text>
                 <Text style={styles.detailValue} allowFontScaling={false}>
-                  {profile.height ? `${profile.height} cm` : '-'}
+                  {profile.height
+                    ? t('profile.height_cm', { value: profile.height })
+                    : '-'}
                 </Text>
               </View>
               <View style={styles.detailItem}>
@@ -1146,7 +1084,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   {t('profile.weight')}:
                 </Text>
                 <Text style={styles.detailValue} allowFontScaling={false}>
-                  {profile.weight ? `${profile.weight} kg` : '-'}
+                  {profile.weight
+                    ? t('profile.weight_kg', { value: profile.weight })
+                    : '-'}
                 </Text>
               </View>
             </View>
@@ -1431,47 +1371,6 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              activeOpacity={0.7}
-              onPress={confirmLogout}
-            >
-              <View style={styles.menuIcon}>
-                <FontAwesomeIcon
-                  icon={faRightFromBracket as any}
-                  size={20}
-                  color={'#FF4444'}
-                />
-              </View>
-              <Text
-                style={[styles.menuText, { color: '#FF4444' }]}
-                allowFontScaling={false}
-              >
-                {t('profile.menu_logout')}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.menuDivider} />
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              activeOpacity={0.7}
-              onPress={confirmDeleteAccount}
-              disabled={isDeletingAccount}
-            >
-              <View style={styles.menuIcon}>
-                <FontAwesomeIcon
-                  icon={faTrashCan as any}
-                  size={20}
-                  color={'#FF4444'}
-                />
-              </View>
-              <Text style={[styles.menuText, { color: '#FF4444' }]} allowFontScaling={false}>
-                {t(isDeletingAccount ? 'settings.deleting_account' : 'settings.delete_account')}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
 

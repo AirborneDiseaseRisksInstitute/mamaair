@@ -41,14 +41,43 @@ import { DEV_LOCAL_SESSION } from '../config/dev';
 import type { WeeklyActionSummaryDomain } from '../types/recommendationExperience';
 import { getPregnancyWeekDates } from '../utils/pregnancyWeekDates';
 import {
+  buildCompleteApiSymptomClassTrend,
   buildDevelopmentSymptomClassTrend,
+  getApiSymptomClassMetadata,
+  type SymptomClassMetadata,
   type SymptomClassTrendSeries,
 } from '../services/recommendationExperience/SymptomClassTrendRepository';
 import {
-  buildEnvironmentalRiskObservation,
   buildMotherTwinChartModel,
   type EnvironmentalRiskAudience,
 } from '../services/recommendationExperience/MotherTwinChartRepository';
+import {
+  loadWeeklyHydrationReadings,
+  type WeeklyHydrationReadings,
+} from '../services/recommendationExperience/WeeklyHydrationRepository';
+import { loadExposureTrend } from '../services/recommendationExperience/ExposureTrendRepository';
+import type { ExposureTrendPoint } from '../types/recommendationExperience';
+import {
+  classifyEnvironmentalRiskLoadError,
+  resolveEnvironmentalRiskCardState,
+  type EnvironmentalRiskLoadError,
+} from '../services/recommendationExperience/EnvironmentalRiskCardPresenter';
+import type { ApiFailureKind } from '../utils/apiErrors';
+
+const ENVIRONMENTAL_RISK_FAILURE_REASON_KEYS: Record<
+  ApiFailureKind,
+  string
+> = {
+  network: 'mother.environmental_risk_reason_network',
+  timeout: 'mother.environmental_risk_reason_timeout',
+  authentication: 'mother.environmental_risk_reason_authentication',
+  permission: 'mother.environmental_risk_reason_permission',
+  notFound: 'mother.environmental_risk_reason_not_found',
+  validation: 'mother.environmental_risk_reason_validation',
+  rateLimit: 'mother.environmental_risk_reason_rate_limit',
+  server: 'mother.environmental_risk_reason_server',
+  unknown: 'mother.environmental_risk_reason_unknown',
+};
 
 const STAT_TABS: Array<{
   id: WeeklyActionSummaryDomain;
@@ -81,14 +110,34 @@ const STAT_TABS: Array<{
   },
 ];
 
-// Symptom class colors
+// Feeling pattern colors
 // Class 1: Acute & Emergency (Red), Class 2: Systemic (Gray), Class 3: Fetal Activity (Orange), Class 4: Lifestyle (Blue)
 const SYMPTOM_CLASSES = [
-  { id: 'class1', translationKey: 'mother.emergency', color: '#E53935' },
-  { id: 'class2', translationKey: 'mother.systemic', color: '#757575' },
-  { id: 'class3', translationKey: 'mother.fetal', color: '#F9AA01' },
-  { id: 'class4', translationKey: 'mother.lifestyle', color: '#1E88E5' },
-];
+  {
+    apiClass: 1,
+    id: 'class1',
+    translationKey: 'mother.emergency',
+    color: '#E53935',
+  },
+  {
+    apiClass: 2,
+    id: 'class2',
+    translationKey: 'mother.systemic',
+    color: '#757575',
+  },
+  {
+    apiClass: 3,
+    id: 'class3',
+    translationKey: 'mother.fetal',
+    color: '#F9AA01',
+  },
+  {
+    apiClass: 4,
+    id: 'class4',
+    translationKey: 'mother.lifestyle',
+    color: '#1E88E5',
+  },
+] as const;
 
 const EMPTY_WEEK_DATA = Array(7).fill({ value: 0 });
 const CHART_Y_AXIS_WIDTH = 28;
@@ -157,30 +206,10 @@ function formatRiskValue(value: number, locale: string): string {
   }).format(value);
 }
 
-function resolveSymptomTrendDirection(
-  data: SymptomClassTrendSeries,
-): 'better' | 'worse' | 'stable' {
-  const dailyTotals = EMPTY_WEEK_DATA.map((_, index) =>
-    SYMPTOM_CLASSES.reduce(
-      (total, cls) =>
-        total +
-        (data[cls.id as keyof SymptomClassTrendSeries][index]?.value ?? 0),
-      0,
-    ),
-  );
-  const firstIndex = dailyTotals.findIndex(total => total > 0);
-  let lastIndex = -1;
-  for (let index = dailyTotals.length - 1; index >= 0; index -= 1) {
-    if (dailyTotals[index] > 0) {
-      lastIndex = index;
-      break;
-    }
-  }
-
-  if (firstIndex === -1 || firstIndex === lastIndex) return 'stable';
-  if (dailyTotals[lastIndex] > dailyTotals[firstIndex]) return 'worse';
-  if (dailyTotals[lastIndex] < dailyTotals[firstIndex]) return 'better';
-  return 'stable';
+function formatRiskDelta(value: number | undefined, locale: string): string {
+  if (value === undefined) return '\u2014';
+  const formatted = formatRiskValue(Math.abs(value), locale);
+  return value > 0 ? `+${formatted}` : value < 0 ? `-${formatted}` : formatted;
 }
 
 interface MotherTwinScreenProps {
@@ -234,12 +263,6 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
   const dailyMoments = useRecommendationExperienceStore(
     state => state.dailyMoments,
   );
-  const environmentalRiskObservations = useRecommendationExperienceStore(
-    state => state.environmentalRiskObservations,
-  );
-  const saveEnvironmentalRiskObservation = useRecommendationExperienceStore(
-    state => state.saveEnvironmentalRiskObservation,
-  );
   const identity = useMemo(
     () => ({
       backendUserId: profile.backendUserId,
@@ -250,8 +273,13 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
   const [backendSummary, setBackendSummary] = useState<SummaryResponse | null>(
     null,
   );
-  const [isLoadingRisk, setIsLoadingRisk] = useState(false);
-  const [riskLoadFailed, setRiskLoadFailed] = useState(false);
+  const [isLoadingRisk, setIsLoadingRisk] = useState(!DEV_LOCAL_SESSION);
+  const [riskLoadError, setRiskLoadError] =
+    useState<EnvironmentalRiskLoadError | null>(null);
+  const [exposureTrend, setExposureTrend] = useState<ExposureTrendPoint[]>([]);
+  const [hydrationReadings, setHydrationReadings] =
+    useState<WeeklyHydrationReadings | null>(null);
+  const [isLoadingHydration, setIsLoadingHydration] = useState(false);
   const [chartViewportWidths, setChartViewportWidths] = useState<
     Record<ChartViewport, number>
   >({
@@ -260,6 +288,15 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
     risk: 0,
   });
   const currentDate = formatLocalDate(new Date());
+  const weekDates = useMemo(
+    () =>
+      getPregnancyWeekDates(
+        profile.pregnancyWeek ?? currentWeek,
+        profile.pregnancyWeekSetDate,
+        currentWeek,
+      ),
+    [currentWeek, profile.pregnancyWeek, profile.pregnancyWeekSetDate],
+  );
 
   const updateChartViewportWidth = useCallback(
     (viewport: ChartViewport, event: LayoutChangeEvent): void => {
@@ -280,43 +317,64 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
       if (DEV_LOCAL_SESSION) return;
 
       setIsLoadingRisk(true);
-      setRiskLoadFailed(false);
+      setRiskLoadError(null);
       try {
         const value = await SummaryService.getSummary();
         if (!isActive()) return;
         setBackendSummary(value ?? null);
-        const observation = buildEnvironmentalRiskObservation(
-          value ?? null,
-          currentDate,
-        );
-        if (observation) saveEnvironmentalRiskObservation(observation);
-      } catch {
-        if (isActive()) setRiskLoadFailed(true);
+        const trend = await loadExposureTrend({
+          summary: value ?? null,
+          endDate: currentDate,
+          pregnancyWeek: currentWeek,
+        });
+        if (isActive()) setExposureTrend(trend.points);
+      } catch (error) {
+        if (isActive()) {
+          setRiskLoadError(classifyEnvironmentalRiskLoadError(error));
+        }
       } finally {
         if (isActive()) setIsLoadingRisk(false);
       }
     },
-    [currentDate, saveEnvironmentalRiskObservation],
+    [currentDate, currentWeek],
+  );
+
+  const refreshHydration = useCallback(
+    async (isActive: () => boolean = () => true): Promise<void> => {
+      if (DEV_LOCAL_SESSION) return;
+
+      setIsLoadingHydration(true);
+      const readings = await loadWeeklyHydrationReadings(weekDates);
+      if (isActive()) {
+        setHydrationReadings(readings);
+        setIsLoadingHydration(false);
+      }
+    },
+    [weekDates],
   );
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       refreshSummary(() => active);
+      refreshHydration(() => active);
 
       return () => {
         active = false;
       };
-    }, [refreshSummary]),
+    }, [refreshHydration, refreshSummary]),
   );
   const journeySummary = useMemo(
     () =>
       loadWeeklySummaryExperience({
         identity,
         pregnancyWeek: currentWeek,
-        endDate: formatLocalDate(new Date()),
+        endDate: weekDates[6],
         milestone: t(`home.week_desc_w${String(currentWeek).padStart(2, '0')}`),
         backendSummary,
+        hydrationReadings,
+        locale,
+        translate: (key, options) => t(key, options),
         localData: {
           actionCompletions,
           checkIns,
@@ -332,12 +390,18 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
       restTimers,
       currentWeek,
       identity,
+      hydrationReadings,
+      locale,
       t,
+      weekDates,
     ],
   );
   const progress = Math.round((journeySummary.activeDays / 7) * 100);
   const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [symptomChartUnavailable, setSymptomChartUnavailable] = useState(false);
+  const [symptomClassMetadata, setSymptomClassMetadata] = useState<
+    Partial<Record<1 | 2 | 3 | 4, SymptomClassMetadata>>
+  >({});
   const [symptomChartData, setSymptomChartData] =
     useState<SymptomClassTrendSeries>({
       class1: [...EMPTY_WEEK_DATA],
@@ -345,16 +409,6 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
       class3: [...EMPTY_WEEK_DATA],
       class4: [...EMPTY_WEEK_DATA],
     });
-
-  const weekDates = useMemo(
-    () =>
-      getPregnancyWeekDates(
-        profile.pregnancyWeek ?? currentWeek,
-        profile.pregnancyWeekSetDate,
-        currentWeek,
-      ),
-    [currentWeek, profile.pregnancyWeek, profile.pregnancyWeekSetDate],
-  );
 
   const symptomTrackerWeekDates = weekDates;
 
@@ -368,16 +422,9 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         weekDates,
         actionCompletions,
         backendSummary,
-        environmentalRiskObservations,
         currentDate,
       }),
-    [
-      actionCompletions,
-      backendSummary,
-      currentDate,
-      environmentalRiskObservations,
-      weekDates,
-    ],
+    [actionCompletions, backendSummary, currentDate, weekDates],
   );
 
   useEffect(() => {
@@ -394,6 +441,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
     }
     setIsLoadingChart(true);
     setSymptomChartUnavailable(false);
+    setSymptomClassMetadata({});
     setSymptomChartData({
       class1: [...EMPTY_WEEK_DATA],
       class2: [...EMPTY_WEEK_DATA],
@@ -411,24 +459,15 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
     )
       .then(results => {
         if (cancelled) return;
-        const c1: { value: number }[] = [];
-        const c2: { value: number }[] = [];
-        const c3: { value: number }[] = [];
-        const c4: { value: number }[] = [];
+        const trend = buildCompleteApiSymptomClassTrend(results);
+        if (!trend) {
+          setSymptomChartUnavailable(true);
+          return;
+        }
 
-        results.forEach(res => {
-          const classes: { symptom_class: number; quantity: number }[] =
-            res?.classes ?? [];
-          const qty = (cls: number) =>
-            classes.find(c => c.symptom_class === cls)?.quantity ?? 0;
-          c1.push({ value: qty(1) });
-          c2.push({ value: qty(2) });
-          c3.push({ value: qty(3) });
-          c4.push({ value: qty(4) });
-        });
-
-        setSymptomChartData({ class1: c1, class2: c2, class3: c3, class4: c4 });
-        setSymptomChartUnavailable(results.every(result => result === null));
+        setSymptomChartData(trend);
+        setSymptomClassMetadata(getApiSymptomClassMetadata(results));
+        setSymptomChartUnavailable(false);
       })
       .finally(() => {
         if (!cancelled) setIsLoadingChart(false);
@@ -460,13 +499,9 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
     ).length;
     return Math.max(localDays, backendDays);
   }, [checkIns, symptomChartData, symptomTrackerWeekDates]);
-  const symptomTrendDirection = useMemo(
-    () => resolveSymptomTrendDirection(symptomChartData),
-    [symptomChartData],
-  );
   const symptomTrendText =
     symptomRecordedDays > 0
-      ? t(`mother.symptom_trend_${symptomTrendDirection}`, {
+      ? t('mother.symptom_trend_recorded', {
           count: symptomRecordedDays,
         })
       : journeySummary.dataMode === 'careContext'
@@ -488,6 +523,31 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
       ),
     [symptomChartData],
   );
+  const exposureTrendByDate = useMemo(
+    () =>
+      new Map(
+        exposureTrend
+          .filter(
+            point =>
+              weekDates.includes(point.date) &&
+              typeof point.integratedScore === 'number' &&
+              Number.isFinite(point.integratedScore),
+          )
+          .map(point => [point.date, point.integratedScore as number]),
+      ),
+    [exposureTrend, weekDates],
+  );
+  const exposureTrendSeries = useMemo(
+    () =>
+      weekDates.map(date => ({
+        value: exposureTrendByDate.get(date),
+      })),
+    [exposureTrendByDate, weekDates],
+  );
+  const exposureTrendMaxValue = useMemo(() => {
+    const highestValue = Math.max(0, ...exposureTrendByDate.values());
+    return Math.max(1, Math.ceil(highestValue * 1.15 * 4) / 4);
+  }, [exposureTrendByDate]);
   const maxContentHeight = SCREEN_HEIGHT * 0.3;
   const size = Math.min(140, maxContentHeight * 0.8); // Smaller circular progress
   const strokeWidth = 8;
@@ -509,7 +569,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           paddingHorizontal: spacing('md'),
           paddingTop: 50,
           paddingBottom: spacing('md'),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.08,
@@ -581,7 +641,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         },
         infoCard: {
           width: '80%',
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 16,
           padding: spacing('md'),
           marginTop: spacing('lg'),
@@ -620,7 +680,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         // Badges container
         badgesContainer: {
           width: Dimensions.get('window').width,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           marginTop: spacing('lg'),
           marginLeft: -spacing('md'),
           marginRight: -spacing('md'),
@@ -628,7 +688,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           paddingBottom: spacing('lg'),
         },
         badgeCard: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 16,
           padding: spacing('md'),
           marginHorizontal: spacing('md'),
@@ -685,7 +745,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         badgeButton: {
           flexDirection: 'row',
           alignItems: 'center',
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderWidth: 1,
           borderColor: theme.colors.neutral300,
           borderRadius: 12,
@@ -701,7 +761,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           color: theme.colors.textPrimary,
         },
         weeklySignalsCard: {
-          backgroundColor: '#FFF8F2',
+          backgroundColor: theme.surfaceColor('#FFF8F2'),
           borderRadius: 16,
           padding: spacing('md'),
           marginHorizontal: spacing('md'),
@@ -730,7 +790,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         weeklySignalItem: {
           width: '48%',
           borderRadius: 12,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           padding: spacing('sm'),
         },
         weeklySignalValue: {
@@ -746,7 +806,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         },
         // Statistics Card Styles
         statsCard: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 16,
           padding: spacing('md'),
           marginHorizontal: spacing('md'),
@@ -796,7 +856,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           marginBottom: spacing('md'),
         },
         statsChartContainer: {
-          backgroundColor: '#FFF8F2',
+          backgroundColor: theme.surfaceColor('#FFF8F2'),
           borderRadius: 16,
           padding: spacing('md'),
           marginBottom: spacing('md'),
@@ -820,7 +880,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           width: 14,
           height: 14,
           borderRadius: 7,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
         },
         statsChartTitle: {
           fontSize: 16,
@@ -841,10 +901,10 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           borderRadius: 5,
           marginRight: spacing('xs'),
         },
-        predictedRiskDot: {
+        currentRiskDot: {
           backgroundColor: '#9B3F00',
         },
-        afterSelfCareRiskDot: {
+        riskDeltaDot: {
           backgroundColor: '#2E7D4A',
         },
         statsLegendText: {
@@ -857,7 +917,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           alignItems: 'center',
         },
         riskCard: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 16,
           padding: spacing('md'),
           marginHorizontal: spacing('md'),
@@ -877,10 +937,10 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           marginRight: spacing('sm'),
         },
         motherRiskHeaderIcon: {
-          backgroundColor: '#FFF1E6',
+          backgroundColor: theme.surfaceColor('#FFF1E6'),
         },
         childRiskHeaderIcon: {
-          backgroundColor: '#EAF6F2',
+          backgroundColor: theme.surfaceColor('#EAF6F2'),
         },
         riskHeaderTitle: {
           flex: 1,
@@ -966,7 +1026,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           width: 48,
           height: 48,
           borderRadius: 24,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           alignItems: 'center',
           justifyContent: 'center',
           marginBottom: spacing('sm'),
@@ -1002,7 +1062,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         },
         // Feelings Tracker Styles
         symptomsCard: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: 16,
           padding: spacing('md'),
           marginHorizontal: spacing('md'),
@@ -1307,7 +1367,11 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
               </View>
               <View style={styles.weeklySignalItem}>
                 <Text style={styles.weeklySignalValue}>
-                  {journeySummary.hydrationDays}/7
+                  {isLoadingHydration
+                    ? '...'
+                    : hydrationReadings
+                    ? `${journeySummary.hydrationDays}/7`
+                    : '—'}
                 </Text>
                 <Text style={styles.weeklySignalLabel}>
                   {t('mother.hydration_days')}
@@ -1495,7 +1559,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
             </Text>
             <Text style={styles.symptomsDescription}>{symptomTrendText}</Text>
 
-            {/* Four symptom groups, current week, day by day. */}
+            {/* Four feeling pattern groups, current week, day by day. */}
             {hasSymptomChartData ? (
               <View
                 style={[styles.symptomsChartContainer, styles.chartViewport]}
@@ -1588,7 +1652,8 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
                     style={styles.symptomsLegendLabel}
                     allowFontScaling={false}
                   >
-                    {t(cls.translationKey)}
+                    {symptomClassMetadata[cls.apiClass]?.className ??
+                      t(cls.translationKey)}
                   </Text>
                 </View>
               ))}
@@ -1598,28 +1663,36 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
           {(['mother', 'baby'] as EnvironmentalRiskAudience[]).map(audience => {
             const points = chartModel.environmentalRisk[audience];
             const hasData = chartModel.hasEnvironmentalRiskData[audience];
-            const highestValue = Math.max(
-              0,
-              ...points.flatMap(point => [
-                point.predicted,
-                point.afterSelfCare,
-              ]),
-            );
-            const maxValue = Math.max(
-              1,
-              Math.ceil(highestValue * 1.15 * 4) / 4,
-            );
-            const isSingleDay = points.length === 1;
-            const pointsByDate = new Map(
-              points.map(point => [point.date, point]),
-            );
-            const predictedSeries = weekDates.map(date => ({
-              value: pointsByDate.get(date)?.predicted,
-            }));
-            const afterSelfCareSeries = weekDates.map(date => ({
-              value: pointsByDate.get(date)?.afterSelfCare,
-            }));
             const isMother = audience === 'mother';
+            const cardState = resolveEnvironmentalRiskCardState({
+              hasData,
+              isLoading: isLoadingRisk,
+              loadError: riskLoadError,
+            });
+            const hasLoadError = cardState === 'error';
+            const descriptionKey = isMother
+              ? 'mother.mother_environmental_risk_description'
+              : 'mother.baby_environmental_risk_description';
+            const emptyTitleKey = isMother
+              ? 'mother.mother_environmental_risk_empty_title'
+              : 'mother.baby_environmental_risk_empty_title';
+            const emptyTextKey = isMother
+              ? 'mother.mother_environmental_risk_empty'
+              : 'mother.baby_environmental_risk_empty';
+            const statusTitleKey =
+              cardState === 'loading'
+                ? 'mother.environmental_risk_loading_title'
+                : cardState === 'error'
+                ? isMother
+                  ? 'mother.mother_environmental_risk_error_title'
+                  : 'mother.baby_environmental_risk_error_title'
+                : emptyTitleKey;
+            const statusTextKey =
+              cardState === 'loading'
+                ? 'mother.environmental_risk_loading'
+                : cardState === 'error' && riskLoadError
+                ? ENVIRONMENTAL_RISK_FAILURE_REASON_KEYS[riskLoadError.kind]
+                : emptyTextKey;
 
             return (
               <View key={audience} style={styles.riskCard}>
@@ -1650,22 +1723,22 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
                   </Text>
                 </View>
                 <Text style={styles.riskDescription} allowFontScaling={false}>
-                  {t('mother.environmental_risk_description')}
+                  {t(descriptionKey)}
                 </Text>
 
-                {hasData && isSingleDay ? (
+                {cardState === 'data' ? (
                   <View style={styles.riskFirstReading}>
                     <Text
                       style={styles.riskFirstReadingTitle}
                       allowFontScaling={false}
                     >
-                      {t('mother.environmental_risk_first_reading_title')}
+                      {t('mother.environmental_risk_latest_title')}
                     </Text>
                     <Text
                       style={styles.riskFirstReadingText}
                       allowFontScaling={false}
                     >
-                      {t('mother.environmental_risk_first_reading')}
+                      {t('mother.environmental_risk_latest')}
                     </Text>
                     <View style={styles.riskFirstReadingValues}>
                       <View style={styles.riskFirstReadingValue}>
@@ -1673,44 +1746,41 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
                           <View
                             style={[
                               styles.statsLegendDot,
-                              styles.predictedRiskDot,
+                              styles.currentRiskDot,
                             ]}
                           />
                           <Text
                             style={styles.statsLegendText}
                             allowFontScaling={false}
                           >
-                            {t('mother.predicted_risk')}
+                            {t('mother.current_risk_level')}
                           </Text>
                         </View>
                         <Text
                           style={styles.riskFirstReadingValueText}
                           allowFontScaling={false}
                         >
-                          {formatRiskValue(points[0].predicted, locale)}
+                          {formatRiskValue(points[0].current, locale)}
                         </Text>
                       </View>
                       <View style={styles.riskFirstReadingDivider} />
                       <View style={styles.riskFirstReadingValue}>
                         <View style={styles.riskFirstReadingLabelRow}>
                           <View
-                            style={[
-                              styles.statsLegendDot,
-                              styles.afterSelfCareRiskDot,
-                            ]}
+                            style={[styles.statsLegendDot, styles.riskDeltaDot]}
                           />
                           <Text
                             style={styles.statsLegendText}
                             allowFontScaling={false}
                           >
-                            {t('mother.after_self_care_risk')}
+                            {t('mother.risk_level_change')}
                           </Text>
                         </View>
                         <Text
                           style={styles.riskFirstReadingValueText}
                           allowFontScaling={false}
                         >
-                          {formatRiskValue(points[0].afterSelfCare, locale)}
+                          {formatRiskDelta(points[0].delta, locale)}
                         </Text>
                       </View>
                     </View>
@@ -1721,98 +1791,10 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
                       {formatWeekday(points[0].date, locale)}
                     </Text>
                   </View>
-                ) : hasData ? (
-                  <>
-                    <View
-                      style={[styles.riskChartContainer, styles.chartViewport]}
-                      onLayout={event =>
-                        updateChartViewportWidth('risk', event)
-                      }
-                    >
-                      {chartViewportWidths.risk > 0 ? (
-                        <LineChart
-                          data={predictedSeries}
-                          data2={afterSelfCareSeries}
-                          width={getChartPlotWidth(chartViewportWidths.risk)}
-                          parentWidth={chartViewportWidths.risk}
-                          height={160}
-                          maxValue={maxValue}
-                          noOfSections={4}
-                          roundToDigits={2}
-                          hideDataPoints={false}
-                          dataPointsColor1="#9B3F00"
-                          dataPointsColor2="#2E7D4A"
-                          dataPointsRadius={CHART_POINT_RADIUS}
-                          yAxisLabelWidth={CHART_Y_AXIS_WIDTH}
-                          yAxisThickness={0}
-                          xAxisThickness={0}
-                          rulesColor={theme.colors.neutral200}
-                          rulesThickness={1}
-                          yAxisTextStyle={styles.chartAxisText}
-                          color1="#9B3F00"
-                          color2="#2E7D4A"
-                          initialSpacing={
-                            getWeeklyChartSpacing(chartViewportWidths.risk)
-                              .initialSpacing
-                          }
-                          spacing={
-                            getWeeklyChartSpacing(chartViewportWidths.risk)
-                              .spacing
-                          }
-                          endSpacing={0}
-                          disableScroll
-                          thickness={2}
-                        />
-                      ) : null}
-                    </View>
-                    <View
-                      style={[styles.symptomsXAxisRow, styles.chartXAxisRow]}
-                    >
-                      {weekDates.map(date => (
-                        <Text
-                          key={date}
-                          style={styles.symptomsXAxisLabel}
-                          allowFontScaling={false}
-                        >
-                          {formatWeekday(date, locale)}
-                        </Text>
-                      ))}
-                    </View>
-                    <View style={styles.statsLegend}>
-                      <View style={styles.legendItem}>
-                        <View
-                          style={[
-                            styles.statsLegendDot,
-                            styles.predictedRiskDot,
-                          ]}
-                        />
-                        <Text
-                          style={styles.statsLegendText}
-                          allowFontScaling={false}
-                        >
-                          {t('mother.predicted_risk')}
-                        </Text>
-                      </View>
-                      <View style={styles.legendItem}>
-                        <View
-                          style={[
-                            styles.statsLegendDot,
-                            styles.afterSelfCareRiskDot,
-                          ]}
-                        />
-                        <Text
-                          style={styles.statsLegendText}
-                          allowFontScaling={false}
-                        >
-                          {t('mother.after_self_care_risk')}
-                        </Text>
-                      </View>
-                    </View>
-                  </>
                 ) : (
                   <View style={styles.riskEmptyState}>
                     <View style={styles.riskEmptyIcon}>
-                      {isLoadingRisk ? (
+                      {cardState === 'loading' ? (
                         <ActivityIndicator
                           size="small"
                           color={theme.colors.orange500}
@@ -1829,24 +1811,12 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
                       style={styles.riskEmptyTitle}
                       allowFontScaling={false}
                     >
-                      {t(
-                        isLoadingRisk
-                          ? 'mother.environmental_risk_loading_title'
-                          : riskLoadFailed
-                          ? 'mother.environmental_risk_error_title'
-                          : 'mother.environmental_risk_empty_title',
-                      )}
+                      {t(statusTitleKey)}
                     </Text>
                     <Text style={styles.riskEmptyText} allowFontScaling={false}>
-                      {t(
-                        isLoadingRisk
-                          ? 'mother.environmental_risk_loading'
-                          : riskLoadFailed
-                          ? 'mother.environmental_risk_error'
-                          : 'mother.environmental_risk_empty',
-                      )}
+                      {t(statusTextKey)}
                     </Text>
-                    {riskLoadFailed ? (
+                    {hasLoadError ? (
                       <TouchableOpacity
                         style={styles.riskRetryButton}
                         onPress={() => refreshSummary()}
@@ -1865,6 +1835,106 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
               </View>
             );
           })}
+
+          <View style={styles.riskCard}>
+            <View style={styles.symptomsHeader}>
+              <View
+                style={[styles.riskHeaderIcon, styles.motherRiskHeaderIcon]}
+              >
+                <FontAwesomeIcon
+                  icon={faChartLine as any}
+                  size={16}
+                  color="#B45309"
+                />
+              </View>
+              <Text
+                style={[styles.symptomsHeaderTitle, styles.riskHeaderTitle]}
+                allowFontScaling={false}
+              >
+                {t('mother.environmental_exposure_trend')}
+              </Text>
+            </View>
+            <Text style={styles.riskDescription} allowFontScaling={false}>
+              {t('mother.environmental_exposure_trend_description')}
+            </Text>
+
+            {exposureTrendByDate.size > 0 ? (
+              <>
+                <View
+                  style={[styles.riskChartContainer, styles.chartViewport]}
+                  onLayout={event => updateChartViewportWidth('risk', event)}
+                >
+                  {chartViewportWidths.risk > 0 ? (
+                    <LineChart
+                      data={exposureTrendSeries}
+                      width={getChartPlotWidth(chartViewportWidths.risk)}
+                      parentWidth={chartViewportWidths.risk}
+                      height={160}
+                      maxValue={exposureTrendMaxValue}
+                      noOfSections={4}
+                      roundToDigits={2}
+                      hideDataPoints={false}
+                      interpolateMissingValues={false}
+                      extrapolateMissingValues={false}
+                      dataPointsColor1="#9B3F00"
+                      dataPointsRadius={CHART_POINT_RADIUS}
+                      yAxisLabelWidth={CHART_Y_AXIS_WIDTH}
+                      yAxisThickness={0}
+                      xAxisThickness={0}
+                      rulesColor={theme.colors.neutral200}
+                      rulesThickness={1}
+                      yAxisTextStyle={styles.chartAxisText}
+                      color1="#9B3F00"
+                      initialSpacing={
+                        getWeeklyChartSpacing(chartViewportWidths.risk)
+                          .initialSpacing
+                      }
+                      spacing={
+                        getWeeklyChartSpacing(chartViewportWidths.risk).spacing
+                      }
+                      endSpacing={0}
+                      disableScroll
+                      thickness={2}
+                    />
+                  ) : null}
+                </View>
+                <View style={[styles.symptomsXAxisRow, styles.chartXAxisRow]}>
+                  {weekDates.map(date => (
+                    <Text
+                      key={date}
+                      style={styles.symptomsXAxisLabel}
+                      allowFontScaling={false}
+                    >
+                      {formatWeekday(date, locale)}
+                    </Text>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <View style={styles.riskEmptyState}>
+                <View style={styles.riskEmptyIcon}>
+                  {isLoadingRisk ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.colors.orange500}
+                    />
+                  ) : (
+                    <FontAwesomeIcon
+                      icon={faChartLine as any}
+                      size={22}
+                      color={theme.colors.orange500}
+                    />
+                  )}
+                </View>
+                <Text style={styles.riskEmptyTitle} allowFontScaling={false}>
+                  {t('mother.environmental_exposure_empty_title')}
+                </Text>
+                <Text style={styles.riskEmptyText} allowFontScaling={false}>
+                  {t('mother.environmental_exposure_empty')}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

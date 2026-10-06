@@ -14,6 +14,7 @@ export interface UserProfile {
   height: number | null; // in cm
   weight: number | null; // in kg
   language: string | null;
+  introLanguageConfirmed: boolean;
   country: string | null;
   area: string | null;
   timezone: string | null; // IANA timezone e.g. Africa/Nairobi
@@ -52,6 +53,7 @@ interface UserStore {
   setHeight: (height: number | null) => void;
   setWeight: (weight: number | null) => void;
   setLanguage: (language: string) => void;
+  confirmIntroLanguage: (language: string) => void;
   setCountry: (country: string) => void;
   setArea: (area: string) => void;
   setTimezone: (tz: string | null) => void;
@@ -83,6 +85,8 @@ export const useUserStore = create<UserStore>((set, get) => ({
     height: userStorage.getNumber('user_height') || null,
     weight: userStorage.getNumber('user_weight') || null,
     language: userStorage.getString('user_language') || null,
+    introLanguageConfirmed:
+      userStorage.getBoolean('user_intro_language_confirmed') ?? false,
     country: userStorage.getString('user_country') || null,
     area: userStorage.getString('user_area') || null,
     timezone: userStorage.getString('user_timezone') || null,
@@ -178,6 +182,17 @@ export const useUserStore = create<UserStore>((set, get) => ({
     userStorage.set('user_language', language);
     set((state) => ({
       profile: { ...state.profile, language },
+    }));
+  },
+  confirmIntroLanguage: (language) => {
+    userStorage.set('user_language', language);
+    userStorage.set('user_intro_language_confirmed', true);
+    set((state) => ({
+      profile: {
+        ...state.profile,
+        language,
+        introLanguageConfirmed: true,
+      },
     }));
   },
   setCountry: (country) => {
@@ -346,6 +361,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (profileData.height) userStorage.set('user_height', profileData.height);
     if (profileData.weight) userStorage.set('user_weight', profileData.weight);
     if (profileData.language) userStorage.set('user_language', profileData.language);
+    if (profileData.introLanguageConfirmed !== undefined) {
+      userStorage.set(
+        'user_intro_language_confirmed',
+        profileData.introLanguageConfirmed,
+      );
+    }
     if (profileData.country) userStorage.set('user_country', profileData.country);
     if (profileData.area) userStorage.set('user_area', profileData.area);
     if (profileData.timezone) userStorage.set('user_timezone', profileData.timezone);
@@ -385,6 +406,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     userStorage.remove('user_height');
     userStorage.remove('user_weight');
     userStorage.remove('user_language');
+    userStorage.remove('user_intro_language_confirmed');
     userStorage.remove('user_country');
     userStorage.remove('user_area');
     userStorage.remove('user_timezone');
@@ -418,6 +440,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         height: null,
         weight: null,
         language: null,
+        introLanguageConfirmed: false,
         country: null,
         area: null,
         timezone: null,

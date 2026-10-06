@@ -71,6 +71,7 @@ export interface FeelingCheckInRecord extends FeelingCheckInSelection {
   updatedAt: string;
   scope?: 'full' | 'symptoms';
   waterDailyTotalMl?: number;
+  waterGoalMl?: number;
   writeStatus: FeelingCheckInWriteStatus;
 }
 
@@ -270,8 +271,8 @@ export interface DailyActionCompletionRecord {
 }
 
 export interface EnvironmentalRiskReading {
-  predicted: number;
-  afterSelfCare: number;
+  current: number;
+  delta?: number;
 }
 
 export interface EnvironmentalRiskObservation {

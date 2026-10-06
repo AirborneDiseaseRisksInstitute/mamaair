@@ -19,7 +19,7 @@ export const NotificationTimeScreen: React.FC<NotificationTimeScreenProps> = ({ 
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, backgroundColor: '#fff' },
+        container: { flex: 1, backgroundColor: theme.colors.background },
         header: {
           flexDirection: 'row',
           alignItems: 'center',
@@ -27,7 +27,7 @@ export const NotificationTimeScreen: React.FC<NotificationTimeScreenProps> = ({ 
           paddingHorizontal: spacing('md'),
           paddingTop: 50,
           paddingBottom: spacing('md'),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.08,

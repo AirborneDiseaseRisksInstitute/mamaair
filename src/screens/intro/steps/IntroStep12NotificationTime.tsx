@@ -28,7 +28,7 @@ export const IntroStep12NotificationTime: React.FC<IntroStep12NotificationTimePr
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, backgroundColor: '#fff' },
+        container: { flex: 1, backgroundColor: theme.colors.background },
         scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
         contentWrapper: { paddingHorizontal: spacing('md'), paddingTop: HEADER_CLEARANCE },
         questionText: {

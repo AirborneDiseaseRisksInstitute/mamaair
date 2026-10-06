@@ -448,6 +448,7 @@ export const submitFeelingCheckIn = async (
     waterDailyTotalMl:
       experience.waterDailyTotalMl +
       selection.waterIncrementMl,
+    waterGoalMl: experience.waterGoalMl,
     writeStatus: {
       mommySymptoms: 'notAttempted',
       wellbeing: 'notAttempted',

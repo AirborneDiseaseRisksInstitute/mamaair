@@ -213,7 +213,7 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.background,
         },
         header: {
           flexDirection: 'row',
@@ -222,7 +222,7 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
           paddingHorizontal: spacing('md'),
           paddingTop: 50,
           paddingBottom: spacing('md'),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.08,
@@ -339,14 +339,14 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
           return (
             <View
               key={card.id}
-              style={[styles.card, { backgroundColor: card.backgroundColor }]}
+              style={[styles.card, { backgroundColor: theme.surfaceColor(card.backgroundColor) }]}
             >
               <View style={styles.cardHeader}>
                 <View style={styles.cardTitleRow}>
                   <View
                     style={[
                       styles.iconContainer,
-                      { backgroundColor: card.iconBgColor },
+                      { backgroundColor: theme.surfaceColor(card.iconBgColor) },
                     ]}
                   >
                     {card.svg ? (
@@ -375,7 +375,7 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
                   <TouchableOpacity
                     style={[
                       styles.editButton,
-                      { backgroundColor: card.editCircleBg },
+                      { backgroundColor: theme.surfaceColor(card.editCircleBg) },
                     ]}
                     activeOpacity={0.7}
                     accessibilityRole="button"

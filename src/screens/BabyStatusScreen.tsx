@@ -22,6 +22,11 @@ interface BabyStatusScreenProps {
 export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) => {
   const theme = useTheme();
   const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage === 'fr'
+    ? 'fr-FR'
+    : i18n.resolvedLanguage === 'sw'
+    ? 'sw-KE'
+    : 'en-US';
   const { profile } = useUserStore();
 
   const getSystemLabel = (iconKey: string): string => {
@@ -79,6 +84,8 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
             `home.week_desc_w${String(activeWeek).padStart(2, '0')}`,
           ),
         backendSummary: summary,
+        locale,
+        translate: (key, options) => t(key, options),
         localData: {
           actionCompletions,
           checkIns,
@@ -94,6 +101,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       t,
       activeWeek,
       identity,
+      locale,
       summary,
     ],
   );
@@ -134,7 +142,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
   const styles = useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.background,
     },
     header: {
       flexDirection: 'row',
@@ -143,7 +151,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       paddingHorizontal: spacing('md'),
       paddingTop: 50,
       paddingBottom: spacing('md'),
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.08,
@@ -165,7 +173,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       paddingBottom: 120,
     },
     statusCard: {
-      backgroundColor: '#FFE9D6',
+      backgroundColor: theme.surfaceColor('#FFE9D6'),
       borderRadius: 16,
       padding: spacing('lg'),
       marginBottom: spacing('md'),
@@ -213,7 +221,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: '#FFD2A6',
+      backgroundColor: theme.surfaceColor('#FFD2A6'),
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: spacing('md'),
@@ -241,7 +249,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       width: '100%',
       height: 8,
       borderRadius: 999,
-      backgroundColor: '#FFD9B8',
+      backgroundColor: theme.surfaceColor('#FFD9B8'),
       overflow: 'hidden',
     },
     progressBarFill: {
@@ -261,7 +269,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: '#FFD2A6',
+      backgroundColor: theme.surfaceColor('#FFD2A6'),
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: spacing('md'),
@@ -294,7 +302,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
       color: theme.colors.orange500,
     },
     actionsCard: {
-      backgroundColor: '#FFF',
+      backgroundColor: theme.colors.surface,
       borderRadius: 16,
       padding: spacing('lg'),
       shadowColor: '#000',
@@ -330,7 +338,7 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
     actionItem: {
       flexDirection: 'row',
       alignItems: 'flex-start',
-      backgroundColor: '#FAFAFA',
+      backgroundColor: theme.surfaceColor('#FAFAFA'),
       borderRadius: 12,
       padding: spacing('md'),
       gap: spacing('md'),
@@ -499,8 +507,8 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
 
           <View style={styles.actionsGrid}>
             {/* Health Habits Action - Heart/Behaviour */}
-            <View style={[styles.actionItem, { backgroundColor: '#FEF2F2' }]}>
-              <View style={[styles.actionItemIconContainer, { backgroundColor: '#FFDEE5' }]}>
+            <View style={[styles.actionItem, { backgroundColor: theme.surfaceColor('#FEF2F2') }]}>
+              <View style={[styles.actionItemIconContainer, { backgroundColor: theme.surfaceColor('#FFDEE5') }]}>
                 <SvgXml xml={BEHAVIOUR_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
@@ -510,8 +518,8 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
             </View>
 
             {/* Exercise Action */}
-            <View style={[styles.actionItem, { backgroundColor: '#FFF7E6' }]}>
-              <View style={[styles.actionItemIconContainer, { backgroundColor: '#FFEABD' }]}>
+            <View style={[styles.actionItem, { backgroundColor: theme.surfaceColor('#FFF7E6') }]}>
+              <View style={[styles.actionItemIconContainer, { backgroundColor: theme.surfaceColor('#FFEABD') }]}>
                 <SvgXml xml={RUNNING_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
@@ -521,8 +529,8 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
             </View>
 
             {/* Nutrition Action - Food */}
-            <View style={[styles.actionItem, { backgroundColor: '#EBFFF5' }]}>
-              <View style={[styles.actionItemIconContainer, { backgroundColor: '#B9FAD7' }]}>
+            <View style={[styles.actionItem, { backgroundColor: theme.surfaceColor('#EBFFF5') }]}>
+              <View style={[styles.actionItemIconContainer, { backgroundColor: theme.surfaceColor('#B9FAD7') }]}>
                 <SvgXml xml={DIET_SVG} width={20} height={20} />
               </View>
               <View style={styles.actionItemContent}>
@@ -532,8 +540,8 @@ export const BabyStatusScreen: React.FC<BabyStatusScreenProps> = ({ onBack }) =>
             </View>
 
             {/* Wellbeing Action */}
-            <View style={[styles.actionItem, { backgroundColor: '#F6F0FA' }]}>
-              <View style={[styles.actionItemIconContainer, { backgroundColor: '#E7D9F0' }]}>
+            <View style={[styles.actionItem, { backgroundColor: theme.surfaceColor('#F6F0FA') }]}>
+              <View style={[styles.actionItemIconContainer, { backgroundColor: theme.surfaceColor('#E7D9F0') }]}>
                 <SvgXml
                   xml={SVG_ICONS['brainSystem.svg']}
                   width={20}

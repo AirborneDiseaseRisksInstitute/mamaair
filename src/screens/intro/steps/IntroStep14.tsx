@@ -110,9 +110,11 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
       locationDecisionInFlight.current = false;
       setShowLocationSheet(true);
     } catch (error: any) {
-      console.error('Failed to save profile/lifestyle:', error);
-      if (error.response) {
-        console.error('Error response data:', error.response.data);
+      if (__DEV__) {
+        console.error(
+          'Failed to save profile/lifestyle:',
+          error?.response?.status ?? 'network',
+        );
       }
       if (requireSuccessfulSave) {
         const status = error?.response?.status;
@@ -146,7 +148,7 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, backgroundColor: '#fff' },
+        container: { flex: 1, backgroundColor: theme.colors.background },
         scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
         contentWrapper: {
           alignItems: 'stretch',
@@ -155,7 +157,7 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
         },
         servicesBox: {
           width: '100%',
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           borderRadius: radius('md'),
           borderWidth: 1,
           borderColor: theme.colors.neutral200,
@@ -245,7 +247,7 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
         },
         saveError: {
           marginTop: spacing('sm'),
-          color: '#B93838',
+          color: theme.accentTextColor('#B93838'),
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: fs(12),
           lineHeight: fs(18),
@@ -380,7 +382,7 @@ export const IntroStep14: React.FC<IntroStep14Props> = ({
         </View>
       </ScrollView>
 
-      <FixedButtonContainer backgroundColor="#fff">
+      <FixedButtonContainer backgroundColor={theme.colors.background}>
         <View style={styles.buttonRow}>
           {showSkip ? (
             <Pressable onPress={onSkip || (() => {})} style={styles.skipButton}>

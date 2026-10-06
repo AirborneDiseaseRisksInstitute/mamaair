@@ -36,7 +36,7 @@ export const ExposureTrendView: React.FC<
           marginBottom: spacing('md'),
           padding: spacing('md'),
           borderRadius: radius('md'),
-          backgroundColor: '#FFF8F2',
+          backgroundColor: theme.surfaceColor('#FFF8F2'),
         },
         title: {
           color: theme.colors.textPrimary,
@@ -69,7 +69,7 @@ export const ExposureTrendView: React.FC<
           justifyContent: 'flex-end',
           overflow: 'hidden',
           borderRadius: 9,
-          backgroundColor: '#F1E7E0',
+          backgroundColor: theme.surfaceColor('#F1E7E0'),
         },
         fill: {
           width: '100%',

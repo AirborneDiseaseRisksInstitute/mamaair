@@ -13,7 +13,7 @@ import { useTheme, spacing } from '../../theme';
 import { DIET_SVG, RUNNING_SVG, BEHAVIOUR_SVG } from '../../utils/svgIcons';
 import { useUserStore } from '../../store/useUserStore';
 import { responsiveUtils } from '../../utils/responsiveUtils';
-import { getCurrentPregnancyWeek } from '../../utils/pregnancyUtils';
+import { useTranslation } from 'react-i18next';
 
 interface HeaderIcon {
   type: 'food' | 'exercise' | 'heart' | 'mental';
@@ -27,7 +27,7 @@ interface MainHeaderProps {
 }
 
 export const MainHeader: React.FC<MainHeaderProps> = ({
-  weekNumber = '19th Week',
+  weekNumber,
   icons = [
     { type: 'food', count: 0 },
     { type: 'exercise', count: 0 },
@@ -37,35 +37,34 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
   onProfilePress,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { profile } = useUserStore();
   const defaultPhotoSource = require('../../assets/images/addPhoto.png');
   const profilePhotoSource = profile.photo ? { uri: profile.photo } : defaultPhotoSource;
-  const currentWeek = getCurrentPregnancyWeek(profile.pregnancyWeek, profile.pregnancyWeekSetDate);
-  const displayWeek = currentWeek ? `Week ${currentWeek}` : weekNumber;
 
   const iconConfig = {
     food: {
       svg: DIET_SVG,
-      wrapperStyle: { backgroundColor: '#E8F5E9' },
+      wrapperStyle: { backgroundColor: theme.surfaceColor('#E8F5E9') },
       badgeColor: '#4CAF50',
       size: 16,
     },
     exercise: {
       svg: RUNNING_SVG,
-      wrapperStyle: { backgroundColor: '#FFF9E6' },
+      wrapperStyle: { backgroundColor: theme.surfaceColor('#FFF9E6') },
       badgeColor: '#FF9800',
       size: 16,
     },
     heart: {
       svg: BEHAVIOUR_SVG,
-      wrapperStyle: { backgroundColor: '#FFE5E5' },
+      wrapperStyle: { backgroundColor: theme.surfaceColor('#FFE5E5') },
       badgeColor: '#F44336',
       size: 14,
     },
     mental: {
       icon: faBrain,
       iconColor: '#70428F',
-      wrapperStyle: { backgroundColor: '#F2E8F7' },
+      wrapperStyle: { backgroundColor: theme.surfaceColor('#F2E8F7') },
       badgeColor: '#70428F',
       size: 14,
     },
@@ -79,7 +78,7 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
       paddingHorizontal: spacing('md'),
       paddingTop: spacing('xl'),
       paddingBottom: spacing('md'),
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.08,
@@ -151,7 +150,7 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
           style={styles.weekText}
           allowFontScaling={false}
         >
-          {displayWeek}
+          {weekNumber ?? t('home.week_label', { week: 19 })}
         </Text>
       </View>
 

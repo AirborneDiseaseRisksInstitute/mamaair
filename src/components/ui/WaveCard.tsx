@@ -139,7 +139,9 @@ export const WaveCard: React.FC<WaveCardProps> = ({
       const amplitudeVariation = 5 + reverseIndex * 1.6;
       const phaseOffset = typePhase + reverseIndex * 0.34;
 
-      const baseY = cardHeight - baseWaveHeight - layerOffset;
+      const baseY = percentage >= 100
+        ? -amplitudeVariation - 1
+        : cardHeight - baseWaveHeight - layerOffset;
       const path = generateWave(
         cardWidth,
         cardHeight,
@@ -151,7 +153,9 @@ export const WaveCard: React.FC<WaveCardProps> = ({
       // Keep only a light, middle and dark semantic shade.
       layers.push({
         path,
-        color: config.colors.waves[paletteIndexes[i]],
+        color: theme.mode === 'dark'
+          ? theme.surfaceColor(config.colors.waves[paletteIndexes[i]])
+          : config.colors.waves[paletteIndexes[i]],
       });
     }
 
@@ -161,6 +165,8 @@ export const WaveCard: React.FC<WaveCardProps> = ({
     cardWidth,
     cardHeight,
     config.colors.waves,
+    theme,
+    percentage,
     type,
   ]);
   
@@ -171,9 +177,9 @@ export const WaveCard: React.FC<WaveCardProps> = ({
       borderRadius: compact ? 14 : 8,
       borderWidth: compact ? 1 : 0,
       borderColor: compact
-        ? config.colors.iconBg
+        ? theme.borderColor(config.colors.iconBg)
         : 'transparent',
-      backgroundColor: '#FFF',
+      backgroundColor: theme.colors.surface,
       overflow: 'hidden',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
@@ -192,21 +198,21 @@ export const WaveCard: React.FC<WaveCardProps> = ({
       width: 24,
       height: 24,
       borderRadius: 12,
-      backgroundColor: config.colors.iconBg,
+      backgroundColor: theme.surfaceColor(config.colors.iconBg),
       justifyContent: 'center',
       alignItems: 'center',
     },
     label: {
       fontSize: compact ? 11 : 12,
       fontFamily: theme.typography.fontFamily.medium,
-      color: theme.colors.textPrimary,
+      color: percentage >= 100 ? '#FFF' : theme.colors.textPrimary,
     },
     headerCopy: {
       flex: 1,
     },
     value: {
       marginTop: 1,
-      color: theme.colors.textSecondary,
+      color: percentage >= 100 ? '#FFF' : theme.colors.textSecondary,
       fontFamily: theme.typography.fontFamily.regular,
       fontSize: 9,
     },

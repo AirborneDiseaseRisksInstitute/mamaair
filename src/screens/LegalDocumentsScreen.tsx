@@ -34,14 +34,14 @@ export const LegalDocumentsScreen: React.FC<LegalDocumentsScreenProps> = ({
   const document = documents[documentKind];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <BackButton onPress={onBack} />
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: theme.colors.orange500 }]}>
           {t('legal.settings_section')}
         </Text>
       </View>
-      <View style={styles.tabs} accessibilityRole="tablist">
+      <View style={[styles.tabs, { borderBottomColor: theme.colors.neutral200 }]} accessibilityRole="tablist">
         {(['privacy', 'terms'] as const).map(kind => (
           <Pressable
             key={kind}

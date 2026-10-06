@@ -51,7 +51,7 @@ export const IntroDataConsentScreen: React.FC<IntroDataConsentScreenProps> = ({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.brand, { color: theme.colors.orange500 }]}>Mama Air</Text>
         <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
@@ -102,7 +102,7 @@ export const IntroDataConsentScreen: React.FC<IntroDataConsentScreenProps> = ({
           </Text>
         ) : null}
       </ScrollView>
-      <FixedButtonContainer backgroundColor="#fff">
+      <FixedButtonContainer backgroundColor={theme.colors.background}>
         <Button
           title={t('legal.health_continue')}
           onPress={continueToIntro}

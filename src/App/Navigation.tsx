@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { AppState } from 'react-native';
 import {
   NavigationContainer,
+  DarkTheme,
+  DefaultTheme,
   type ScreenLayoutArgs,
 } from '@react-navigation/native';
 import {
@@ -52,6 +54,7 @@ import { FeelingCheckInScreen } from '../screens/FeelingCheckInScreen';
 import { WeeklySummaryScreen } from '../screens/WeeklySummaryScreen';
 import { PlanProfileSetupScreen } from '../screens/PlanProfileSetupScreen';
 import { FloatingActionButton } from '../components/ui';
+import { useTheme } from '../theme';
 
 import { AuthLoadingScreen } from '../screens/AuthLoadingScreen';
 import { DEV_LOCAL_SESSION } from '../config/dev';
@@ -286,6 +289,18 @@ const getNextIntroStep = (
 };
 
 export const Navigation: React.FC = () => {
+  const theme = useTheme();
+  const navigationTheme = useMemo(() => ({
+    ...(theme.mode === 'dark' ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(theme.mode === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
+      primary: theme.colors.primary,
+      background: theme.colors.background,
+      card: theme.colors.surface,
+      text: theme.colors.textPrimary,
+      border: theme.colors.neutral200,
+    },
+  }), [theme]);
   const sessionProfile = useUserStore(state => state.profile);
   const hasVisitedStep2 = useRef(false);
   const pendingReminder = useRef<ActionReminderPressPayload | null>(null);
@@ -389,6 +404,7 @@ export const Navigation: React.FC = () => {
 
   return (
     <NavigationContainer
+      theme={navigationTheme}
       ref={navigationRef}
       onReady={() => {
         if (!pendingReminder.current) return;
@@ -824,22 +840,6 @@ export const Navigation: React.FC = () => {
               onNavigateToSymptomsHistory={() =>
                 navigation.navigate('SymptomsHistory')
               }
-              onLogout={() => {
-                navigation.reset({
-                  index: 0,
-                  routes: [
-                    {
-                      name: DEV_LOCAL_SESSION ? 'AuthLoading' : 'SignIn',
-                    },
-                  ],
-                });
-              }}
-              onAccountDeleted={() => {
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: DEV_LOCAL_SESSION ? 'AuthLoading' : 'SignIn' }],
-                });
-              }}
             />
           )}
         </Stack.Screen>
@@ -894,6 +894,16 @@ export const Navigation: React.FC = () => {
               onNavigateToNotificationTime={() =>
                 navigation.navigate('NotificationTime')
               }
+              onLogout={() => {
+                navigation.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: DEV_LOCAL_SESSION ? 'AuthLoading' : 'SignIn',
+                    },
+                  ],
+                });
+              }}
               onAccountDeleted={() => {
                 navigation.reset({
                   index: 0,
@@ -973,6 +983,7 @@ export const Navigation: React.FC = () => {
                 })
               }
               onLogin={() => navigation.replace('SignIn')}
+              onForgotPassword={() => navigation.navigate('ForgotPassword')}
               onGoogleSignIn={() => {}}
             />
           )}

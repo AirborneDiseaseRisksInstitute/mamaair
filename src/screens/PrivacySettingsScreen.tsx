@@ -128,7 +128,7 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.background,
         },
         header: {
           flexDirection: 'row',
@@ -137,7 +137,7 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({
           paddingHorizontal: spacing('md'),
           paddingTop: 50,
           paddingBottom: spacing('md'),
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.surface,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.08,
@@ -172,7 +172,7 @@ export const PrivacySettingsScreen: React.FC<PrivacySettingsScreenProps> = ({
           marginTop: spacing('xl'),
         },
         settingsCard: {
-          backgroundColor: '#FFF',
+          backgroundColor: theme.colors.surface,
           borderRadius: 12,
           marginTop: 0,
           shadowColor: '#000',

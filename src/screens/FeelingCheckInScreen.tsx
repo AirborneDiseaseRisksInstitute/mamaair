@@ -19,17 +19,14 @@ import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
 import { FeelingCheckInForm } from '../components/recommendations/FeelingCheckInForm';
-import {
-  Button,
-  FixedButtonContainer,
-  useToast,
-} from '../components/ui';
+import { QuickFeelingCheckIn } from '../components/recommendations/QuickFeelingCheckIn';
+import { Button, FixedButtonContainer, useToast } from '../components/ui';
 import {
   loadFeelingCheckInExperience,
   submitFeelingCheckIn,
 } from '../services/recommendationExperience/FeelingCheckInRepository';
 import { useUserStore } from '../store/useUserStore';
-import { formatLocalDate } from '../utils/dateUtils';
+import { useCurrentLocalDate } from '../hooks/useCurrentLocalDate';
 import { radius, spacing, useTheme } from '../theme';
 import type {
   CheckInItemGroup,
@@ -46,37 +43,35 @@ interface FeelingCheckInScreenProps {
   onSkip: () => void;
 }
 
-const CHECK_IN_STEPS: CheckInItemGroup[] = [
-  'wellbeing',
-  'physical',
-  'warning',
-];
+const CHECK_IN_STEPS: CheckInItemGroup[] = ['wellbeing', 'physical', 'warning'];
 
-export const FeelingCheckInScreen: React.FC<
-  FeelingCheckInScreenProps
-> = ({ source, mode, onComplete, onSkip }) => {
+export const FeelingCheckInScreen: React.FC<FeelingCheckInScreenProps> = ({
+  source,
+  mode,
+  onComplete,
+  onSkip,
+}) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { showToast } = useToast();
   const profile = useUserStore(state => state.profile);
-  const [experience, setExperience] =
-    useState<FeelingCheckInExperience | null>(null);
-  const [selection, setSelection] =
-    useState<FeelingCheckInSelection | null>(null);
+  const [experience, setExperience] = useState<FeelingCheckInExperience | null>(
+    null,
+  );
+  const [selection, setSelection] = useState<FeelingCheckInSelection | null>(
+    null,
+  );
   const [stepIndex, setStepIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [footerHeight, setFooterHeight] = useState(0);
-  const [quickSectionOffsets, setQuickSectionOffsets] = useState({
-    physical: 0,
-    warning: 0,
-  });
   const stepAnimation = useRef(new Animated.Value(1)).current;
   const scrollRef = useRef<ScrollView | null>(null);
+  const quickContentOffset = useRef(0);
   const flowStartedAt = useRef(Date.now());
 
-  const date = useMemo(() => formatLocalDate(new Date()), []);
+  const date = useCurrentLocalDate();
   const identity = useMemo<RecommendationExperienceIdentity>(
     () => ({
       backendUserId: profile.backendUserId,
@@ -85,18 +80,13 @@ export const FeelingCheckInScreen: React.FC<
     [profile.backendUserId, profile.email],
   );
   const currentStep = CHECK_IN_STEPS[stepIndex];
-  const quickSymptomMode =
-    mode === 'quick' ||
-    (!mode && source !== 'intro');
+  const quickMode = mode === 'quick' || (!mode && source !== 'intro');
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadFailed(false);
     try {
-      const result = await loadFeelingCheckInExperience(
-        identity,
-        date,
-      );
+      const result = await loadFeelingCheckInExperience(identity, date);
       setExperience(result);
       setSelection(result.selection);
     } catch {
@@ -138,9 +128,6 @@ export const FeelingCheckInScreen: React.FC<
         date,
         experience,
         selection,
-        quickSymptomMode
-          ? { writeScope: 'symptoms' }
-          : undefined,
       );
       showToast(
         result.symptomsPendingSync
@@ -153,13 +140,13 @@ export const FeelingCheckInScreen: React.FC<
           : {
               type: 'success',
               title: t(
-                quickSymptomMode
-                  ? 'feeling_checkin.symptoms_saved_title'
+                quickMode
+                  ? 'feeling_checkin.saved_title'
                   : 'feeling_checkin.ready_title',
               ),
               message: t(
-                quickSymptomMode
-                  ? 'feeling_checkin.symptoms_saved_message'
+                quickMode
+                  ? 'feeling_checkin.saved_message'
                   : 'feeling_checkin.ready_message',
               ),
             },
@@ -167,9 +154,7 @@ export const FeelingCheckInScreen: React.FC<
       ProductAnalytics.track(identity, 'daily_flow_complete', {
         durationSeconds: Math.max(
           1,
-          Math.round(
-            (Date.now() - flowStartedAt.current) / 1000,
-          ),
+          Math.round((Date.now() - flowStartedAt.current) / 1000),
         ),
       });
       onComplete();
@@ -185,7 +170,7 @@ export const FeelingCheckInScreen: React.FC<
   };
 
   const handleContinue = () => {
-    if (quickSymptomMode) {
+    if (quickMode) {
       handleSubmit();
       return;
     }
@@ -216,7 +201,7 @@ export const FeelingCheckInScreen: React.FC<
           alignItems: 'center',
           height: 56,
           paddingHorizontal: spacing('sm'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: theme.colors.neutral200,
         },
@@ -227,6 +212,9 @@ export const FeelingCheckInScreen: React.FC<
         },
         headerSideRight: {
           alignItems: 'flex-end',
+        },
+        quickHeaderSide: {
+          width: 64,
         },
         backButton: {
           width: 44,
@@ -258,7 +246,7 @@ export const FeelingCheckInScreen: React.FC<
           paddingHorizontal: spacing('md'),
           paddingTop: spacing('md'),
           paddingBottom: spacing('sm'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         progressLabelRow: {
           flexDirection: 'row',
@@ -321,45 +309,6 @@ export const FeelingCheckInScreen: React.FC<
         animatedContent: {
           width: '100%',
         },
-        quickSectionTitle: {
-          marginTop: spacing('lg'),
-          marginBottom: spacing('sm'),
-          color: theme.colors.textSecondary,
-          fontFamily: theme.typography.fontFamily.bold,
-          fontSize: 13,
-        },
-        quickWarningTitle: {
-          color: '#8A2525',
-        },
-        quickJumps: {
-          flexDirection: 'row',
-          marginBottom: spacing('sm'),
-          gap: spacing('sm'),
-        },
-        quickJump: {
-          minHeight: 44,
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: spacing('sm'),
-          borderRadius: 22,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: theme.colors.neutral300,
-          backgroundColor: '#FFFFFF',
-        },
-        quickJumpWarning: {
-          borderColor: '#E2BFC2',
-          backgroundColor: '#FFF7F7',
-        },
-        quickJumpText: {
-          color: theme.colors.textSecondary,
-          fontFamily: theme.typography.fontFamily.bold,
-          fontSize: 12,
-          textAlign: 'center',
-        },
-        quickJumpWarningText: {
-          color: '#8A2525',
-        },
         center: {
           flex: 1,
           alignItems: 'center',
@@ -377,7 +326,7 @@ export const FeelingCheckInScreen: React.FC<
           alignItems: 'center',
           padding: spacing('lg'),
           borderRadius: radius('lg'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderWidth: 1,
           borderColor: theme.colors.neutral200,
         },
@@ -407,18 +356,10 @@ export const FeelingCheckInScreen: React.FC<
 
   if (loading) {
     return (
-      <SafeAreaView
-        edges={['top', 'left', 'right']}
-        style={styles.container}
-      >
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator
-            size="large"
-            color={theme.colors.orange500}
-          />
-          <Text style={styles.loadingText}>
-            {t('feeling_checkin.loading')}
-          </Text>
+          <ActivityIndicator size="large" color={theme.colors.orange500} />
+          <Text style={styles.loadingText}>{t('feeling_checkin.loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -426,10 +367,7 @@ export const FeelingCheckInScreen: React.FC<
 
   if (loadFailed || !experience || !selection) {
     return (
-      <SafeAreaView
-        edges={['top', 'left', 'right']}
-        style={styles.container}
-      >
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
         <View style={styles.center}>
           <View style={styles.errorCard}>
             <Text style={styles.errorText}>
@@ -450,23 +388,17 @@ export const FeelingCheckInScreen: React.FC<
     );
   }
 
-  const stepTitle = t(
-    `feeling_checkin.step_${currentStep}_title`,
-  );
-  const stepDescription = t(
-    `feeling_checkin.step_${currentStep}_description`,
-  );
+  const stepTitle = t(`feeling_checkin.step_${currentStep}_title`);
+  const stepDescription = t(`feeling_checkin.step_${currentStep}_description`);
 
   return (
-    <SafeAreaView
-      edges={['top', 'left', 'right']}
-      style={styles.container}
-    >
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerSide}>
+        <View style={[styles.headerSide, quickMode && styles.quickHeaderSide]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('common.back')}
+            disabled={submitting}
             onPress={handleBack}
             style={styles.backButton}
           >
@@ -479,18 +411,23 @@ export const FeelingCheckInScreen: React.FC<
         </View>
         <Text numberOfLines={1} style={styles.headerTitle}>
           {t(
-            quickSymptomMode
+            quickMode
               ? 'feeling_checkin.quick_header'
               : 'feeling_checkin.header',
           )}
         </Text>
         <View
-          style={[styles.headerSide, styles.headerSideRight]}
+          style={[
+            styles.headerSide,
+            styles.headerSideRight,
+            quickMode && styles.quickHeaderSide,
+          ]}
         >
           <Pressable
             accessibilityRole="button"
             onPress={onSkip}
-            style={styles.skipButton}
+            disabled={submitting}
+            style={[styles.skipButton, quickMode && styles.quickHeaderSide]}
           >
             <Text numberOfLines={1} style={styles.skipText}>
               {source === 'intro'
@@ -501,7 +438,7 @@ export const FeelingCheckInScreen: React.FC<
         </View>
       </View>
 
-      {!quickSymptomMode ? (
+      {!quickMode ? (
         <View
           accessibilityRole="progressbar"
           accessibilityValue={{
@@ -528,8 +465,7 @@ export const FeelingCheckInScreen: React.FC<
                 key={step}
                 style={[
                   styles.progressSegment,
-                  index <= stepIndex &&
-                    styles.progressSegmentActive,
+                  index <= stepIndex && styles.progressSegmentActive,
                 ]}
               />
             ))}
@@ -541,10 +477,9 @@ export const FeelingCheckInScreen: React.FC<
         ref={scrollRef}
         contentContainerStyle={[
           styles.content,
-          quickSymptomMode && styles.quickContent,
+          quickMode && styles.quickContent,
           {
-            paddingBottom:
-              footerHeight + spacing('lg'),
+            paddingBottom: footerHeight + spacing('lg'),
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -566,121 +501,34 @@ export const FeelingCheckInScreen: React.FC<
           ]}
         >
           <Text
-            style={[
-              styles.introTitle,
-              quickSymptomMode && styles.quickIntroTitle,
-            ]}
+            style={[styles.introTitle, quickMode && styles.quickIntroTitle]}
           >
-            {quickSymptomMode
-              ? t('feeling_checkin.quick_title')
-              : stepTitle}
+            {quickMode ? t('feeling_checkin.quick_title') : stepTitle}
           </Text>
-          <Text
-            style={[
-              styles.introText,
-              quickSymptomMode && styles.quickIntroText,
-            ]}
-          >
-            {quickSymptomMode
+          <Text style={[styles.introText, quickMode && styles.quickIntroText]}>
+            {quickMode
               ? t('feeling_checkin.quick_description')
               : stepDescription}
           </Text>
-          {quickSymptomMode ? (
-            <>
-              <View style={styles.quickJumps}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() =>
-                    scrollRef.current?.scrollTo({
-                      y: Math.max(
-                        0,
-                        quickSectionOffsets.physical - spacing('sm'),
-                      ),
-                      animated: true,
-                    })
-                  }
-                  style={styles.quickJump}
-                >
-                  <Text style={styles.quickJumpText}>
-                    {t('feeling_checkin.mother_symptoms')}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() =>
-                    scrollRef.current?.scrollTo({
-                      y: Math.max(
-                        0,
-                        quickSectionOffsets.warning - spacing('sm'),
-                      ),
-                      animated: true,
-                    })
-                  }
-                  style={[
-                    styles.quickJump,
-                    styles.quickJumpWarning,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.quickJumpText,
-                      styles.quickJumpWarningText,
-                    ]}
-                  >
-                    {t('feeling_checkin.warning_signs')}
-                  </Text>
-                </Pressable>
-              </View>
-              <View
-                onLayout={event => {
-                  const physical =
-                    event.nativeEvent.layout.y;
-                  setQuickSectionOffsets(previous => ({
-                    ...previous,
-                    physical,
-                  }));
-                }}
-              >
-                <Text style={styles.quickSectionTitle}>
-                  {t('feeling_checkin.mother_symptoms')}
-                </Text>
-                <FeelingCheckInForm
-                  step="physical"
-                  experience={experience}
-                  selection={selection}
-                  onChange={setSelection}
-                  disabled={submitting}
-                  showNoneOption={false}
-                />
-              </View>
-              <View
-                onLayout={event => {
-                  const warning =
-                    event.nativeEvent.layout.y;
-                  setQuickSectionOffsets(previous => ({
-                    ...previous,
-                    warning,
-                  }));
-                }}
-              >
-                <Text
-                  style={[
-                    styles.quickSectionTitle,
-                    styles.quickWarningTitle,
-                  ]}
-                >
-                  {t('feeling_checkin.warning_signs')}
-                </Text>
-                <FeelingCheckInForm
-                  step="warning"
-                  experience={experience}
-                  selection={selection}
-                  onChange={setSelection}
-                  disabled={submitting}
-                  showNoneOption={false}
-                />
-              </View>
-            </>
+          {quickMode ? (
+            <View
+              onLayout={event => {
+                quickContentOffset.current = event.nativeEvent.layout.y;
+              }}
+            >
+              <QuickFeelingCheckIn
+                experience={experience}
+                selection={selection}
+                onChange={setSelection}
+                disabled={submitting}
+                onReveal={offset =>
+                  scrollRef.current?.scrollTo({
+                    y: spacing('md') + quickContentOffset.current + offset,
+                    animated: true,
+                  })
+                }
+              />
+            </View>
           ) : (
             <FeelingCheckInForm
               step={currentStep}
@@ -694,16 +542,15 @@ export const FeelingCheckInScreen: React.FC<
       </ScrollView>
 
       <FixedButtonContainer
-        onLayout={event =>
-          setFooterHeight(event.nativeEvent.layout.height)
-        }
+        backgroundColor={theme.colors.background}
+        onLayout={event => setFooterHeight(event.nativeEvent.layout.height)}
       >
         <Button
           title={t(
             submitting
               ? 'feeling_checkin.saving'
-              : quickSymptomMode
-              ? 'feeling_checkin.save_symptoms'
+              : quickMode
+              ? 'feeling_checkin.save'
               : stepIndex === CHECK_IN_STEPS.length - 1
               ? 'feeling_checkin.build_plan'
               : 'common.continue',

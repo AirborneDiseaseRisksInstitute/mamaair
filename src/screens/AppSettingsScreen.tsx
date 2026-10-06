@@ -14,9 +14,10 @@ import {
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import notifee, { AuthorizationStatus } from '@notifee/react-native';
-import { useTheme, spacing, radius } from '../theme';
+import { useAppearancePreference, useTheme, spacing, radius, type AppearancePreference } from '../theme';
 import { BackButton, UpgradeSubscription, BottomSheet, Button, BottomSheetOption, useToast } from '../components/ui';
 import { useUserStore } from '../store/useUserStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { AccountDeletionService } from '../services/account/AccountDeletionService';
 import { scheduleReminders } from '../services/NotificationService';
 import { getDeviceTimezone, getTimezoneList } from '../utils/timezoneUtils';
@@ -34,6 +35,7 @@ const PREMIUM_FLOWS_ENABLED = false;
 interface AppSettingsScreenProps {
   onBack?: () => void;
   onNavigateToNotificationTime?: () => void;
+  onLogout?: () => void;
   onAccountDeleted?: () => void;
   onOpenLegal?: (document: LegalDocumentKind) => void;
 }
@@ -43,16 +45,20 @@ const CARD_HEIGHT = vs(110);
 export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
   onBack,
   onNavigateToNotificationTime,
+  onLogout,
   onAccountDeleted,
   onOpenLegal,
 }) => {
   const theme = useTheme();
+  const { preference, setPreference } = useAppearancePreference();
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { profile, setTimezone } = useUserStore();
+  const logout = useAuthStore(state => state.logout);
   const [showUpgradeSubscription, setShowUpgradeSubscription] = useState(false);
   const [showNotifSheet, setShowNotifSheet] = useState(false);
   const [showTimezoneSheet, setShowTimezoneSheet] = useState(false);
+  const [showAppearanceSheet, setShowAppearanceSheet] = useState(false);
   const [timezoneList, setTimezoneList] = useState<string[]>([]);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const currentTimezone = profile.timezone || getDeviceTimezone();
@@ -79,7 +85,9 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
         Linking.openSettings();
       }
     } catch (error) {
-      console.error('Error requesting notification permission:', error);
+      if (__DEV__) {
+        console.error('Error requesting notification permission:', error);
+      }
     }
   };
 
@@ -133,22 +141,41 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
     );
   };
 
+  const confirmLogout = () => {
+    Alert.alert(
+      t('profile.logout_confirm_title'),
+      t('profile.logout_confirm_message'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('profile.menu_logout'),
+          style: 'destructive',
+          onPress: async () => {
+            await logout().catch(() => {});
+            onLogout?.();
+          },
+        },
+      ],
+    );
+  };
+
   const menuItems = [
     'notifications',
     'notification_time',
     'time_zone',
+    'appearance',
     'privacy_policy',
     'terms_of_use',
-    // 'Appearance',
     ...(PREMIUM_FLOWS_ENABLED ? ['manage_subscription'] : []),
     // 'Manage account',
+    'logout',
     'delete_account',
   ];
 
   const styles = useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.background,
     },
     header: {
       flexDirection: 'row',
@@ -157,7 +184,7 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
       paddingHorizontal: spacing('md'),
       paddingTop: 50,
       paddingBottom: spacing('md'),
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.08,
@@ -175,7 +202,7 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
       paddingTop: spacing('lg'),
     },
     settingsCard: {
-      backgroundColor: '#FFF',
+      backgroundColor: theme.colors.surface,
       borderRadius: 12,
       marginTop: 0,
       shadowColor: '#000',
@@ -250,7 +277,7 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
     notifCard: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderRadius: radius('md'),
       borderWidth: 1,
       borderColor: theme.colors.orange500,
@@ -316,12 +343,16 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
                     setShowNotifSheet(true);
                   } else if (item === 'time_zone') {
                     setShowTimezoneSheet(true);
+                  } else if (item === 'appearance') {
+                    setShowAppearanceSheet(true);
                   } else if (item === 'notification_time') {
                     onNavigateToNotificationTime?.();
                   } else if (item === 'privacy_policy') {
                     onOpenLegal?.('privacy');
                   } else if (item === 'terms_of_use') {
                     onOpenLegal?.('terms');
+                  } else if (item === 'logout') {
+                    confirmLogout();
                   } else if (item === 'delete_account') {
                     confirmDeleteAccount();
                   } else {
@@ -333,7 +364,9 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
                 <Text
                   style={[
                     styles.menuText,
-                    item === 'delete_account' ? { color: '#FF4444' } : null,
+                    item === 'logout' || item === 'delete_account'
+                      ? { color: theme.accentTextColor('#FF4444') }
+                      : null,
                   ]}
                   allowFontScaling={false}
               >
@@ -341,10 +374,14 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
                   ? `${t(`settings.${item}`)} (${currentTimezone})`
                   : item === 'notification_time'
                     ? `${t(`settings.${item}`)} (${formatNotifTime()})`
+                    : item === 'appearance'
+                      ? `${t('settings.appearance')} (${t(`settings.appearance_${preference}`)})`
                     : item === 'privacy_policy'
                       ? t('legal.privacy')
                       : item === 'terms_of_use'
                         ? t('legal.terms')
+                    : item === 'logout'
+                      ? t('profile.menu_logout')
                     : item === 'delete_account' && isDeletingAccount
                       ? t('settings.deleting_account')
                       : t(`settings.${item}`)}
@@ -352,7 +389,11 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
                 <FontAwesomeIcon
                   icon={faChevronRight as any}
                   size={14}
-                  color={item === 'delete_account' ? '#FF4444' : theme.colors.textSecondary}
+                  color={
+                    item === 'logout' || item === 'delete_account'
+                      ? '#FF4444'
+                      : theme.colors.textSecondary
+                  }
                   style={styles.menuChevron}
                 />
               </TouchableOpacity>
@@ -371,6 +412,26 @@ export const AppSettingsScreen: React.FC<AppSettingsScreenProps> = ({
           }}
         />
       ) : null}
+
+      <BottomSheet
+        visible={showAppearanceSheet}
+        onClose={() => setShowAppearanceSheet(false)}
+        title={t('settings.appearance')}
+      >
+        <View style={{ padding: spacing('md'), paddingBottom: spacing('xl') * 2 }}>
+          {(['system', 'light', 'dark'] as AppearancePreference[]).map(value => (
+            <BottomSheetOption
+              key={value}
+              label={t(`settings.appearance_${value}`)}
+              selected={preference === value}
+              onPress={() => {
+                setPreference(value);
+                setShowAppearanceSheet(false);
+              }}
+            />
+          ))}
+        </View>
+      </BottomSheet>
 
       <BottomSheet
         visible={showTimezoneSheet}

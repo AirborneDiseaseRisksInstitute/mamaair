@@ -25,7 +25,7 @@ export const IntroStep13: React.FC<IntroStep13Props> = ({ onNext, onBack, onSkip
   const shadowOpacity = useRef(new Animated.Value(1)).current;
 
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { flexGrow: 1, paddingBottom: FIXED_BUTTON_AREA_HEIGHT },
     contentWrapper: { alignItems: 'center', paddingHorizontal: spacing('md'), paddingTop: HEADER_CLEARANCE },
     titleText: { fontSize: 20, fontFamily: theme.typography.fontFamily.medium, color: theme.colors.textPrimary, textAlign: 'center', lineHeight: 28, marginBottom: spacing('xl'), marginTop:32 },
@@ -33,7 +33,7 @@ export const IntroStep13: React.FC<IntroStep13Props> = ({ onNext, onBack, onSkip
     photoImage: { width: vs(200), height: vs(200), borderRadius: vs(100) },
     buttonContainer: { position: 'relative', marginTop: spacing('md') },
     buttonShadow: { position: 'absolute', top: SHADOW_OFFSET, left: 0, right: 0, height: vs(50), borderRadius: radius('md') },
-    addPhotoButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: vs(50), paddingHorizontal: spacing('xl'), borderRadius: radius('md'), borderWidth: 1, backgroundColor: '#fff' },
+    addPhotoButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: vs(50), paddingHorizontal: spacing('xl'), borderRadius: radius('md'), borderWidth: 1, backgroundColor: theme.colors.surface },
     buttonIcon: { marginRight: spacing('sm') },
     buttonText: { fontSize: 16, fontFamily: theme.typography.fontFamily.bold },
     buttonRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

@@ -33,7 +33,7 @@ export const IntroStep01: React.FC<IntroStep01Props> = ({ onNext, skipAnimation 
   const bubblePath = "M0.00277913 46.7151C-0.366775 3.48447 35.9885 0.780277 42.708 0.64906C43.8405 0.628827 44.9605 0.608817 46.093 0.588584C58.0177 0.118704 113.247 -1.59386 153.32 4.39019C214.913 12.2231 200.684 85.9427 187.248 99.0691C183.797 102.481 177.949 104.886 170.302 106.63C173.388 115.218 185.936 117.931 185.936 117.931C167.334 118.732 157.818 111.733 154.913 109.038C132.71 111.288 102.622 110.363 71.7394 108.681C19.6008 105.839 14.7181 104.508 10.6659 100.337C6.61369 96.1658 0.41336 94.3559 0.00277913 46.7151Z";
 
   const styles = useMemo(() => StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: theme.colors.background },
     scrollContent: { flexGrow: 1 },
 
     logoContainer: { alignItems: 'center', paddingTop: vs(10) },
@@ -128,7 +128,7 @@ export const IntroStep01: React.FC<IntroStep01Props> = ({ onNext, skipAnimation 
     imageCircle: {
       width: vs(150),
       height: vs(150),
-      backgroundColor: '#fff',
+      backgroundColor: theme.colors.surface,
       borderRadius: 999,
       overflow: 'hidden',
       elevation: 6,
@@ -168,7 +168,12 @@ export const IntroStep01: React.FC<IntroStep01Props> = ({ onNext, skipAnimation 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Logo */}
         <View style={styles.logoContainer}>
-          <Image source={require('../../../assets/images/logoBlack.png')} style={styles.logo} />
+          <Image
+            source={theme.mode === 'dark'
+              ? require('../../../assets/images/logoWhite.png')
+              : require('../../../assets/images/logoBlack.png')}
+            style={styles.logo}
+          />
         </View>
 
         {/* Chat section 1 */}

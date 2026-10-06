@@ -7,7 +7,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { spacing } from '../../theme';
+import { spacing, useTheme } from '../../theme';
 
 interface FixedButtonContainerProps {
   children: React.ReactNode;
@@ -21,9 +21,10 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
   children,
   paddingTop = spacing('md'),
   paddingBottom,
-  backgroundColor = 'rgba(255,255,255,0.9)',
+  backgroundColor,
   onLayout,
 }) => {
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const translateY = React.useRef(new Animated.Value(0)).current;
 
@@ -61,6 +62,9 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
 
   const defaultPaddingBottom =
     paddingBottom !== undefined ? paddingBottom : spacing('lg') + insets.bottom;
+  const surfaceColor = backgroundColor ?? (theme.mode === 'dark'
+    ? 'rgba(18,18,18,0.94)'
+    : 'rgba(255,255,255,0.9)');
 
   return (
     <Animated.View
@@ -70,7 +74,7 @@ export const FixedButtonContainer: React.FC<FixedButtonContainerProps> = ({
         {
           paddingTop,
           paddingBottom: defaultPaddingBottom,
-          backgroundColor,
+          backgroundColor: surfaceColor,
           transform: [{ translateY }],
         },
       ]}

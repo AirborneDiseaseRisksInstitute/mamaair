@@ -126,6 +126,7 @@ const DomainIcon: React.FC<{
   domain: DailyActionDomain;
   size?: number;
 }> = ({ domain, size = 20 }) => {
+  const theme = useTheme();
   const config = DOMAIN_CONFIG[domain];
   if (config.svg) {
     return <SvgXml xml={config.svg} width={size} height={size} />;
@@ -134,7 +135,7 @@ const DomainIcon: React.FC<{
     <FontAwesomeIcon
       icon={domain === 'wellbeing' ? faBrain : faHeart}
       size={Math.round(size * 0.76)}
-      color={config.color}
+      color={theme.accentTextColor(config.color)}
     />
   );
 };
@@ -431,7 +432,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           borderBottomColor: theme.colors.neutral100,
         },
         taskRowAlternate: {
-          backgroundColor: '#FCFCFC',
+          backgroundColor: theme.surfaceColor('#FCFCFC'),
         },
         taskRowHighlighted: {
           backgroundColor: theme.colors.orange50,
@@ -497,15 +498,15 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           paddingHorizontal: spacing('sm'),
           borderRadius: 15,
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: '#D9CCE2',
-          backgroundColor: '#F8F3FB',
+          borderColor: theme.borderColor('#D9CCE2'),
+          backgroundColor: theme.surfaceColor('#F8F3FB'),
         },
         timerButtonReady: {
-          borderColor: '#BBDDC7',
-          backgroundColor: '#F1FAF4',
+          borderColor: theme.borderColor('#BBDDC7'),
+          backgroundColor: theme.surfaceColor('#F1FAF4'),
         },
         timerButtonText: {
-          color: '#70428F',
+          color: theme.accentTextColor('#70428F'),
           fontFamily: theme.typography.fontFamily.medium,
           fontSize: 10,
         },
@@ -547,7 +548,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
         completionIndicatorPending: {
           borderWidth: 1.5,
           borderColor: theme.colors.orange300,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         completionIndicatorDone: {
           backgroundColor: theme.colors.orange500,
@@ -570,7 +571,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           alignItems: 'center',
           padding: spacing('lg'),
           borderRadius: radius('lg'),
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
         },
         modalIllustration: {
           width: 150,
@@ -840,7 +841,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           index % 2 === 1 && styles.taskRowAlternate,
           isHighlighted && styles.taskRowHighlighted,
           isHighlighted && {
-            backgroundColor: config.background,
+            backgroundColor: theme.surfaceColor(config.background),
             borderLeftColor: config.color,
           },
         ]}
@@ -879,10 +880,10 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                   : action.state === 'planned'
                   ? {
                       borderColor: config.color,
-                      backgroundColor: config.background,
+                      backgroundColor: theme.surfaceColor(config.background),
                     }
                   : {
-                      borderColor: config.iconBackground,
+                      borderColor: theme.borderColor(config.iconBackground),
                     },
               ]}
             >
@@ -892,7 +893,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                 <FontAwesomeIcon
                   icon={faCalendarCheck}
                   size={9}
-                  color={config.color}
+                  color={theme.accentTextColor(config.color)}
                 />
               ) : null}
             </View>
@@ -914,7 +915,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
             style={[
               styles.taskTitle,
               action.state === 'planned' && styles.taskTitlePlanned,
-              action.state === 'planned' && { color: config.color },
+              action.state === 'planned' && { color: theme.accentTextColor(config.color) },
             ]}
           >
             {action.title}
@@ -942,17 +943,17 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                     borderColor: reminders[action.key]
                       ? config.color
                       : config.iconBackground,
-                    backgroundColor: config.background,
+                    backgroundColor: theme.surfaceColor(config.background),
                   },
                 ]}
               >
                 <FontAwesomeIcon
                   icon={faBell}
                   size={10}
-                  color={config.color}
+                  color={theme.accentTextColor(config.color)}
                 />
                 <Text
-                  style={[styles.reminderButtonText, { color: config.color }]}
+                  style={[styles.reminderButtonText, { color: theme.accentTextColor(config.color) }]}
                 >
                   {reminders[action.key]
                     ? `${reminders[action.key].hour
@@ -989,7 +990,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                         : config.color
                     }
                   />
-                  <Text style={[styles.timerButtonText, { color: config.color }]}>
+                  <Text style={[styles.timerButtonText, { color: theme.accentTextColor(config.color) }]}>
                     {timerLabel(action)}
                   </Text>
                 </Pressable>
@@ -997,7 +998,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
               {action.state === 'planned' &&
               !reminders[action.key] &&
               !restTimers[action.key] ? (
-                <Text style={[styles.plannedLabel, { color: config.color }]}>
+                <Text style={[styles.plannedLabel, { color: theme.accentTextColor(config.color) }]}>
                   {t('today.planned')}
                 </Text>
               ) : null}
@@ -1129,7 +1130,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                   style={[
                     styles.domainHeader,
                     {
-                      backgroundColor: config.background,
+                      backgroundColor: theme.surfaceColor(config.background),
                       borderLeftColor: config.color,
                     },
                   ]}
@@ -1138,13 +1139,13 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                     style={[
                       styles.domainIcon,
                       {
-                        backgroundColor: config.iconBackground,
+                        backgroundColor: theme.surfaceColor(config.iconBackground),
                       },
                     ]}
                   >
                     <DomainIcon domain={domain} size={14} />
                   </View>
-                  <Text style={[styles.domainName, { color: config.color }]}>
+                  <Text style={[styles.domainName, { color: theme.accentTextColor(config.color) }]}>
                     {t(`today.domain_${domain}`)}
                   </Text>
                 </View>
@@ -1174,7 +1175,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                         style={[
                           styles.domainHeader,
                           {
-                            backgroundColor: config.background,
+                            backgroundColor: theme.surfaceColor(config.background),
                             borderLeftColor: config.color,
                           },
                         ]}
@@ -1183,14 +1184,14 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                           style={[
                             styles.domainIcon,
                             {
-                              backgroundColor: config.iconBackground,
+                              backgroundColor: theme.surfaceColor(config.iconBackground),
                             },
                           ]}
                         >
                           <DomainIcon domain={domain} size={14} />
                         </View>
                         <Text
-                          style={[styles.domainName, { color: config.color }]}
+                          style={[styles.domainName, { color: theme.accentTextColor(config.color) }]}
                         >
                           {t(`today.domain_${domain}`)}
                         </Text>

@@ -51,7 +51,7 @@ export const IntroStep02: React.FC<IntroStep02Props> = ({ onNext, onBack }) => {
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.background,
         },
         contentWrapper: {
           flex: 1,

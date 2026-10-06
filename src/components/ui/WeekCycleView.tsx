@@ -370,6 +370,7 @@ interface WeekCycleViewProps {
   weekState?: 'current' | 'review' | 'future' | 'complete';
   chapterLabel?: string;
   progressPercent?: number;
+  isFirstWeek?: boolean;
 }
 
 const DEFAULT_WEEK_DAYS: WeekDay[] = [
@@ -396,6 +397,7 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
   weekState = 'future',
   chapterLabel,
   progressPercent,
+  isFirstWeek = false,
 }) => {
 
   const theme = useTheme();
@@ -604,7 +606,7 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
           const getBackgroundStyle = () => {
             if (isMissed) return styles.weekDayRowMissed;
             if (isStartDay) return styles.weekDayRowStart;
-            if (isActive) return styles.weekDayRowActive;
+            if (isActive) return [styles.weekDayRowActive, { backgroundColor: theme.colors.surface }];
             return { backgroundColor: theme.colors.neutral100 };
           };
 
@@ -758,7 +760,12 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
         ]}>
           
           {/* Main circle + dots */}
-          <View style={styles.circleSection}>
+          <View
+            style={[
+              styles.circleSection,
+              { backgroundColor: `${theme.colors.surface}B3` },
+            ]}
+          >
             {/* SVG CIRCLE */}
             {renderCircleSvg()}
 
@@ -798,11 +805,13 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
 
          {/* Text Section */}
          {(title || description) && (
-          <View style={[styles.textSection , { marginBottom:title === '1st Week' ? 100 : 0 }]}>
+          <View style={[styles.textSection, { marginBottom: isFirstWeek ? 100 : 0 }]}>
             <View style={styles.weekMeta}>
               {typeof progressPercent === 'number' ? (
                 <View
-                  accessibilityLabel={`Week progress ${progressPercent} percent`}
+                  accessibilityLabel={t('home.week_progress_accessibility', {
+                    progress: progressPercent,
+                  })}
                   style={styles.progressRing}
                 >
                   <Svg width={28} height={28}>
@@ -832,17 +841,17 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
                       transform="rotate(-90 14 14)"
                     />
                   </Svg>
-                  <Text style={styles.progressRingText}>
+                  <Text style={[styles.progressRingText, { color: theme.accentTextColor('#9B4B20') }]}>
                     {progressPercent}
                   </Text>
                 </View>
               ) : null}
               {chapterLabel ? (
-                <Text style={styles.chapterLabel}>
+                <Text style={[styles.chapterLabel, { color: theme.accentTextColor('#70428F') }]}>
                   {chapterLabel}
                 </Text>
               ) : null}
-              <View style={styles.statePill}>
+              <View style={[styles.statePill, { backgroundColor: theme.colors.surfaceMuted }]}>
                 {weekState === 'future' ? (
                   <FontAwesomeIcon
                     icon={faLock}
@@ -850,7 +859,7 @@ const WeekCycleViewComponent: React.FC<WeekCycleViewProps> = ({
                     color={theme.colors.neutral500}
                   />
                 ) : null}
-                <Text style={styles.stateText}>
+                <Text style={[styles.stateText, { color: theme.colors.textSecondary }]}>
                   {weekState === 'current'
                     ? t('home.current_week')
                     : weekState === 'review'
@@ -915,8 +924,6 @@ const styles = StyleSheet.create({
     zIndex: 1,
     width:'50%',
     borderRadius:'50%',
-    backgroundColor:'rgba(255,255,255,0.7)'
-
   },
 
   centerImageWrapper: {
@@ -1203,6 +1210,7 @@ export const WeekCycleView = React.memo(WeekCycleViewComponent, (prevProps, next
     prevProps.weekState === nextProps.weekState &&
     prevProps.chapterLabel === nextProps.chapterLabel &&
     prevProps.progressPercent === nextProps.progressPercent &&
+    prevProps.isFirstWeek === nextProps.isFirstWeek &&
     circleIconsEqual(prevProps.circleIcons, nextProps.circleIcons) &&
     weekDaysEqual(prevProps.weekDays, nextProps.weekDays) &&
     prevProps.centerImage === nextProps.centerImage

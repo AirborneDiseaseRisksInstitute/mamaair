@@ -17,6 +17,8 @@ import {
   Image,
   AppState,
   Linking,
+  type FlatListProps,
+  type LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -67,6 +69,12 @@ import {
   resolveAirQualityLevel,
 } from '../utils/airQualitySummary';
 import { ms } from '../utils/responsive';
+import {
+  getHomeWeekAlignedOffset,
+  getHomeWeekIndex,
+  getHomeWeekItemLayout,
+  shouldAutoPositionHomeWeek,
+} from '../utils/homeWeekScroll';
 
 const SUN_SIZE = 52;
 const CLOUD_SIZE = 32;
@@ -81,16 +89,17 @@ const NOTCH_DEPTH = ICON_SIZE * 0.7; // notch depth - creates gap
 const HEADER_MARGIN_TOP = ICON_SIZE / 2;
 const HEADER_MARGIN_BOTTOM = spacing('lg');
 const HEADER_CARD_MARGIN_TOP = 24;
-const HEADER_BUTTON_MARGIN_BOTTOM = 32;
-const WEEK_ITEM_MARGIN_BOTTOM = spacing('lg');
 // Extra scroll offset so the active week card sits a bit higher (circle + days clearly in view).
 const WEEK_CARD_TEXT_SECTION_HEIGHT = 390;
-// Keep the final week's copy clear of the global symptoms FAB.
+// Keep the final week's copy clear of the global feelings FAB.
 const HOME_LIST_BOTTOM_CLEARANCE =
   WEEK_CARD_TEXT_SECTION_HEIGHT / 2 + ms(64) + spacing('xl') + spacing('lg');
 const ESTIMATED_WEEK_ITEM_HEIGHT = 530;
 const ESTIMATED_HEADER_HEIGHT =
-  CARD_HEIGHT + HEADER_MARGIN_TOP + HEADER_MARGIN_BOTTOM;
+  CARD_HEIGHT +
+  HEADER_MARGIN_TOP +
+  HEADER_MARGIN_BOTTOM +
+  HEADER_CARD_MARGIN_TOP;
 
 interface HomeScreenProps {
   onNavigateToToday?: () => void;
@@ -121,6 +130,15 @@ interface WeekData {
     isStartDay?: boolean;
   }>;
 }
+
+type WeekCellRendererProps = React.ComponentProps<
+  NonNullable<FlatListProps<WeekData>['CellRendererComponent']>
+>;
+
+const FocusableCellView = View as unknown as React.ComponentType<
+  React.ComponentProps<typeof View> &
+    Pick<WeekCellRendererProps, 'onFocusCapture'>
+>;
 
 // Week data array - extracted for better performance
 export const WEEKS_DATA: WeekData[] = [
@@ -1952,7 +1970,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   >(null);
   const [birthdayCardHeight, setBirthdayCardHeight] = useState(CARD_HEIGHT);
   const totalWeeks = weeksData.length;
-  const activeWeekIndex = totalWeeks - activeWeek;
+  const activeWeekIndex = getHomeWeekIndex(totalWeeks, activeWeek);
   const actionCompletions = useRecommendationExperienceStore(
     state => state.actionCompletions,
   );
@@ -1998,7 +2016,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           // Update active week
           const apiWeek =
             userProfile.current_pregnancy_week ||
-            summary.week_info?.week ||
+            summary?.week_info?.week ||
             profileActiveWeek ||
             1;
           setApiActiveWeek(Math.max(1, Math.min(40, apiWeek)));
@@ -2010,7 +2028,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           // Update description for current week
           if (
             updatedWeeksData[weekIndex] &&
-            summary.week_info?.text &&
+            summary?.week_info?.text &&
             (summary.week_info.week === undefined ||
               summary.week_info.week === apiWeek)
           ) {
@@ -2040,7 +2058,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     weekday: 'short',
                   });
 
-                  const historyItem = summary.exposure_history?.items?.find(
+                  const historyItem = summary?.exposure_history?.items?.find(
                     (item: any) => item.date === dateStr,
                   );
                   const hasHistory = !!historyItem;
@@ -2065,7 +2083,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           setWeeksData(updatedWeeksData);
         }
       } catch (e) {
-        console.error('Failed to fetch home data', e);
+        if (__DEV__) console.error('Failed to fetch home data', e);
       }
     };
     fetchData();
@@ -2135,7 +2153,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             temperature: environment.temperature,
             humidity: environment.humidity,
             uvi: environment.uvi,
-            uvi_level: environment.uviLevel,
+            uvi_level: t(
+              `exposure.uv_${environment.uviLevel
+                .toLowerCase()
+                .replace(/\s+/g, '_')}`,
+              { defaultValue: environment.uviLevel },
+            ),
             indoor_pm25: environment.indoorPm25,
             indoor_temperature: environment.indoorTemperature,
           });
@@ -2152,7 +2175,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         if (mounted) {
           setAirExposure(null);
         }
-        console.error('Failed to fetch Home air exposure', error);
+        if (__DEV__) {
+          console.error('Failed to fetch Home air exposure', error);
+        }
       }
     };
 
@@ -2161,7 +2186,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     return () => {
       mounted = false;
     };
-  }, [activeWeek, isAppActive, isFocused, locationPermissionStatus]);
+  }, [activeWeek, isAppActive, isFocused, locationPermissionStatus, t]);
 
   // Get today's day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
   const getTodayDayOfWeek = useCallback((): number => {
@@ -2176,7 +2201,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       StyleSheet.create({
         container: {
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: theme.colors.background,
         },
         content: {
           flex: 1,
@@ -2232,7 +2257,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           opacity: 0.95,
         },
         planButton: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderRadius: 30,
           paddingVertical: 12,
           paddingHorizontal: 28,
@@ -2259,9 +2284,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           flexDirection: 'row',
           alignItems: 'flex-start',
           gap: spacing('sm'),
-          backgroundColor: '#FFF8F0',
+          backgroundColor: theme.surfaceColor('#FFF8F0'),
           borderWidth: 1,
-          borderColor: '#FFD9B3',
+          borderColor: theme.borderColor('#FFD9B3'),
           borderRadius: 12,
           padding: spacing('md'),
           marginHorizontal: spacing('md'),
@@ -2635,6 +2660,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             weekState={weekState}
             chapterLabel={chapterLabel}
             progressPercent={progressPercent}
+            isFirstWeek={weekNumber === 1}
             reversed={shouldReverse}
           />
         </View>
@@ -2666,56 +2692,102 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     [weeksData],
   );
 
-  // Get item layout for accurate scrolling
-  // Note: Heights are approximate and may need adjustment based on actual measurements
+  // The measured header already includes its children's margins; the week
+  // wrapper has no bottom margin. Do not add either a second time here.
   const getItemLayout = useCallback(
-    (data: any, index: number) => {
-      const headerExtra =
-        HEADER_MARGIN_TOP +
-        HEADER_MARGIN_BOTTOM +
-        HEADER_CARD_MARGIN_TOP +
-        HEADER_BUTTON_MARGIN_BOTTOM;
-      const headerLength = headerHeight + headerExtra;
-      const itemLength = weekItemHeight + WEEK_ITEM_MARGIN_BOTTOM;
-      return {
-        length: itemLength,
-        offset: headerLength + itemLength * index,
-        index,
-      };
-    },
+    (_data: any, index: number) =>
+      getHomeWeekItemLayout(index, headerHeight, weekItemHeight),
     [headerHeight, weekItemHeight],
   );
 
   const positionedActiveWeekIndex = useRef<number | null>(null);
+  const requestedActiveWeekIndex = useRef(activeWeekIndex);
+  const userHasInteractedWithWeeks = useRef(false);
+  const pendingAutoScrollFrame = useRef<number | null>(null);
 
-  // Correct the estimated initial position after the actual card sizes are known.
+  const renderWeekCell = useCallback(
+    ({
+      index,
+      children,
+      onLayout,
+      onFocusCapture,
+      style,
+    }: WeekCellRendererProps) => (
+      <FocusableCellView
+        style={style}
+        onFocusCapture={onFocusCapture}
+        onLayout={(event: LayoutChangeEvent) => {
+          onLayout?.(event);
+          if (index !== activeWeekIndex) return;
+          if (
+            !shouldAutoPositionHomeWeek({
+              targetIndex: index,
+              positionedIndex: positionedActiveWeekIndex.current,
+              userHasInteracted: userHasInteractedWithWeeks.current,
+            })
+          ) {
+            return;
+          }
+
+          positionedActiveWeekIndex.current = index;
+          flatListRef.current?.scrollToOffset({
+            offset: getHomeWeekAlignedOffset(
+              event.nativeEvent.layout.y,
+              headerHeight,
+            ),
+            animated: false,
+          });
+        }}
+      >
+        {children}
+      </FocusableCellView>
+    ),
+    [activeWeekIndex, headerHeight],
+  );
+
+  // initialScrollIndex handles the first render. If an API response changes the
+  // active week, bring that cell into the render window so its measured layout
+  // can perform one exact correction. User interaction permanently wins.
   useEffect(() => {
-    if (flatListRef.current && activeWeek >= 1 && activeWeek <= totalWeeks) {
-      const frame = requestAnimationFrame(() => {
-        const shouldAnimate =
-          positionedActiveWeekIndex.current !== null &&
-          positionedActiveWeekIndex.current !== activeWeekIndex;
-        flatListRef.current?.scrollToIndex({
-          index: activeWeekIndex,
-          animated: shouldAnimate,
-          viewPosition: 0,
-          viewOffset: -WEEK_CARD_TEXT_SECTION_HEIGHT,
-        });
-        positionedActiveWeekIndex.current = activeWeekIndex;
-      });
+    if (requestedActiveWeekIndex.current === activeWeekIndex) {
+      return undefined;
+    }
+    requestedActiveWeekIndex.current = activeWeekIndex;
+    positionedActiveWeekIndex.current = null;
 
-      return () => cancelAnimationFrame(frame);
+    if (
+      userHasInteractedWithWeeks.current ||
+      activeWeek < 1 ||
+      activeWeek > totalWeeks
+    ) {
+      return undefined;
     }
 
-    return undefined;
-  }, [
-    activeWeekIndex,
-    activeWeek,
-    getItemLayout,
-    headerHeight,
-    totalWeeks,
-    weekItemHeight,
-  ]);
+    pendingAutoScrollFrame.current = requestAnimationFrame(() => {
+      pendingAutoScrollFrame.current = null;
+      flatListRef.current?.scrollToIndex({
+        index: activeWeekIndex,
+        animated: false,
+        viewPosition: 0,
+        viewOffset: 0,
+      });
+    });
+
+    return () => {
+      if (pendingAutoScrollFrame.current !== null) {
+        cancelAnimationFrame(pendingAutoScrollFrame.current);
+        pendingAutoScrollFrame.current = null;
+      }
+    };
+  }, [activeWeek, activeWeekIndex, totalWeeks]);
+
+  const handleWeekScrollBeginDrag = useCallback(() => {
+    userHasInteractedWithWeeks.current = true;
+    if (pendingAutoScrollFrame.current !== null) {
+      cancelAnimationFrame(pendingAutoScrollFrame.current);
+      pendingAutoScrollFrame.current = null;
+    }
+  }, []);
 
   // Handle scroll to index errors with better retry logic
   const handleScrollToIndexFailed = useCallback(
@@ -2724,21 +2796,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       highestMeasuredFrameIndex: number;
       averageItemLength: number;
     }) => {
+      if (
+        info.index !== activeWeekIndex ||
+        !shouldAutoPositionHomeWeek({
+          targetIndex: info.index,
+          positionedIndex: positionedActiveWeekIndex.current,
+          userHasInteracted: userHasInteractedWithWeeks.current,
+        })
+      ) {
+        return;
+      }
       const layout = getItemLayout(null, info.index);
-      const offsetCorrected = layout.offset + WEEK_CARD_TEXT_SECTION_HEIGHT;
       flatListRef.current?.scrollToOffset({
-        offset: offsetCorrected,
+        offset: getHomeWeekAlignedOffset(layout.offset),
         animated: false,
       });
     },
-    [getItemLayout],
+    [activeWeekIndex, getItemLayout],
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.fixedBackground}>
         <Image
-          source={require('../assets/images/homeBackground.png')}
+          source={
+            theme.mode === 'dark'
+              ? require('../assets/images/homeBackground-dark.png')
+              : require('../assets/images/homeBackground.png')
+          }
           style={{ width: SCREEN_HEIGHT / 1.5, height: '100%' }}
           resizeMode="contain"
         />
@@ -2760,6 +2845,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         style={{ backgroundColor: 'transparent', flex: 1, zIndex: 1 }}
         data={reversedWeeksData}
         renderItem={renderWeekItem}
+        CellRendererComponent={renderWeekCell}
         keyExtractor={keyExtractor}
         ListHeaderComponent={renderHeader}
         contentContainerStyle={{
@@ -2773,6 +2859,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         initialNumToRender={2}
         getItemLayout={getItemLayout}
         onScrollToIndexFailed={handleScrollToIndexFailed}
+        onScrollBeginDrag={handleWeekScrollBeginDrag}
         updateCellsBatchingPeriod={50}
       />
 

@@ -297,7 +297,9 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
     : null;
   const heightWeightValue =
     draft.height && draft.weight
-      ? `${draft.height} cm  •  ${draft.weight} kg`
+      ? `${t('profile.height_cm', {
+          value: draft.height,
+        })}  •  ${t('profile.weight_kg', { value: draft.weight })}`
       : null;
 
   const editSectionTitles: Record<ProfileEditSection, string> = {
@@ -354,7 +356,9 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
       try {
         saveResult = await saveProfileEditPayloads(payloads);
       } catch (error) {
-        console.warn('[ProfileEdit] Failed to save profile changes', error);
+        if (__DEV__) {
+          console.warn('[ProfileEdit] Failed to save profile changes', error);
+        }
         setSaveError(t('profile.update_failed_message'));
         setIsSaving(false);
         saveInFlight.current = false;

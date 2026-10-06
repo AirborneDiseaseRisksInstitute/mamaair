@@ -13,6 +13,18 @@ import { getWeekKey, getWeeklyBadges, resolvePregnancyProgression } from './Prog
 import { ProductAnalytics } from './ProductAnalytics';
 import { buildWeeklyRiskSummaryViewModel } from './WeeklyRiskSummaryPresenter';
 
+type Translate = (
+  key: string,
+  options?: Record<string, unknown>,
+) => string;
+
+const translated = (
+  translate: Translate | undefined,
+  key: string,
+  fallback: string,
+  options?: Record<string, unknown>,
+): string => translate?.(key, options) ?? fallback;
+
 export interface WeeklyReportEntitlement {
   status: 'nativeShareAvailable';
   configuredStatus:
@@ -27,39 +39,67 @@ export const getWeeklyReportEntitlement =
       RECOMMENDATION_CAPABILITIES.weeklyReportEntitlement,
   });
 
-const dateRange = (summary: WeeklySummaryExperience): string =>
-  `${summary.startDate} to ${summary.endDate}`;
+const dateRange = (
+  summary: WeeklySummaryExperience,
+  translate?: Translate,
+): string => translated(
+  translate,
+  'weekly_summary.report_date_range',
+  `${summary.startDate} to ${summary.endDate}`,
+  { start: summary.startDate, end: summary.endDate },
+);
 
 const formatPercent = (value: number): string =>
   `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
 
-const riskSummaryText = (summary: WeeklySummaryExperience): string | null => {
+const riskSummaryText = (
+  summary: WeeklySummaryExperience,
+  translate?: Translate,
+): string | null => {
   const riskSummary = summary.riskSummary;
   if (!riskSummary) return null;
   const viewModel = buildWeeklyRiskSummaryViewModel(riskSummary);
   const changeLines = viewModel.changes.map(change => {
-    const label = change.audience === 'mother' ? 'Mother' : 'Child';
+    const label = translated(
+      translate,
+      change.audience === 'mother'
+        ? 'weekly_summary.risk_mother'
+        : 'weekly_summary.risk_child',
+      change.audience === 'mother' ? 'Mother' : 'Child',
+    );
     const changeText =
       change.direction === 'stable'
-        ? 'no change'
-        : `${formatPercent(change.value)} ${change.direction}`;
-    return `${label} estimate: ${changeText}`;
+        ? translated(translate, 'weekly_summary.risk_change_stable', 'No change')
+        : translated(
+            translate,
+            change.direction === 'lower'
+              ? 'weekly_summary.risk_change_lower'
+              : 'weekly_summary.risk_change_higher',
+            `${formatPercent(change.value)} ${change.direction}`,
+            { value: formatPercent(change.value) },
+          );
+    return translated(translate, 'weekly_summary.report_risk_estimate', `${label} estimate: ${changeText}`, {
+      audience: label,
+      change: changeText,
+    });
   });
   const careLine =
     viewModel.completedCareReduction !== null
-      ? `Completed care actions were linked to an estimated ${formatPercent(
-          viewModel.completedCareReduction,
-        )} reduction.`
+      ? translated(translate, 'weekly_summary.risk_care_reduction', `Completed care actions were linked to an estimated ${formatPercent(viewModel.completedCareReduction)} reduction.`, {
+          value: Number.isInteger(viewModel.completedCareReduction)
+            ? viewModel.completedCareReduction
+            : viewModel.completedCareReduction.toFixed(1),
+        })
       : viewModel.hasCompletedCareImpact
-      ? 'Completed care actions were included in this estimate.'
+      ? translated(translate, 'weekly_summary.risk_care_included', 'Completed care actions were included in this estimate.')
       : null;
   const factorLine =
     changeLines.length === 0 &&
     careLine === null &&
     viewModel.trackedFactorCount > 0
-      ? `${viewModel.trackedFactorCount} environmental health ${
-          viewModel.trackedFactorCount === 1 ? 'factor was' : 'factors were'
-        } identified in the latest reading.`
+      ? translated(translate, 'weekly_summary.risk_factors_included', `${viewModel.trackedFactorCount} environmental health ${viewModel.trackedFactorCount === 1 ? 'factor was' : 'factors were'} identified in the latest reading.`, {
+          count: viewModel.trackedFactorCount,
+        })
       : null;
   const lines = [...changeLines, careLine, factorLine].filter(
     (line): line is string => Boolean(line),
@@ -70,6 +110,7 @@ const riskSummaryText = (summary: WeeklySummaryExperience): string | null => {
 
 export const buildWeeklyReport = (
   summary: WeeklySummaryExperience,
+  translate?: Translate,
 ): WeeklyReportModel => {
   const progression = resolvePregnancyProgression(summary.week);
   const earnedBadges = getWeeklyBadges(summary)
@@ -77,38 +118,46 @@ export const buildWeeklyReport = (
     .map(badge => badge.domain);
   const badgeText = earnedBadges.length
     ? earnedBadges
-        .map(
-          domain =>
-            domain.charAt(0).toUpperCase() + domain.slice(1),
-        )
+        .map(domain => translated(
+          translate,
+          `today.domain_${domain}`,
+          domain.charAt(0).toUpperCase() + domain.slice(1),
+        ))
         .join(', ')
-    : 'A steady start';
-  const environmentalHealthSummary = riskSummaryText(summary);
+    : translated(translate, 'weekly_summary.report_steady_start', 'A steady start');
+  const environmentalHealthSummary = riskSummaryText(summary, translate);
   const optionalLines = [
     environmentalHealthSummary
-      ? `Environmental health\n${environmentalHealthSummary}\nEstimates reflect environmental exposure and are not a medical diagnosis.`
+      ? translated(translate, 'weekly_summary.report_environmental_section', `Environmental health\n${environmentalHealthSummary}\nEstimates reflect environmental exposure and are not a medical diagnosis.`, {
+          summary: environmentalHealthSummary,
+          disclaimer: translated(translate, 'weekly_summary.risk_disclaimer', 'Estimates reflect environmental exposure and are not a medical diagnosis.'),
+        })
       : null,
     summary.symptomTrend
-      ? `Feeling pattern statistics: ${summary.symptomTrend}`
+      ? translated(translate, 'weekly_summary.report_feeling_statistics', `Feeling pattern statistics: ${summary.symptomTrend}`, {
+          trend: summary.symptomTrend,
+        })
       : null,
   ].filter((line): line is string => line !== null);
   const shareText = [
-    `MamaAir weekly report — pregnancy week ${summary.week}`,
-    progression.chapterLabel,
-    `Active care days: ${summary.activeDays} of 7`,
-    `Completed protective actions: ${summary.primaryCompleted}`,
-    `Hydration goal days: ${summary.hydrationDays} of 7`,
-    `Rest sessions: ${summary.restSessions}`,
-    `Sleep check-ins: ${summary.sleepNights}`,
-    `Achievements: ${badgeText}`,
+    translated(translate, 'weekly_summary.report_heading', `MamaAir weekly report — pregnancy week ${summary.week}`, { week: summary.week }),
+    translated(translate, 'home.trimester_label', progression.chapterLabel, { number: progression.trimester }),
+    translated(translate, 'weekly_summary.report_active_days', `Active care days: ${summary.activeDays} of 7`, { count: summary.activeDays }),
+    translated(translate, 'weekly_summary.report_completed_actions', `Completed protective actions: ${summary.primaryCompleted}`, { count: summary.primaryCompleted }),
+    translated(translate, 'weekly_summary.report_hydration_days', `Hydration goal days: ${summary.hydrationDays} of 7`, { count: summary.hydrationDays }),
+    translated(translate, 'weekly_summary.report_rest_sessions', `Rest sessions: ${summary.restSessions}`, { count: summary.restSessions }),
+    translated(translate, 'weekly_summary.report_sleep_checkins', `Sleep check-ins: ${summary.sleepNights}`, { count: summary.sleepNights }),
+    translated(translate, 'weekly_summary.report_achievements', `Achievements: ${badgeText}`, { achievements: badgeText }),
     ...optionalLines,
   ].join('\n');
 
   return {
     weekKey: getWeekKey(summary.endDate),
     pregnancyWeek: summary.week,
-    trimesterLabel: progression.chapterLabel,
-    dateRange: dateRange(summary),
+    trimesterLabel: translated(translate, 'home.trimester_label', progression.chapterLabel, {
+      number: progression.trimester,
+    }),
+    dateRange: dateRange(summary, translate),
     motherRecap: environmentalHealthSummary ?? '',
     babyRecap: summary.babyProgress,
     symptomTrend: summary.symptomTrend,
@@ -127,13 +176,16 @@ export const buildWeeklyReport = (
 export const shareWeeklyReport = async (
   identity: RecommendationExperienceIdentity,
   report: WeeklyReportModel,
+  translate?: Translate,
 ): Promise<WeeklyShareRecord> => {
   const initiatedAt = new Date().toISOString();
   ProductAnalytics.track(identity, 'share_initiated', {
     pregnancyWeek: report.pregnancyWeek,
   });
   const result = await Share.share({
-    title: `MamaAir week ${report.pregnancyWeek} report`,
+    title: translated(translate, 'weekly_summary.report_share_title', `MamaAir week ${report.pregnancyWeek} report`, {
+      week: report.pregnancyWeek,
+    }),
     message: report.shareText,
   });
   const record: WeeklyShareRecord = {
