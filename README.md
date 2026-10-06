@@ -54,28 +54,30 @@ branch is the active integration branch.
 
 ### Android version history
 
-| Date | Version | Build | Status | Highlights |
-| --- | --- | ---: | --- | --- |
-| 2025 Q3 | v1.0 | 1 | Internal test | First Android testing line. |
-| 2025 Q4 | v2.0 | 12 | Internal test | Early pregnancy journey and tracking iterations. |
-| 27 May 2026 | v3.0 | 30 | Internal test | Stable tracking, local persistence, daily actions, notifications, and guidance updates. |
-| 8 Aug 2026 | **v3.2** | **31** | **Current version** | Expanded backend integrations, personalized Daily Plans, and production-readiness improvements. |
+| Date        | Version  |  Build | Status              | Highlights                                                                                      |
+| ----------- | -------- | -----: | ------------------- | ----------------------------------------------------------------------------------------------- |
+| 2025 Q3     | v1.0     |      1 | Internal test       | First Android testing line.                                                                     |
+| 2025 Q4     | v2.0     |     12 | Internal test       | Early pregnancy journey and tracking iterations.                                                |
+| 27 May 2026 | v3.0     |     30 | Internal test       | Stable tracking, local persistence, daily actions, notifications, and guidance updates.         |
+| 8 Aug 2026  | **v3.2** | **31** | **Current version** | Expanded backend integrations, personalized Daily Plans, and production-readiness improvements. |
 
 ## Technical overview
 
 The application is built with React Native and TypeScript. Its main boundaries
 are intentionally kept separate:
 
-| Area                                    | Responsibility                                            |
-| --------------------------------------- | --------------------------------------------------------- |
-| `src/screens`                           | User-facing application flows and navigation destinations |
-| `src/components`                        | Shared UI and feature components                          |
-| `src/services/api`                      | Authenticated backend communication                       |
+| Area                                    | Responsibility                                                |
+| --------------------------------------- | ------------------------------------------------------------- |
+| `src/screens`                           | User-facing application flows and navigation destinations     |
+| `src/components`                        | Shared UI and feature components                              |
+| `src/services/api`                      | Authenticated backend communication                           |
 | `src/services/recommendationExperience` | Daily Plan, recommendation, and longitudinal experience logic |
-| `src/services/tracking`                 | Location and background tracking coordination             |
-| `src/services/sync`                     | Background synchronization orchestration                  |
-| `src/store`                             | Persisted application and session state                   |
-| `src/i18n`                              | English, French, and Swahili translations                 |
+| `src/services/tracking`                 | Location and background tracking coordination                 |
+| `src/services/sync`                     | Background synchronization orchestration                      |
+| `src/services/privacy`                  | Account-scoped retention and sign-out cleanup                 |
+| `src/services/storage`                  | Encrypted local-storage bootstrap and migration               |
+| `src/store`                             | Persisted application and session state                       |
+| `src/i18n`                              | English, French, and Swahili translations                     |
 
 The backend remains the source of truth for authenticated profile and health
 experience data. Selected user-entered state is persisted locally for continuity,
@@ -161,7 +163,33 @@ cd android
 The build fails if release signing is incomplete. It never falls back to the
 debug certificate.
 
-## Security and privacy
+## Privacy by design
+
+MamaAir handles pregnancy, wellbeing, and location information as sensitive
+data. The mobile client currently applies these protections:
+
+- authentication credentials are stored in the operating system's protected
+  Keychain/Keystore rather than general application preferences;
+- locally persisted profile, preference, recommendation, analytics,
+  notification, and location state is encrypted at rest with AES-256, using a
+  device-bound key held by Keychain/Keystore;
+- existing plaintext local stores are migrated and verified before normal app
+  startup, then removed; the app does not silently replace a missing encryption
+  key and expose an apparently empty profile;
+- queued location points are associated with an opaque account identifier,
+  retained locally for no more than seven days, and are never uploaded for a
+  different signed-in account;
+- sign-out stops tracking and removes account-bound queued locations, pending
+  local analytics, notification navigation state, and scheduled notifications;
+- sensitive Android stores are excluded from backup and device transfer, and
+  health/location notifications use private lock-screen visibility.
+
+These controls protect data on the device; they do not imply end-to-end
+encryption. Authenticated backend services remain the source of truth for
+server-side profile and health data, and their retention and deletion behavior
+must be assessed separately.
+
+## Security reporting
 
 - Do not commit passwords, tokens, signing keys, production exports, or user data.
 - Firebase client configuration must be protected with the appropriate platform

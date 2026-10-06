@@ -5,18 +5,45 @@ jest.mock('@react-native-community/netinfo', () =>
 );
 
 jest.mock('react-native-mmkv', () => {
-  const values = new Map();
-  return {
-    __values: values,
-    createMMKV: () => ({
+  const stores = new Map();
+  const defaultId = 'mmkv.default';
+  const storageFor = id => {
+    if (!stores.has(id)) stores.set(id, new Map());
+    return stores.get(id);
+  };
+  const createStorage = configuration => {
+    const id = configuration?.id || defaultId;
+    const values = storageFor(id);
+    return {
+      id,
+      isEncrypted: Boolean(configuration?.encryptionKey),
       getString: key => values.get(key),
       getNumber: key => values.get(key),
       getBoolean: key => values.get(key),
       set: (key, value) => values.set(key, value),
       remove: key => values.delete(key),
       contains: key => values.has(key),
+      getAllKeys: () => [...values.keys()],
       clearAll: () => values.clear(),
-    }),
+      trim: () => undefined,
+      importAllFrom: source => {
+        const keys = source.getAllKeys();
+        keys.forEach(key => {
+          const value =
+            source.getString(key) ??
+            source.getNumber(key) ??
+            source.getBoolean(key);
+          if (value !== undefined) values.set(key, value);
+        });
+        return keys.length;
+      },
+    };
+  };
+  return {
+    __stores: stores,
+    createMMKV: configuration => createStorage(configuration),
+    existsMMKV: id => stores.has(id),
+    deleteMMKV: id => stores.delete(id),
   };
 });
 

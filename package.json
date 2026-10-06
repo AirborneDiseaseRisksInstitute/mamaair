@@ -31,6 +31,7 @@
     "react-native-calendars": "^1.1313.0",
     "react-native-fs": "^2.20.0",
     "react-native-geolocation-service": "^5.3.1",
+    "react-native-get-random-values": "^2.0.0",
     "react-native-gifted-charts": "^1.4.72",
     "react-native-image-picker": "^8.2.1",
     "react-native-keychain": "^10.0.0",

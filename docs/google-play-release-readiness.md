@@ -1,6 +1,6 @@
 # Google Play Release Readiness
 
-Audit date: 2026-10-02
+Audit date: 2026-10-06
 Package: `africa.mamaair.mobile`
 Current Android version: `versionCode 31`, `versionName 3.2`
 Current status: **NO-GO for production upload**
@@ -21,20 +21,26 @@ not submit to production until every item under "Release blockers" is closed.
 - Release signing cannot silently fall back to the debug key.
 - Release Android lint now fails the build on errors.
 - The obsolete Quick SQLite native library was replaced with
-  `react-native-nitro-sqlite@10.1.0` while retaining `mamaair.sqlite` for
-  upgrade compatibility. Android lint has no 16 KB warning, and all 20 merged
-  arm64 ELF libraries have load-segment alignment of at least `2^14`.
+  `react-native-nitro-sqlite@10.1.0`. Existing attributable
+  `mamaair.sqlite` location rows are migrated once into the encrypted queue;
+  legacy rows without a stable account owner are discarded, and the plaintext
+  database is then deleted. Android lint has no 16 KB warning, and all 20
+  merged arm64 ELF libraries have load-segment alignment of at least `2^14`.
 - React Native was updated within the 0.83 release line to `0.83.10`, bringing
   the matching Metro patch that removes the vulnerable `image-size` parser.
 - Reanimated/Worklets now use the officially compatible React Native 0.83 pair
   (`4.6.0` / `0.12.2`).
 - The retired shared `X-API-Key` was removed from normal requests and token
   refresh after the live authentication endpoints were verified without it.
-- Production dependency audit currently reports zero vulnerabilities.
+- MMKV-backed profile, preference, recommendation, analytics, notification,
+  and location data now use AES-256 at rest. The 32-byte key is generated from
+  a cryptographically secure random source and stored in iOS Keychain/Android
+  Keystore with device-only backup behavior. Existing plaintext MMKV stores
+  migrate before the app loads and are cleared only after verification.
 - Android 8+ uses adaptive and monochrome launcher icons, with a dedicated
   round fallback for Android 7.0/7.1.
-- The Android namespace, application ID, Kotlin package, generated manifest,
-  and built APK all use the final Play package `africa.mamaair.mobile`.
+- The Android namespace, application ID, and Kotlin package all use the final
+  Play package `africa.mamaair.mobile`.
 - App data backup and device-to-device transfer are disabled and explicitly
   exclude auth, profile, health, and location stores.
 - Unused broad storage, Do Not Disturb, and exact-alarm permissions inherited
@@ -50,20 +56,28 @@ not submit to production until every item under "Release blockers" is closed.
 
 ## Last local verification
 
-Verified on 2026-10-02 without Play Console credentials or a release signing
+Verified on 2026-10-06 without Play Console credentials or a release signing
 key:
 
-- `npm run verify`: TypeScript and ESLint completed with zero errors; all 137
-  Jest suites and 591 tests passed. ESLint reports 39 non-blocking warnings.
+- `npm run verify`: TypeScript and ESLint completed with zero errors; all 142
+  Jest suites and 613 tests passed. ESLint reports 39 non-blocking warnings.
+- A production Android Metro bundle completed successfully with the encrypted
+  storage bootstrap and secure-random native module included.
+- `:app:assembleDebug` reaches Google Services processing, then stops because
+  the checked-in `google-services.json` has no client for the new
+  `africa.mamaair.mobile` package. This replaces the previous successful-build
+  result and must be resolved by downloading the correctly registered file.
+- CocoaPods verification is blocked on this machine because `Gemfile.lock`
+  requires Bundler 4.0.2 while the system Ruby only provides Bundler 1.17.2.
 - `:app:lintRelease`: passed with 0 errors and 10 warnings; no `Aligned16KB`,
   adaptive-icon, or launcher-shape finding.
-- `:app:assembleDebug`: passed and produced a 105 MB debug APK.
-- Direct APK inspection reports application ID `africa.mamaair.mobile`; the
-  merged release manifest resolves `MainApplication`, `MainActivity`, and the
-  generated dynamic-receiver permission under the same package.
 - `:app:mergeReleaseNativeLibs`: passed; direct `objdump` inspection found all
   20 arm64 ELF libraries aligned to at least `2^14` and no failures.
-- `npm audit --omit=dev`: zero vulnerabilities; `npm ls --all` exits cleanly.
+- `npm audit --omit=dev` currently reports 34 dependency-tree advisories (5
+  moderate, 28 high, 1 critical), primarily in React Native CLI/Metro/Jest
+  tooling plus Reanimated/Worklets. Suggested automatic remediations include
+  incompatible major-version changes, so they have not been applied as part
+  of this privacy phase.
 - `:app:bundleRelease` without signing secrets: rejected immediately with the
   intended release-signing guard; no unsigned or debug-signed AAB was emitted.
 
@@ -113,8 +127,9 @@ debug-signed artifact from being mistaken for a production release.
    - The app now builds as `africa.mamaair.mobile`, but the checked-in
      `android/app/google-services.json` was issued for `com.mamaair`. Do not
      manually edit that generated file: its Android OAuth client IDs remain
-     registered to the old package. The file is currently not consumed by the
-     build because the Google Services Gradle plugin is not applied.
+     registered to the old package. The Google Services Gradle plugin consumes
+     this file and currently blocks the Android build at
+     `:app:processDebugGoogleServices`.
    - In Google Cloud/Firebase Console, create an Android OAuth client for
      `africa.mamaair.mobile`. Register the debug certificate for local testing,
      the organisation upload certificate, and the Google Play App Signing
@@ -123,9 +138,8 @@ debug-signed artifact from being mistaken for a production release.
      `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25` and SHA-256
      is `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`.
    - Keep the existing Web OAuth client ID as the ID-token audience unless the
-     OAuth project is intentionally changed. If Firebase or the Google Services
-     Gradle plugin is enabled later, replace `google-services.json` with a newly
-     downloaded file containing the final package.
+     OAuth project is intentionally changed. Replace `google-services.json`
+     with a newly downloaded file containing the final package.
 
 6. **Health/legal sign-off is missing**
    - A qualified owner must approve the pregnancy, symptom, environmental-risk,
@@ -142,9 +156,9 @@ debug-signed artifact from being mistaken for a production release.
   Android lint 8.8 crash while lint analyses their own Gradle scripts. Only
   those two dependency lint tasks are excluded; app lint and all other
   dependency lint tasks remain enabled.
-- Move auth tokens and locally stored health/profile data to a reviewed secure-
-  storage design. Current MMKV stores are app-sandboxed but are not configured
-  with platform-backed encryption.
+- Validate the encrypted-storage migration on real upgrade installs for both
+  Android and iOS, including cold launch, background tasks, sign-out cleanup,
+  and recovery behavior when the device key is unavailable.
 - After the OAuth registration blocker is closed, test Google sign-in from
   both a locally signed debug install and an Internal testing Play install.
 - Capture clean phone screenshots in light and dark mode and all listing

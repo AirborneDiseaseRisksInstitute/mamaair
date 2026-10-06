@@ -2,17 +2,18 @@ import notifee, {
   TriggerType,
   RepeatFrequency,
   AndroidImportance,
+  AndroidVisibility,
   AuthorizationStatus,
   EventType,
 } from '@notifee/react-native';
-import { createMMKV } from 'react-native-mmkv';
+import { createEncryptedMMKV } from './storage/EncryptedStorage';
 import { useUserStore } from '../store/useUserStore';
 import i18n from '../i18n';
 
 const CHANNEL_ID = 'mamaair_reminders';
 const PENDING_ACTION_REMINDER_KEY = 'pending-action-reminder';
 const CATEGORY_REMINDERS_KEY = 'category-reminders';
-const notificationNavigationStorage = createMMKV({
+const notificationNavigationStorage = createEncryptedMMKV({
   id: 'mamaair-notification-navigation',
 });
 // One trigger notification per day-of-week slot (Sun=0 ... Sat=6)
@@ -103,16 +104,18 @@ export const consumePendingActionReminderPress =
     }
   };
 
+export const handleActionReminderBackgroundEvent: Parameters<
+  typeof notifee.onBackgroundEvent
+>[0] = async ({ type, detail }) => {
+  if (type !== EventType.PRESS) return;
+  const payload = actionReminderPayload(
+    detail.notification?.data as Record<string, unknown> | undefined,
+  );
+  if (payload) rememberActionReminderPress(payload);
+};
+
 export const registerActionReminderBackgroundHandler = (): void => {
-  notifee.onBackgroundEvent(async ({ type, detail }) => {
-    if (type !== EventType.PRESS) return;
-    const payload = actionReminderPayload(
-      detail.notification?.data as
-        | Record<string, unknown>
-        | undefined,
-    );
-    if (payload) rememberActionReminderPress(payload);
-  });
+  notifee.onBackgroundEvent(handleActionReminderBackgroundEvent);
 };
 
 async function createChannel(): Promise<string> {
@@ -120,6 +123,7 @@ async function createChannel(): Promise<string> {
     id: CHANNEL_ID,
     name: String(i18n.t('notifications.channel_name')),
     importance: AndroidImportance.HIGH,
+    visibility: AndroidVisibility.PRIVATE,
   });
 }
 
@@ -279,6 +283,7 @@ const createCategoryReminderTriggers = async (
         android: {
           channelId,
           importance: AndroidImportance.HIGH,
+          visibility: AndroidVisibility.PRIVATE,
           pressAction: { id: 'default' },
         },
         ios: { sound: 'default' },
@@ -468,6 +473,7 @@ export async function scheduleActionReminder({
         android: {
           channelId,
           importance: AndroidImportance.HIGH,
+          visibility: AndroidVisibility.PRIVATE,
           pressAction: { id: 'default' },
         },
         ios: { sound: 'default' },
@@ -558,6 +564,7 @@ export async function scheduleRestTimerNotification({
         android: {
           channelId,
           importance: AndroidImportance.HIGH,
+          visibility: AndroidVisibility.PRIVATE,
           pressAction: { id: 'default' },
         },
         ios: { sound: 'default' },
@@ -674,6 +681,7 @@ export async function scheduleCareCadence({
           android: {
             channelId,
             importance: AndroidImportance.HIGH,
+            visibility: AndroidVisibility.PRIVATE,
             pressAction: { id: 'default' },
           },
           ios: { sound: 'default' },
@@ -698,6 +706,7 @@ export async function scheduleCareCadence({
       android: {
         channelId,
         importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PRIVATE,
         pressAction: { id: 'default' },
       },
       ios: { sound: 'default' },

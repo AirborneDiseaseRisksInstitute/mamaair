@@ -839,7 +839,7 @@
     "turn_on_notifications": "Activer les notifications",
     "privacy_setting": "Paramètre de confidentialité",
     "check_privacy": "Vérifiez votre confidentialité",
-    "sensitive_notification": "Notification sensible",
+    "sensitive_notification": "Rappels de santé",
     "personal_data": "Données personnelles",
     "precise_location": "Localisation précise",
     "tracking": "Suivi",
@@ -1162,7 +1162,7 @@
     "tracking": "Suivi de la localisation",
     "check": "Vérifiez votre confidentialité",
     "precise_location": "Localisation précise",
-    "sensitive_notification": "Notification sensible",
+    "sensitive_notification": "Rappels de santé",
     "title": "Paramètres de confidentialité"
   },
   "refer": {

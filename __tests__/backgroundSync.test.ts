@@ -9,10 +9,21 @@ jest.mock('react-native-background-fetch', () => ({
 
 jest.mock('../src/services/database/DatabaseService', () => ({
   databaseService: {
-    getAllLocations: jest.fn(),
+    getLocationsForOwners: jest.fn(),
     deleteLocations: jest.fn(),
   },
 }));
+
+jest.mock('../src/store/useUserStore', () => {
+  const profile = {
+    backendUserId: '42',
+    email: 'user@example.com',
+  };
+  return {
+    useUserStore: { getState: () => ({ profile }) },
+    __profile: profile,
+  };
+});
 
 jest.mock('../src/services/api/MovementsService', () => ({
   MovementsService: {
@@ -38,7 +49,7 @@ const databaseMock = jest.requireMock(
   '../src/services/database/DatabaseService',
 ) as {
   databaseService: {
-    getAllLocations: jest.Mock;
+    getLocationsForOwners: jest.Mock;
     deleteLocations: jest.Mock;
   };
 };
@@ -51,7 +62,11 @@ const authStoreMock = jest.requireMock('../src/store/useAuthStore') as {
   storage: { set: jest.Mock };
   __state: { token: string | null; hydrateSession: jest.Mock };
 };
-const mockGetAllLocations = databaseMock.databaseService.getAllLocations;
+const userStoreMock = jest.requireMock('../src/store/useUserStore') as {
+  __profile: { backendUserId: string | null; email: string | null };
+};
+const mockGetLocationsForOwners =
+  databaseMock.databaseService.getLocationsForOwners;
 const mockDeleteLocations = databaseMock.databaseService.deleteLocations;
 const mockUploadMovementsJson =
   movementsMock.MovementsService.uploadMovementsJson;
@@ -62,12 +77,14 @@ describe('BackgroundSync', () => {
     jest.clearAllMocks();
     authStoreMock.__state.token = 'access-token';
     authStoreMock.__state.hydrateSession.mockResolvedValue(undefined);
-    mockGetAllLocations.mockReturnValue([]);
+    userStoreMock.__profile.backendUserId = '42';
+    userStoreMock.__profile.email = 'user@example.com';
+    mockGetLocationsForOwners.mockReturnValue([]);
     mockUploadMovementsJson.mockResolvedValue({});
   });
 
   it('uploads queued points with the preferred JSON contract and deletes the snapshot', async () => {
-    mockGetAllLocations.mockReturnValue([
+    mockGetLocationsForOwners.mockReturnValue([
       {
         id: 7,
         latitude: 35.7219,
@@ -86,6 +103,10 @@ describe('BackgroundSync', () => {
     await sync.performSync();
 
     expect(uploaded).toHaveBeenCalledTimes(1);
+    expect(mockGetLocationsForOwners).toHaveBeenCalledWith([
+      expect.stringMatching(/^owner:v1:/),
+      expect.stringMatching(/^owner:v1:/),
+    ]);
 
     expect(mockUploadMovementsJson).toHaveBeenCalledWith([
       {
@@ -103,7 +124,7 @@ describe('BackgroundSync', () => {
   });
 
   it('keeps queued points when the upload fails', async () => {
-    mockGetAllLocations.mockReturnValue([
+    mockGetLocationsForOwners.mockReturnValue([
       {
         id: 8,
         latitude: 35,
@@ -137,7 +158,7 @@ describe('BackgroundSync', () => {
 
   it('keeps queued locations when there is no authenticated session', async () => {
     authStoreMock.__state.token = null;
-    mockGetAllLocations.mockReturnValue([
+    mockGetLocationsForOwners.mockReturnValue([
       {
         id: 9,
         latitude: 35,
@@ -154,10 +175,21 @@ describe('BackgroundSync', () => {
     expect(mockDeleteLocations).not.toHaveBeenCalled();
   });
 
+  it('does not read or upload queued locations without a stable user identity', async () => {
+    userStoreMock.__profile.backendUserId = null;
+    userStoreMock.__profile.email = null;
+    const sync = new BackgroundSync();
+
+    await sync.performSync();
+
+    expect(mockGetLocationsForOwners).not.toHaveBeenCalled();
+    expect(mockUploadMovementsJson).not.toHaveBeenCalled();
+  });
+
   it('coalesces location events into one scheduled upload', async () => {
     jest.useFakeTimers();
     try {
-      mockGetAllLocations.mockReturnValue([
+      mockGetLocationsForOwners.mockReturnValue([
         {
           id: 10,
           latitude: 35,

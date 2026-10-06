@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faXmark } from '@fortawesome/free-solid-svg-icons';
-import { createMMKV } from 'react-native-mmkv';
 import { useTranslation } from 'react-i18next';
 import { getDailyPlanAdCreative, resolveAdImage } from '../../data/ads';
 import type { RecommendationExperienceIdentity } from '../../types/recommendationExperience';
 import { useTheme, spacing } from '../../theme';
+import { createEncryptedMMKV } from '../../services/storage/EncryptedStorage';
 
-const adStorage = createMMKV({ id: 'mamaair-ad-display' });
+const adStorage = createEncryptedMMKV({ id: 'mamaair-ad-display' });
 
 interface InlineAdProps {
   date: string;

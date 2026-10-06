@@ -2,12 +2,15 @@ import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
 import notifee, {
   AndroidForegroundServiceType,
   AndroidImportance,
+  AndroidVisibility,
 } from '@notifee/react-native';
 import { IndoorOutdoorClassifier } from '../logic/IndoorOutdoorClassifier';
 import { databaseService } from '../database/DatabaseService';
 import { AppState, Platform, PermissionsAndroid } from 'react-native';
-import { createMMKV } from 'react-native-mmkv';
 import i18n from 'i18next';
+import { useUserStore } from '../../store/useUserStore';
+import { resolveLocationOwnerKeys } from '../privacy/LocationDataOwnership';
+import { createEncryptedMMKV } from '../storage/EncryptedStorage';
 
 export type LocationPermissionStatus =
   | 'granted'
@@ -15,7 +18,7 @@ export type LocationPermissionStatus =
   | 'blocked'
   | 'unavailable';
 
-const permissionStorage = createMMKV({
+const permissionStorage = createEncryptedMMKV({
   id: 'mamaair-location-permission',
 });
 const LOCATION_PERMISSION_GRANTED_KEY = 'location_permission_granted';
@@ -309,14 +312,25 @@ export class LocationTracker {
     if (__DEV__) console.log(`Classified location as: ${state}`);
 
     if (state === 'Outdoor') {
-      databaseService.insertLocation({
-        latitude,
-        longitude,
-        accuracy,
-        speed: speed || 0,
-        timestamp,
-        isOutdoor: 1,
+      const profile = useUserStore.getState().profile;
+      const [ownerKey] = resolveLocationOwnerKeys({
+        backendUserId: profile.backendUserId,
+        email: profile.email,
       });
+
+      // Never create an uploadable location record without a stable account
+      // owner. Live classification still works while profile data is loading.
+      if (ownerKey) {
+        databaseService.insertLocation({
+          ownerKey,
+          latitude,
+          longitude,
+          accuracy,
+          speed: speed || 0,
+          timestamp,
+          isOutdoor: 1,
+        });
+      }
     }
 
     this.listeners.forEach(listener =>
@@ -335,6 +349,7 @@ export class LocationTracker {
       id: 'tracker_channel',
       name: String(i18n.t('location.tracking_notification_channel')),
       importance: AndroidImportance.LOW,
+      visibility: AndroidVisibility.PRIVATE,
     });
 
     await notifee.displayNotification({
@@ -348,6 +363,7 @@ export class LocationTracker {
           AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
         ],
         ongoing: true,
+        visibility: AndroidVisibility.PRIVATE,
         pressAction: { id: 'default' },
       },
     });

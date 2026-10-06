@@ -33,6 +33,7 @@ jest.mock('@notifee/react-native', () => ({
     FOREGROUND_SERVICE_TYPE_LOCATION: 8,
   },
   AndroidImportance: { LOW: 2 },
+  AndroidVisibility: { PRIVATE: 0 },
 }));
 
 jest.mock('react-native-mmkv', () => ({
@@ -58,6 +59,14 @@ jest.mock('../src/services/logic/IndoorOutdoorClassifier', () => ({
 
 jest.mock('../src/services/database/DatabaseService', () => ({
   databaseService: { insertLocation: jest.fn() },
+}));
+
+jest.mock('../src/store/useUserStore', () => ({
+  useUserStore: {
+    getState: () => ({
+      profile: { backendUserId: '42', email: 'user@example.com' },
+    }),
+  },
 }));
 
 import { AppState, PermissionsAndroid, Platform } from 'react-native';

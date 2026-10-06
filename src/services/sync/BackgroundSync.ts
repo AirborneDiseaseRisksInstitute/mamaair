@@ -2,6 +2,8 @@ import BackgroundFetch from 'react-native-background-fetch';
 import { databaseService } from '../database/DatabaseService';
 import { MovementsService } from '../api/MovementsService';
 import { storage, useAuthStore } from '../../store/useAuthStore';
+import { useUserStore } from '../../store/useUserStore';
+import { resolveLocationOwnerKeys } from '../privacy/LocationDataOwnership';
 
 const FOREGROUND_SYNC_DELAY_MS = 15_000;
 
@@ -91,7 +93,21 @@ export class BackgroundSync {
       return;
     }
 
-    const locations = databaseService.getAllLocations();
+    const profile = useUserStore.getState().profile;
+    const ownerKeys = resolveLocationOwnerKeys({
+      backendUserId: profile.backendUserId,
+      email: profile.email,
+    });
+    if (ownerKeys.length === 0) {
+      if (__DEV__) {
+        console.log(
+          '[BackgroundSync] No stable user identity; skipping location upload.',
+        );
+      }
+      return;
+    }
+
+    const locations = databaseService.getLocationsForOwners(ownerKeys);
 
     if (locations.length === 0) {
       if (__DEV__) console.log('[BackgroundSync] No locations to upload.');

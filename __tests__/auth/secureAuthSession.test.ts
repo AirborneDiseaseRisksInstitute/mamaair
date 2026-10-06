@@ -2,12 +2,20 @@ jest.mock('../../src/services/api/AuthService', () => ({
   AuthService: { logout: jest.fn(async () => undefined) },
 }));
 
+const mockClearForSignedOutSession = jest.fn(
+  async (_identity: unknown) => undefined,
+);
+jest.mock('../../src/services/privacy/SessionPrivacyService', () => ({
+  SessionPrivacyService: {
+    clearForSignedOutSession: (identity: unknown) =>
+      mockClearForSignedOutSession(identity),
+  },
+}));
+
 import * as Keychain from 'react-native-keychain';
 import { SecureAuthStorage } from '../../src/services/auth/SecureAuthStorage';
-import {
-  storage,
-  useAuthStore,
-} from '../../src/store/useAuthStore';
+import { storage, useAuthStore } from '../../src/store/useAuthStore';
+import { useUserStore } from '../../src/store/useUserStore';
 
 const keychainMock = Keychain as jest.Mocked<typeof Keychain> & {
   __credentials: Map<
@@ -131,6 +139,22 @@ describe('secure auth session', () => {
     expect(useAuthStore.getState().token).toBeNull();
     expect(storage.contains('auth_secure_session_revoked')).toBe(false);
     await expect(SecureAuthStorage.read()).resolves.toBeNull();
+  });
+
+  it('cleans privacy-sensitive data for the identity that is signing out', async () => {
+    useUserStore.getState().setProfile({
+      backendUserId: '42',
+      email: 'person@example.com',
+    });
+
+    await useAuthStore.getState().clearSession();
+
+    expect(mockClearForSignedOutSession).toHaveBeenCalledWith({
+      backendUserId: '42',
+      email: 'person@example.com',
+    });
+    expect(useUserStore.getState().profile.backendUserId).toBeNull();
+    expect(useUserStore.getState().profile.email).toBeNull();
   });
 
   it('does not restore an access token after logout wins a refresh race', async () => {

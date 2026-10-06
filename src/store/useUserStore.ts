@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { createMMKV } from 'react-native-mmkv';
 import { formatLocalDate } from '../utils/dateUtils';
+import { createEncryptedMMKV } from '../services/storage/EncryptedStorage';
 
-export const userStorage = createMMKV();
+export const userStorage = createEncryptedMMKV();
 
 export interface UserProfile {
   backendUserId: string | null;

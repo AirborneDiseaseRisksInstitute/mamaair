@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { createMMKV } from 'react-native-mmkv';
 import { useUserStore } from './useUserStore';
 import { AuthService } from '../services/api/AuthService';
 import { resetInitialLanguagePrompt } from '../utils/initialLanguagePrompt';
@@ -7,8 +6,13 @@ import {
   SecureAuthStorage,
   type AuthTokens,
 } from '../services/auth/SecureAuthStorage';
+import type { RecommendationExperienceIdentity } from '../types/recommendationExperience';
+import { createEncryptedMMKV } from '../services/storage/EncryptedStorage';
 
-export const storage = createMMKV();
+type SessionPrivacyModule =
+  typeof import('../services/privacy/SessionPrivacyService');
+
+export const storage = createEncryptedMMKV();
 
 const LEGACY_ACCESS_TOKEN_KEY = 'auth_token';
 const LEGACY_REFRESH_TOKEN_KEY = 'auth_refresh_token';
@@ -40,6 +44,15 @@ const readLegacyTokens = (): AuthTokens | null => {
 const clearLegacyTokens = (): void => {
   storage.remove(LEGACY_ACCESS_TOKEN_KEY);
   storage.remove(LEGACY_REFRESH_TOKEN_KEY);
+};
+
+const clearSignedOutSessionData = async (
+  identity: Pick<RecommendationExperienceIdentity, 'backendUserId' | 'email'>,
+): Promise<void> => {
+  // Loaded lazily to avoid a cycle through NotificationService -> i18n -> auth.
+  const { SessionPrivacyService } =
+    require('../services/privacy/SessionPrivacyService') as SessionPrivacyModule;
+  await SessionPrivacyService.clearForSignedOutSession(identity);
 };
 
 interface AuthState {
@@ -187,6 +200,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
   clearSession: () => {
+    const profile = useUserStore.getState().profile;
+    const privacyCleanup = clearSignedOutSessionData({
+      backendUserId: profile.backendUserId,
+      email: profile.email,
+    });
     sessionRevision += 1;
     storage.set(SECURE_SESSION_REVOKED_KEY, true);
     clearLegacyTokens();
@@ -194,7 +212,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ token: null, refreshToken: null, isHydrated: true });
     useUserStore.getState().clearUser();
     return runCredentialOperation(async () => {
-      await SecureAuthStorage.clear();
+      await Promise.all([SecureAuthStorage.clear(), privacyCleanup]);
       storage.remove(SECURE_SESSION_REVOKED_KEY);
       storage.set(SECURE_INSTALL_MARKER_KEY, true);
     });

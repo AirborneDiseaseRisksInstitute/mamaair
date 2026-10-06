@@ -839,7 +839,7 @@
     "turn_on_notifications": "Washa arifa",
     "privacy_setting": "Mipangilio ya Faragha",
     "check_privacy": "Angalia faragha yako",
-    "sensitive_notification": "Arifa nyeti",
+    "sensitive_notification": "Vikumbusho vya afya",
     "personal_data": "Data binafsi",
     "precise_location": "Mahali halisi",
     "tracking": "Ufuatiliaji",
@@ -1157,7 +1157,7 @@
   "privacy": {
     "title": "Mipangilio ya faragha",
     "check": "Angalia faragha yako",
-    "sensitive_notification": "Arifa nyeti",
+    "sensitive_notification": "Vikumbusho vya afya",
     "tracking": "Ufuatiliaji wa eneo",
     "precise_location": "Mahali sahihi"
   },

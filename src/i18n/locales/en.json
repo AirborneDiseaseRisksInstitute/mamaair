@@ -925,7 +925,7 @@
     "turn_on_notifications": "Turns on notification",
     "privacy_setting": "Privacy Setting",
     "check_privacy": "Check your privacy",
-    "sensitive_notification": "Sensitive notification",
+    "sensitive_notification": "Health reminders",
     "personal_data": "Personal data",
     "precise_location": "Precise location",
     "tracking": "Tracking",
@@ -1161,7 +1161,7 @@
   "privacy": {
     "title": "Privacy settings",
     "check": "Check your privacy",
-    "sensitive_notification": "Sensitive notification",
+    "sensitive_notification": "Health reminders",
     "precise_location": "Precise location",
     "tracking": "Location tracking"
   },

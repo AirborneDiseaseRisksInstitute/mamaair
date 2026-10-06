@@ -1,4 +1,4 @@
-import { createMMKV } from 'react-native-mmkv';
+import { createEncryptedMMKV } from '../storage/EncryptedStorage';
 import type {
   AnalyticsEventName,
   ProductAnalyticsEvent,
@@ -6,7 +6,7 @@ import type {
 } from '../../types/recommendationExperience';
 import { resolveOwnerNamespace } from './ownership';
 
-const analyticsStorage = createMMKV({
+const analyticsStorage = createEncryptedMMKV({
   id: 'mamaair-product-analytics',
 });
 const MAX_QUEUED_EVENTS = 250;

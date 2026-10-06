@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { createMMKV } from 'react-native-mmkv';
+import { createEncryptedMMKV } from '../services/storage/EncryptedStorage';
 import {
   DEV_RECOMMENDATION_EXPERIENCE_RESET_TOKEN,
   RECOMMENDATION_EXPERIENCE_STORAGE_VERSION,
@@ -124,7 +124,7 @@ interface RecommendationExperienceStore {
   ) => void;
 }
 
-export const recommendationExperienceStorage = createMMKV({
+export const recommendationExperienceStorage = createEncryptedMMKV({
   id: 'mamaair-recommendation-experience',
 });
 

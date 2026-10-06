@@ -23,6 +23,7 @@ jest.mock('@notifee/react-native', () => ({
   TriggerType: { TIMESTAMP: 0 },
   RepeatFrequency: { WEEKLY: 1 },
   AndroidImportance: { HIGH: 4 },
+  AndroidVisibility: { PRIVATE: 0 },
   AuthorizationStatus: { AUTHORIZED: 1, PROVISIONAL: 2 },
   EventType: { PRESS: 1 },
 }));

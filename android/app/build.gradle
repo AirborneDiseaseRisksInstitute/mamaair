@@ -109,7 +109,7 @@ android {
         checkDependencies false
     }
     defaultConfig {
-        applicationId "com.mamaair"
+        applicationId "africa.mamaair.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 31

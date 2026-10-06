@@ -1,12 +1,12 @@
-import { createMMKV } from 'react-native-mmkv';
+import { createEncryptedMMKV } from '../services/storage/EncryptedStorage';
 
 export type AppearancePreference = 'system' | 'light' | 'dark';
 
 const STORAGE_KEY = 'appearance_preference';
-let appearanceStorage: ReturnType<typeof createMMKV> | undefined;
+let appearanceStorage: ReturnType<typeof createEncryptedMMKV> | undefined;
 
 const getStorage = () => {
-  if (!appearanceStorage) appearanceStorage = createMMKV();
+  if (!appearanceStorage) appearanceStorage = createEncryptedMMKV();
   return appearanceStorage;
 };
 
