@@ -38,6 +38,11 @@ import type {
 } from '../../types/recommendationExperience';
 import { useRecommendationExperienceStore } from '../../store/useRecommendationExperienceStore';
 import {
+  formatReminderConfirmation,
+  getActionReminderUiState,
+  getSuggestedReminderTime,
+} from '../../utils/reminderTime';
+import {
   cancelActionReminder,
   cancelEveningCareReminder,
   cancelRestTimerNotification,
@@ -232,6 +237,22 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, [hasRunningTimer]);
+
+  useEffect(() => {
+    const currentTime = Date.now();
+    const nextReminderAt = Object.values(reminders)
+      .filter(reminder => reminder.status === 'scheduled')
+      .map(reminder => new Date(reminder.scheduledFor).getTime())
+      .filter(timestamp => Number.isFinite(timestamp) && timestamp > currentTime)
+      .sort((first, second) => first - second)[0];
+    if (nextReminderAt === undefined) return undefined;
+
+    const timeout = setTimeout(
+      () => setNow(Date.now()),
+      Math.max(1, nextReminderAt - currentTime + 100),
+    );
+    return () => clearTimeout(timeout);
+  }, [now, reminders]);
 
   useEffect(() => {
     setStreakProgress(getPersistentStreak(identity, experience.date));
@@ -707,7 +728,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
           : t('today.action_planned'),
       message:
         result.status === 'scheduled'
-          ? t('today.reminder_set', { time })
+          ? formatReminderConfirmation(result.scheduledFor, time)
           : t('today.reminder_permission_note'),
     });
   };
@@ -828,6 +849,15 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
     const recommendationCompletionIsFinal =
       action.completed && action.backendReference?.kind === 'recommendation';
     const isHighlighted = action.key === highlightedActionKey;
+    const reminder = reminders[action.key];
+    const reminderUiState = getActionReminderUiState(reminder, now);
+    const activeReminder = reminderUiState === 'active' ? reminder : undefined;
+    const reminderLabelKey =
+      reminderUiState === 'expired'
+        ? 'today.remind_again'
+        : activeReminder
+          ? 'today.edit_reminder'
+          : 'today.set_reminder';
     return (
       <View
         key={action.key}
@@ -931,16 +961,14 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${t(
-                  reminders[action.key]
-                    ? 'today.edit_reminder'
-                    : 'today.set_reminder',
+                  reminderLabelKey,
                 )}: ${action.title}`}
                 onPress={() => setReminderAction(action)}
                 style={[
                   styles.reminderButton,
-                  reminders[action.key] && styles.reminderButtonActive,
+                  activeReminder && styles.reminderButtonActive,
                   {
-                    borderColor: reminders[action.key]
+                    borderColor: activeReminder
                       ? config.color
                       : config.iconBackground,
                     backgroundColor: theme.surfaceColor(config.background),
@@ -955,13 +983,13 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                 <Text
                   style={[styles.reminderButtonText, { color: theme.accentTextColor(config.color) }]}
                 >
-                  {reminders[action.key]
-                    ? `${reminders[action.key].hour
+                  {activeReminder
+                    ? `${activeReminder.hour
                         .toString()
-                        .padStart(2, '0')}:${reminders[action.key].minute
+                        .padStart(2, '0')}:${activeReminder.minute
                         .toString()
                         .padStart(2, '0')}`
-                    : t('today.set_reminder')}
+                    : t(reminderLabelKey)}
                 </Text>
               </Pressable>
               {supportsRestTimer(action) ? (
@@ -996,7 +1024,7 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
                 </Pressable>
               ) : null}
               {action.state === 'planned' &&
-              !reminders[action.key] &&
+              !activeReminder &&
               !restTimers[action.key] ? (
                 <Text style={[styles.plannedLabel, { color: theme.accentTextColor(config.color) }]}>
                   {t('today.planned')}
@@ -1225,15 +1253,25 @@ export const DailyPlanView: React.FC<DailyPlanViewProps> = ({
         onClose={() => setReminderAction(null)}
         onConfirm={handleReminderConfirm}
         onRemove={
-          reminderAction && reminders[reminderAction.key]
+          reminderAction &&
+          getActionReminderUiState(reminders[reminderAction.key], now) ===
+            'active'
             ? removeReminder
             : undefined
         }
         initialHour={
-          reminderAction ? reminders[reminderAction.key]?.hour : undefined
+          reminderAction &&
+          getActionReminderUiState(reminders[reminderAction.key], now) ===
+            'active'
+            ? reminders[reminderAction.key]?.hour
+            : getSuggestedReminderTime(now).hour
         }
         initialMinute={
-          reminderAction ? reminders[reminderAction.key]?.minute : undefined
+          reminderAction &&
+          getActionReminderUiState(reminders[reminderAction.key], now) ===
+            'active'
+            ? reminders[reminderAction.key]?.minute
+            : getSuggestedReminderTime(now).minute
         }
         taskTitle={reminderAction?.title}
       />

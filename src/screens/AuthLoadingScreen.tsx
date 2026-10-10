@@ -23,11 +23,16 @@ import {
   mapApiLifestyleToLocal,
   mapApiProfileToLocal,
 } from '../utils/profileApiMapping';
+import {
+  resolveCachedAuthLoadingTarget,
+  resolveCompletedProfileTarget,
+  type AuthLoadingTarget,
+} from '../services/auth/AuthLoadingTarget';
 
 const DEV_LOCAL_RESET_APPLIED_KEY = 'dev-local-session-reset-token-applied';
 
 interface AuthLoadingScreenProps {
-  onComplete: (target: 'Home' | 'Intro' | 'ConsentHome' | 'Auth') => void;
+  onComplete: (target: AuthLoadingTarget) => void;
   authenticatedEmail?: string;
 }
 
@@ -82,18 +87,22 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
         return;
       }
 
+      const cachedTarget = resolveCachedAuthLoadingTarget(
+        useUserStore.getState().profile,
+        authenticatedEmail,
+      );
+      if (cachedTarget) {
+        onComplete(cachedTarget);
+      }
+
       try {
         const sessionEmail = authenticatedEmail?.trim() || null;
-        // 2. Fetch Profile from API
-        const profileData = await AuthService.getProfile();
-
-        // 2.1 Fetch Lifestyle from API
-        let lifestyleData: any = {};
-        try {
-          lifestyleData = await LifestyleService.getLifestyle();
-        } catch {
-          // silently ignore — lifestyle may not exist yet
-        }
+        // These resources are independent. Fetch them together so a fresh
+        // sign-in does not pay two network round trips before navigation.
+        const [profileData, lifestyleData] = await Promise.all([
+          AuthService.getProfile(),
+          LifestyleService.getLifestyle().catch(() => ({})),
+        ]);
 
         const mappedProfile = mapApiProfileToLocal(profileData, sessionEmail);
         const mappedLifestyle = mapApiLifestyleToLocal(lifestyleData);
@@ -270,20 +279,18 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
           })();
         }
 
-        // 5. Navigation Decision
-        // Check if user has completed all necessary onboarding steps (including new fields)
-        const isOnboardingComplete =
-          mergedProfile.pregnancyWeek &&
-          mergedProfile.pregnancyWeekConfirmed &&
-          mergedProfile.timezone &&
-          mergedProfile.timeSpent &&
-          mergedProfile.timeOfDay &&
-          mergedProfile.workType &&
-          mergedProfile.cookingMethod &&
-          mergedProfile.ventilation;
+        const completedTarget = resolveCompletedProfileTarget(mergedProfile);
+        // A restored session may already be showing its cached destination.
+        // Avoid resetting the stack when the refresh confirms that route, but
+        // still correct it if the server-bound identity needs onboarding.
+        if (cachedTarget) {
+          const refreshedTarget = completedTarget ?? 'Intro';
+          if (refreshedTarget !== cachedTarget) onComplete(refreshedTarget);
+          return;
+        }
 
-        if (isOnboardingComplete) {
-          onComplete(mergedProfile.agreementAccepted ? 'Home' : 'ConsentHome');
+        if (completedTarget) {
+          onComplete(completedTarget);
           return;
         }
 
@@ -296,21 +303,14 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
           onComplete('Auth');
           return;
         }
+        if (cachedTarget) return;
         // Network/transient error (e.g. offline launch): keep the session and
         // decide navigation from the locally cached profile so we don't log the
         // user out or lose their data.
         const local = useUserStore.getState().profile;
-        const localOnboardingComplete =
-          local?.pregnancyWeek &&
-          local?.pregnancyWeekConfirmed &&
-          local?.timezone &&
-          local?.timeSpent &&
-          local?.timeOfDay &&
-          local?.workType &&
-          local?.cookingMethod &&
-          local?.ventilation;
-        if (localOnboardingComplete) {
-          onComplete(local.agreementAccepted ? 'Home' : 'ConsentHome');
+        const completedTarget = resolveCompletedProfileTarget(local);
+        if (completedTarget) {
+          onComplete(completedTarget);
         } else {
           onComplete('Intro');
         }

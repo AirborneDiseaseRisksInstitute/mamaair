@@ -1,6 +1,10 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { SignInScreen } from '../src/screens/auth/SignInScreen';
+import {
+  GOOGLE_WEB_CLIENT_ID,
+  GOOGLE_WEB_CLIENT_IDS,
+} from '../src/config/googleAuth';
 
 const mockLogin = jest.fn();
 const mockGoogleSignIn = jest.fn();
@@ -105,9 +109,11 @@ describe('SignInScreen credentials', () => {
     });
 
     expect(googleMock.GoogleSignin.configure).toHaveBeenCalledWith({
-      webClientId:
-        '212373353528-fe2pe6nb9i7n65gm306lsp5lno1ep68n.apps.googleusercontent.com',
+      webClientId: GOOGLE_WEB_CLIENT_ID,
     });
+    expect(GOOGLE_WEB_CLIENT_IDS.android).toBe(
+      '716499111006-9h05fk2l76bt195t8otb5itrt8jh4gh4.apps.googleusercontent.com',
+    );
   });
 
   it('blocks invalid email and sends the exact password only once', async () => {

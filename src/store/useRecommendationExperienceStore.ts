@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import { createEncryptedMMKV } from '../services/storage/EncryptedStorage';
+import {
+  clearEncryptedMMKVData,
+  createEncryptedMMKV,
+} from '../services/storage/EncryptedStorage';
 import {
   DEV_RECOMMENDATION_EXPERIENCE_RESET_TOKEN,
   RECOMMENDATION_EXPERIENCE_STORAGE_VERSION,
@@ -305,7 +308,7 @@ const applyDevelopmentReset = (): void => {
   );
   if (appliedToken === DEV_RECOMMENDATION_EXPERIENCE_RESET_TOKEN) return;
 
-  recommendationExperienceStorage.clearAll();
+  clearEncryptedMMKVData(recommendationExperienceStorage);
   recommendationExperienceStorage.set(
     DEV_RESET_APPLIED_KEY,
     DEV_RECOMMENDATION_EXPERIENCE_RESET_TOKEN,

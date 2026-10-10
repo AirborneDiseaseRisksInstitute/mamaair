@@ -30,6 +30,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faGlobe } from '@fortawesome/free-solid-svg-icons';
 import { consumeInitialLanguagePrompt } from '../../utils/initialLanguagePrompt';
 import type { LegalDocumentKind } from '../../content/legalDocuments';
+import { GOOGLE_WEB_CLIENT_ID } from '../../config/googleAuth';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -65,7 +66,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
 
   React.useEffect(() => {
     GoogleSignin.configure({
-      webClientId: '212373353528-fe2pe6nb9i7n65gm306lsp5lno1ep68n.apps.googleusercontent.com',
+      webClientId: GOOGLE_WEB_CLIENT_ID,
     });
   }, []);
 

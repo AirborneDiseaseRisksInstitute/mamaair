@@ -43,6 +43,7 @@ import {
   getRetryAfterSeconds,
   useAuthRequestCooldown,
 } from '../../hooks/useAuthRequestCooldown';
+import { GOOGLE_WEB_CLIENT_ID } from '../../config/googleAuth';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -97,7 +98,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
 
   React.useEffect(() => {
     GoogleSignin.configure({
-      webClientId: '212373353528-fe2pe6nb9i7n65gm306lsp5lno1ep68n.apps.googleusercontent.com',
+      webClientId: GOOGLE_WEB_CLIENT_ID,
     });
   }, []);
 

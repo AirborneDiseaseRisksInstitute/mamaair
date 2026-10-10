@@ -1,57 +1,87 @@
 {
   "project_info": {
-    "project_number": "212373353528",
-    "project_id": "mamaair-5e763",
-    "storage_bucket": "mamaair-5e763.firebasestorage.app"
+    "project_number": "716499111006",
+    "project_id": "mamaair-diaqnostic",
+    "storage_bucket": "mamaair-diaqnostic.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:212373353528:android:bd3ea79908065064a962cd",
+        "mobilesdk_app_id": "1:716499111006:android:5a008b5f55ace76e7638cf",
         "android_client_info": {
-          "package_name": "com.mamaair"
+          "package_name": "africa.mamaair.mobile"
         }
       },
       "oauth_client": [
         {
-          "client_id": "212373353528-mb0og22apdqf59r6tb23m8oo0gpgfv2v.apps.googleusercontent.com",
+          "client_id": "716499111006-mtjjhme5954uvm9jahtalv6r32tdp03b.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.mamaair",
+            "package_name": "africa.mamaair.mobile",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
           }
         },
         {
-          "client_id": "212373353528-p51ptmo7nqs4064qlv7chn26ckki27iv.apps.googleusercontent.com",
+          "client_id": "716499111006-v3qd1h2e63d44ekmohr1s1n3rfsqo403.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.mamaair",
-            "certificate_hash": "9c7dd0f408504ee06e56b7067f4d466efead52c3"
+            "package_name": "africa.mamaair.mobile",
+            "certificate_hash": "ea9982b957aff2b04dbea4e65c5efe4449bdc03c"
           }
         },
         {
-          "client_id": "212373353528-fe2pe6nb9i7n65gm306lsp5lno1ep68n.apps.googleusercontent.com",
+          "client_id": "716499111006-9h05fk2l76bt195t8otb5itrt8jh4gh4.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyDrc8hnX9WrrOSaLDxnJIW91RiT2mWq1gw"
+          "current_key": "AIzaSyDQDzq110nXl20SCLJY4lOsggT2Ov3aWrc"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "212373353528-fe2pe6nb9i7n65gm306lsp5lno1ep68n.apps.googleusercontent.com",
+              "client_id": "716499111006-9h05fk2l76bt195t8otb5itrt8jh4gh4.apps.googleusercontent.com",
               "client_type": 3
-            },
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:716499111006:android:d458d5398772606c7638cf",
+        "android_client_info": {
+          "package_name": "com.diaqnostic.mamaair"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "716499111006-tb61aa9tvgl4tunerjob80ped4s8k3mh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.diaqnostic.mamaair",
+            "certificate_hash": "dd26a275334a0bdeb16b415a636d8c01468c1c28"
+          }
+        },
+        {
+          "client_id": "716499111006-9h05fk2l76bt195t8otb5itrt8jh4gh4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQDzq110nXl20SCLJY4lOsggT2Ov3aWrc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
             {
-              "client_id": "212373353528-a1tt2att2217qmgu034at7kq6ua30vh6.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.mamaair"
-              }
+              "client_id": "716499111006-9h05fk2l76bt195t8otb5itrt8jh4gh4.apps.googleusercontent.com",
+              "client_type": 3
             }
           ]
         }

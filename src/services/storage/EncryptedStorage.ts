@@ -181,7 +181,12 @@ const migrateLegacyStorage = (id: string, key: string): void => {
   }
 
   if (!legacyExists) {
-    throw new Error(`Secure storage migration is incomplete for ${id}.`);
+    // Secure stores created on a fresh install before this fix contain a
+    // valid verification value but no migration marker. The legacy removal
+    // path writes the marker before deleting plaintext, so a verified
+    // secure-only store is safe to finalize without discarding its data.
+    secureStorage.set(MIGRATION_KEY, true);
+    return;
   }
 
   const legacyStorage = createMMKV({ id });
@@ -242,8 +247,18 @@ export const createEncryptedMMKV = (
     }
   } else {
     storage.set(VERIFICATION_KEY, VERIFICATION_VALUE);
+    // This store was created directly by the current app, not by the legacy
+    // migration path, so it is already in its final encrypted form.
+    storage.set(MIGRATION_KEY, true);
   }
   return storage;
+};
+
+export const clearEncryptedMMKVData = (storage: MMKV): void => {
+  storage
+    .getAllKeys()
+    .filter(key => key !== VERIFICATION_KEY && key !== MIGRATION_KEY)
+    .forEach(key => storage.remove(key));
 };
 
 export const __resetEncryptedStorageForTests = (): void => {

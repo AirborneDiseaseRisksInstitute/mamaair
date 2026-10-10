@@ -1,4 +1,5 @@
 import notifee, {
+  AlarmType,
   TriggerType,
   RepeatFrequency,
   AndroidImportance,
@@ -7,10 +8,11 @@ import notifee, {
   EventType,
 } from '@notifee/react-native';
 import { createEncryptedMMKV } from './storage/EncryptedStorage';
-import { useUserStore } from '../store/useUserStore';
 import i18n from '../i18n';
 
-const CHANNEL_ID = 'mamaair_reminders';
+// Channel sound cannot be changed after Android creates a channel. The v2 ID
+// migrates existing installs away from the original silent reminder channel.
+const CHANNEL_ID = 'mamaair_reminders_v2';
 const PENDING_ACTION_REMINDER_KEY = 'pending-action-reminder';
 const CATEGORY_REMINDERS_KEY = 'category-reminders';
 const notificationNavigationStorage = createEncryptedMMKV({
@@ -124,8 +126,25 @@ async function createChannel(): Promise<string> {
     name: String(i18n.t('notifications.channel_name')),
     importance: AndroidImportance.HIGH,
     visibility: AndroidVisibility.PRIVATE,
+    sound: 'default',
+    vibration: true,
+    vibrationPattern: [300, 500],
   });
 }
+
+const reminderAlarmManager = {
+  type: AlarmType.SET_AND_ALLOW_WHILE_IDLE,
+} as const;
+
+const androidReminderOptions = (channelId: string) => ({
+  channelId,
+  importance: AndroidImportance.HIGH,
+  visibility: AndroidVisibility.PRIVATE,
+  pressAction: { id: 'default' },
+  // Sound/vibration here cover Android 7.x; Android 8+ uses the channel above.
+  sound: 'default',
+  vibrationPattern: [300, 500],
+});
 
 async function hasPermission(): Promise<boolean> {
   const settings = await notifee.getNotificationSettings();
@@ -249,6 +268,20 @@ export const nextWeeklyReminderTimestamp = (
   return fireDate.getTime();
 };
 
+export const nextCategoryReminderTimestamp = (
+  now: Date,
+  days: string,
+  hour: number,
+  minute: number,
+): number | null => {
+  const timestamps = Array.from({ length: 7 }, (_, dayIndex) => dayIndex)
+    .filter(dayIndex => days[dayIndex] === '1')
+    .map(dayIndex =>
+      nextWeeklyReminderTimestamp(now, dayIndex, hour, minute),
+    );
+  return timestamps.length > 0 ? Math.min(...timestamps) : null;
+};
+
 const cancelCategoryReminderTriggers = async (
   category: ReminderCategory,
 ): Promise<void> => {
@@ -281,10 +314,7 @@ const createCategoryReminderTriggers = async (
           category: setting.category,
         },
         android: {
-          channelId,
-          importance: AndroidImportance.HIGH,
-          visibility: AndroidVisibility.PRIVATE,
-          pressAction: { id: 'default' },
+          ...androidReminderOptions(channelId),
         },
         ios: { sound: 'default' },
       },
@@ -297,6 +327,7 @@ const createCategoryReminderTriggers = async (
           setting.minute,
         ),
         repeatFrequency: RepeatFrequency.WEEKLY,
+        alarmManager: reminderAlarmManager,
       },
     );
   }
@@ -396,27 +427,18 @@ const rescheduleCategoryReminders = async (days: string): Promise<void> => {
 const minutesOfDay = (hour: number, minute: number): number =>
   hour * 60 + minute;
 
-const clampToNotificationWindow = (
+export const nextActionReminderDate = (
+  date: string,
   hour: number,
   minute: number,
-): { hour: number; minute: number } => {
-  const profile = useUserStore.getState().profile;
-  const from = minutesOfDay(
-    profile.notifTimeFromHour ?? 9,
-    profile.notifTimeFromMinute ?? 0,
-  );
-  const to = minutesOfDay(
-    profile.notifTimeToHour ?? 21,
-    profile.notifTimeToMinute ?? 0,
-  );
-  const requested = minutesOfDay(hour, minute);
-  if (requested >= from && requested <= to) {
-    return { hour, minute };
+  now = new Date(),
+): Date => {
+  const fireDate = new Date(`${date}T00:00:00`);
+  fireDate.setHours(hour, minute, 0, 0);
+  if (fireDate.getTime() <= now.getTime()) {
+    fireDate.setDate(fireDate.getDate() + 1);
   }
-  return {
-    hour: Math.floor(from / 60),
-    minute: from % 60,
-  };
+  return fireDate;
 };
 
 export async function scheduleActionReminder({
@@ -437,17 +459,7 @@ export async function scheduleActionReminder({
   scheduledFor: string;
 }> {
   const notificationId = actionReminderId(date, actionKey);
-  const allowedTime = clampToNotificationWindow(hour, minute);
-  const fireDate = new Date(`${date}T00:00:00`);
-  fireDate.setHours(
-    allowedTime.hour,
-    allowedTime.minute,
-    0,
-    0,
-  );
-  if (fireDate.getTime() <= Date.now()) {
-    fireDate.setDate(fireDate.getDate() + 1);
-  }
+  const fireDate = nextActionReminderDate(date, hour, minute);
 
   try {
     if (!(await requestReminderPermission())) {
@@ -471,16 +483,14 @@ export async function scheduleActionReminder({
           actionKey,
         },
         android: {
-          channelId,
-          importance: AndroidImportance.HIGH,
-          visibility: AndroidVisibility.PRIVATE,
-          pressAction: { id: 'default' },
+          ...androidReminderOptions(channelId),
         },
         ios: { sound: 'default' },
       },
       {
         type: TriggerType.TIMESTAMP,
         timestamp: fireDate.getTime(),
+        alarmManager: reminderAlarmManager,
       },
     );
     return {
@@ -562,16 +572,14 @@ export async function scheduleRestTimerNotification({
           actionKey,
         },
         android: {
-          channelId,
-          importance: AndroidImportance.HIGH,
-          visibility: AndroidVisibility.PRIVATE,
-          pressAction: { id: 'default' },
+          ...androidReminderOptions(channelId),
         },
         ios: { sound: 'default' },
       },
       {
         type: TriggerType.TIMESTAMP,
         timestamp: new Date(endsAt).getTime(),
+        alarmManager: reminderAlarmManager,
       },
     );
     return 'scheduled';

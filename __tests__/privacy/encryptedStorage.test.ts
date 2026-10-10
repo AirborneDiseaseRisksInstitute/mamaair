@@ -2,6 +2,8 @@ import * as Keychain from 'react-native-keychain';
 import { createMMKV, existsMMKV } from 'react-native-mmkv';
 import * as storageModule from '../../src/services/storage/EncryptedStorage';
 
+const MIGRATION_KEY = '__mamaair_secure_storage_migrated_v1';
+
 const keychainMock = Keychain as jest.Mocked<typeof Keychain> & {
   __credentials: Map<
     string,
@@ -75,5 +77,52 @@ describe('encrypted MMKV bootstrap', () => {
       storageModule.initializeEncryptedStorage({ forceInTest: true }),
     ).rejects.toThrow('secure storage key is unavailable');
     expect(keychainMock.setGenericPassword).not.toHaveBeenCalled();
+  });
+
+  it('reopens storage created on a fresh install after a process restart', async () => {
+    await storageModule.initializeEncryptedStorage({ forceInTest: true });
+    const encryptedStorage = storageModule.createEncryptedMMKV();
+    encryptedStorage.set('user_email', 'person@example.com');
+
+    storageModule.__resetEncryptedStorageForTests();
+
+    await expect(
+      storageModule.initializeEncryptedStorage({ forceInTest: true }),
+    ).resolves.toBeUndefined();
+    expect(storageModule.createEncryptedMMKV().getString('user_email')).toBe(
+      'person@example.com',
+    );
+  });
+
+  it('repairs verified secure-only storage created before the marker fix', async () => {
+    await storageModule.initializeEncryptedStorage({ forceInTest: true });
+    const encryptedStorage = storageModule.createEncryptedMMKV();
+    encryptedStorage.set('user_email', 'person@example.com');
+    encryptedStorage.remove(MIGRATION_KEY);
+
+    storageModule.__resetEncryptedStorageForTests();
+
+    await expect(
+      storageModule.initializeEncryptedStorage({ forceInTest: true }),
+    ).resolves.toBeUndefined();
+    const reopenedStorage = storageModule.createEncryptedMMKV();
+    expect(reopenedStorage.getBoolean(MIGRATION_KEY)).toBe(true);
+    expect(reopenedStorage.getString('user_email')).toBe('person@example.com');
+  });
+
+  it('clears application data without deleting secure storage metadata', async () => {
+    await storageModule.initializeEncryptedStorage({ forceInTest: true });
+    const encryptedStorage = storageModule.createEncryptedMMKV();
+    encryptedStorage.set('user_email', 'person@example.com');
+
+    storageModule.clearEncryptedMMKVData(encryptedStorage);
+
+    expect(encryptedStorage.getString('user_email')).toBeUndefined();
+    expect(encryptedStorage.getBoolean(MIGRATION_KEY)).toBe(true);
+
+    storageModule.__resetEncryptedStorageForTests();
+    await expect(
+      storageModule.initializeEncryptedStorage({ forceInTest: true }),
+    ).resolves.toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@
 
 Audit date: 2026-10-06
 Package: `africa.mamaair.mobile`
-Current Android version: `versionCode 31`, `versionName 3.2`
+Current Android version: `versionCode 32`, `versionName 3.2.1`
 Current status: **NO-GO for production upload**
 
 Release scope: **Android / Google Play only.** iOS build, signing, CocoaPods,
@@ -105,15 +105,20 @@ debug-signed artifact from being mistaken for a production release.
    - Publish both pages under the MamaAir domain and ensure wording matches the
      app, backend retention, HERE processing, Google sign-in, and avatar service.
 
-3. **Upload signing key is not configured**
-   - Create a dedicated upload key, store it in the organisation's password/
-     secrets manager, and back it up separately.
-   - Put the following values in the release machine's user Gradle properties,
-     never in this repository: `MYAPP_UPLOAD_STORE_FILE`,
+3. **Upload signing key backup is not complete**
+   - A dedicated RSA-4096 upload key has been generated locally and its
+     password is stored outside the repository in the macOS Keychain.
+     Its certificate SHA-1 is
+     `4F:ED:AA:0B:0C:CC:37:AB:82:4F:2F:4B:C3:6D:76:4C:7A:0A:2D:FE` and SHA-256
+     is `8C:4F:4B:D5:F9:1F:F5:74:18:B6:59:A1:06:4D:E8:DA:56:29:56:23:D8:63:A1:1A:F8:CA:39:81:C4:DD:C9:A4`.
+   - Back up the keystore and password separately in the organisation's
+     password/secrets manager before relying on this machine for future updates.
+   - Put the following values in the release machine's user Gradle properties
+     or environment, never in this repository: `MYAPP_UPLOAD_STORE_FILE`,
      `MYAPP_UPLOAD_STORE_PASSWORD`, `MYAPP_UPLOAD_KEY_ALIAS`, and
      `MYAPP_UPLOAD_KEY_PASSWORD`.
-   - Enrol in Play App Signing. Keep the upload key separate from the Google-
-     managed app-signing key.
+   - Enrol in Play App Signing. Keep this upload key separate from the Google-
+     managed app-signing key and register both certificates with Firebase.
 
 4. **Production backend acceptance is not complete**
    - Test email registration and verification, password reset, Google sign-in,
@@ -123,23 +128,21 @@ debug-signed artifact from being mistaken for a production release.
    - Confirm deletion removes server-side data and document any legally required
      retention exception in the public deletion page and privacy policy.
 
-5. **Google Sign-In is not registered for the final Android package**
-   - The app now builds as `africa.mamaair.mobile`, but the checked-in
-     `android/app/google-services.json` was issued for `com.mamaair`. Do not
-     manually edit that generated file: its Android OAuth client IDs remain
-     registered to the old package. The Google Services Gradle plugin consumes
-     this file and currently blocks the Android build at
-     `:app:processDebugGoogleServices`.
-   - In Google Cloud/Firebase Console, create an Android OAuth client for
-     `africa.mamaair.mobile`. Register the debug certificate for local testing,
-     the organisation upload certificate, and the Google Play App Signing
-     certificate, including both SHA-1 and SHA-256 where the console supports
-     them. The current debug certificate SHA-1 is
+5. **Google Sign-In production credentials are not complete**
+   - The checked-in Android Firebase configuration now targets the
+     `mamaair-diaqnostic` project and includes an Android OAuth client for
+     `africa.mamaair.mobile` with both the local debug certificate and the
+     Google Play App Signing certificate.
+   - The Play App Signing certificate SHA-1 is
+     `EA:99:82:B9:57:AF:F2:B0:4D:BE:A4:E6:5C:5E:FE:44:49:BD:C0:3C` and SHA-256
+     is `69:B9:EB:0E:44:40:60:EC:F1:52:40:4B:F7:CF:CA:9F:81:28:6E:5B:EC:65:EF:AB:1C:E6:38:18:2C:D0:C1:A0`.
+     The current debug certificate SHA-1 is
      `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25` and SHA-256
      is `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`.
-   - Keep the existing Web OAuth client ID as the ID-token audience unless the
-     OAuth project is intentionally changed. Replace `google-services.json`
-     with a newly downloaded file containing the final package.
+   - Complete one real sign-in through a Google Play Internal Testing install
+     after backend acceptance for the new Web OAuth audience is deployed. Keep
+     the previous audience during the rollout so older clients and the
+     not-yet-migrated iOS app continue to work.
 
 6. **Health/legal sign-off is missing**
    - A qualified owner must approve the pregnancy, symptom, environmental-risk,

@@ -20,10 +20,12 @@ import { useTranslation } from 'react-i18next';
 import {
   cancelCategoryReminder,
   getCategoryReminderSettings,
+  nextCategoryReminderTimestamp,
   scheduleCategoryReminder,
   type ReminderCategory,
 } from '../services/NotificationService';
 import { useUserStore } from '../store/useUserStore';
+import { formatReminderConfirmation } from '../utils/reminderTime';
 
 interface RemindersScreenProps {
   onBack?: () => void;
@@ -167,9 +169,20 @@ export const RemindersScreen: React.FC<RemindersScreenProps> = ({ onBack }) => {
     showToast({
       type: 'success',
       title: titleForToast,
-      message: t('today.reminder_set', {
-        time,
-      }),
+      message: (() => {
+        const scheduledAt = nextCategoryReminderTimestamp(
+          new Date(),
+          notificationDays,
+          hour,
+          minute,
+        );
+        return scheduledAt
+          ? formatReminderConfirmation(
+              new Date(scheduledAt).toISOString(),
+              time,
+            )
+          : t('today.reminder_set', { time });
+      })(),
     });
   };
 

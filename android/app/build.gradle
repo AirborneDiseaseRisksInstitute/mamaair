@@ -79,9 +79,14 @@ def releaseSigningProperties = [
     'MYAPP_UPLOAD_KEY_ALIAS',
     'MYAPP_UPLOAD_KEY_PASSWORD',
 ]
-def releaseSigningConfigured = releaseSigningProperties.every { propertyName ->
-    project.hasProperty(propertyName) && project.property(propertyName).toString().trim()
+def releaseSigningValues = releaseSigningProperties.collectEntries { propertyName ->
+    def value = project.findProperty(propertyName)?.toString()?.trim()
+    if (!value) {
+        value = System.getenv(propertyName)?.trim()
+    }
+    [(propertyName): value]
 }
+def releaseSigningConfigured = releaseSigningValues.values().every { it }
 
 def sharedFontsDir = file("../../src/assets/fonts/M_PLUS_Rounded_1c/ttf")
 def generatedFontsAssetsDir = layout.buildDirectory.dir("generated/mamaairFonts")
@@ -112,8 +117,8 @@ android {
         applicationId "africa.mamaair.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 31
-        versionName "3.2"
+        versionCode 32
+        versionName "3.2.1"
         manifestPlaceholders = [usesCleartextTraffic: false]
     }
     signingConfigs {
@@ -125,10 +130,10 @@ android {
         }
         if (releaseSigningConfigured) {
             release {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+                storeFile file(releaseSigningValues.MYAPP_UPLOAD_STORE_FILE)
+                storePassword releaseSigningValues.MYAPP_UPLOAD_STORE_PASSWORD
+                keyAlias releaseSigningValues.MYAPP_UPLOAD_KEY_ALIAS
+                keyPassword releaseSigningValues.MYAPP_UPLOAD_KEY_PASSWORD
             }
         }
     }

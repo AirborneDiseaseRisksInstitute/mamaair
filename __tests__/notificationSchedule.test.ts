@@ -21,6 +21,7 @@ jest.mock('@notifee/react-native', () => ({
     requestPermission: mockRequestPermission,
   },
   TriggerType: { TIMESTAMP: 0 },
+  AlarmType: { SET_AND_ALLOW_WHILE_IDLE: 1 },
   RepeatFrequency: { WEEKLY: 1 },
   AndroidImportance: { HIGH: 4 },
   AndroidVisibility: { PRIVATE: 0 },
@@ -46,16 +47,22 @@ type NotificationServiceModule = typeof import('../src/services/NotificationServ
 
 let cancelCategoryReminder: NotificationServiceModule['cancelCategoryReminder'];
 let getCategoryReminderSettings: NotificationServiceModule['getCategoryReminderSettings'];
+let nextCategoryReminderTimestamp: NotificationServiceModule['nextCategoryReminderTimestamp'];
 let nextWeeklyReminderTimestamp: NotificationServiceModule['nextWeeklyReminderTimestamp'];
+let nextActionReminderDate: NotificationServiceModule['nextActionReminderDate'];
 let scheduleCategoryReminder: NotificationServiceModule['scheduleCategoryReminder'];
+let scheduleActionReminder: NotificationServiceModule['scheduleActionReminder'];
 
 describe('local notification scheduling', () => {
   beforeAll(() => {
     const service = require('../src/services/NotificationService') as NotificationServiceModule;
     cancelCategoryReminder = service.cancelCategoryReminder;
     getCategoryReminderSettings = service.getCategoryReminderSettings;
+    nextCategoryReminderTimestamp = service.nextCategoryReminderTimestamp;
     nextWeeklyReminderTimestamp = service.nextWeeklyReminderTimestamp;
+    nextActionReminderDate = service.nextActionReminderDate;
     scheduleCategoryReminder = service.scheduleCategoryReminder;
+    scheduleActionReminder = service.scheduleActionReminder;
   });
 
   beforeEach(() => {
@@ -95,6 +102,24 @@ describe('local notification scheduling', () => {
     expect(scheduled.getMinutes()).toBe(15);
   });
 
+  it('finds the next enabled category reminder for relative feedback', () => {
+    const now = new Date(2026, 8, 10, 10, 30, 0);
+    const today = now.getDay();
+    const tomorrow = (today + 1) % 7;
+    const days = Array.from({ length: 7 }, () => '0');
+    days[today] = '1';
+    days[tomorrow] = '1';
+
+    const timestamp = nextCategoryReminderTimestamp(
+      now,
+      days.join(''),
+      11,
+      0,
+    );
+
+    expect(timestamp).toBe(new Date(2026, 8, 10, 11, 0, 0).getTime());
+  });
+
   it('keeps today when the selected time is still ahead', () => {
     const now = new Date(2026, 8, 10, 10, 30, 0);
     const timestamp = nextWeeklyReminderTimestamp(
@@ -108,6 +133,58 @@ describe('local notification scheduling', () => {
     expect(scheduled.getDate()).toBe(now.getDate());
     expect(scheduled.getHours()).toBe(18);
     expect(scheduled.getMinutes()).toBe(45);
+  });
+
+  it('keeps an action reminder at the explicitly requested time', () => {
+    const now = new Date(2026, 8, 10, 10, 30, 0);
+    const scheduled = nextActionReminderDate('2026-09-10', 22, 15, now);
+
+    expect(scheduled.getDate()).toBe(now.getDate());
+    expect(scheduled.getHours()).toBe(22);
+    expect(scheduled.getMinutes()).toBe(15);
+  });
+
+  it('moves a passed action reminder to tomorrow at the requested time', () => {
+    const now = new Date(2026, 8, 10, 22, 30, 0);
+    const scheduled = nextActionReminderDate('2026-09-10', 21, 15, now);
+
+    expect(scheduled.getDate()).toBe(now.getDate() + 1);
+    expect(scheduled.getHours()).toBe(21);
+    expect(scheduled.getMinutes()).toBe(15);
+  });
+
+  it('uses an audible channel and AlarmManager for action reminders', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 8, 10, 10, 30, 0));
+
+    try {
+      const result = await scheduleActionReminder({
+        date: '2026-09-10',
+        actionKey: 'drink-water',
+        title: 'Drink water',
+        hour: 11,
+        minute: 30,
+      });
+
+      expect(result.status).toBe('scheduled');
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'mamaair_reminders_v2',
+          sound: 'default',
+          vibration: true,
+        }),
+      );
+      expect(mockCreateTriggerNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          android: expect.objectContaining({ sound: 'default' }),
+        }),
+        expect.objectContaining({
+          timestamp: new Date(2026, 8, 10, 11, 30, 0).getTime(),
+          alarmManager: { type: 1 },
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('persists a wellbeing reminder and creates one weekly trigger per selected day', async () => {
