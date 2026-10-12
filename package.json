@@ -1,7 +1,17 @@
 {
   "name": "MamaAir",
-  "version": "3.2.0",
+  "version": "3.2.1",
+  "description": "Pregnancy wellbeing and environmental guidance for everyday life.",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AirborneDiseaseRisksInstitute/mamaair.git"
+  },
+  "homepage": "https://mamaair.africa",
+  "bugs": {
+    "url": "https://github.com/AirborneDiseaseRisksInstitute/mamaair/issues"
+  },
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",

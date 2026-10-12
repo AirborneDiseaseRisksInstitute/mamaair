@@ -5,7 +5,7 @@ privacy, and clarity expected from a pregnancy wellbeing application.
 
 ## Development workflow
 
-1. Branch from `develop` and keep each pull request focused.
+1. Branch from `master` and keep each pull request focused.
 2. Install the locked dependency tree with `npm ci`.
 3. Follow the existing TypeScript, component, service, and localization patterns.
 4. Run `npm run verify` before opening a pull request.

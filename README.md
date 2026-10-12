@@ -16,11 +16,13 @@
   <a href="https://github.com/MamaAir/mamaair-kenya-public-dataset">Public research dataset</a>
   ·
   <a href="CONTRIBUTING.md">Contributing</a>
+  ·
+  <a href="LICENSE">MIT License</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/AirborneDiseaseRisksInstitute/mamaair/actions/workflows/ci.yml">
-    <img src="https://github.com/AirborneDiseaseRisksInstitute/mamaair/actions/workflows/ci.yml/badge.svg?branch=develop" alt="CI status" />
+    <img src="https://github.com/AirborneDiseaseRisksInstitute/mamaair/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI status" />
   </a>
 </p>
 
@@ -47,19 +49,21 @@ professional.
 
 ## Project status
 
-MamaAir is under active development and is currently at version **v3.2**.
+MamaAir is under active development and is currently at version **v3.2.1**.
 Android is the current release target; iOS project files are maintained for
-development but are not part of the current release scope. The `develop`
-branch is the active integration branch.
+development but are not part of the current release scope. The `master`
+branch is the integration and release branch; work is developed on short-lived
+branches and should be merged through pull requests.
 
 ### Android version history
 
-| Date        | Version  |  Build | Status              | Highlights                                                                                      |
-| ----------- | -------- | -----: | ------------------- | ----------------------------------------------------------------------------------------------- |
-| 2025 Q3     | v1.0     |      1 | Internal test       | First Android testing line.                                                                     |
-| 2025 Q4     | v2.0     |     12 | Internal test       | Early pregnancy journey and tracking iterations.                                                |
-| 27 May 2026 | v3.0     |     30 | Internal test       | Stable tracking, local persistence, daily actions, notifications, and guidance updates.         |
-| 8 Aug 2026  | **v3.2** | **31** | **Current version** | Expanded backend integrations, personalized Daily Plans, and production-readiness improvements. |
+| Date        | Version    |  Build | Status              | Highlights                                                                                       |
+| ----------- | ---------- | -----: | ------------------- | ------------------------------------------------------------------------------------------------ |
+| 2025 Q3     | v1.0       |      1 | Internal test       | First Android testing line.                                                                      |
+| 2025 Q4     | v2.0       |     12 | Internal test       | Early pregnancy journey and tracking iterations.                                                 |
+| 27 May 2026 | v3.0       |     30 | Internal test       | Stable tracking, local persistence, daily actions, notifications, and guidance updates.          |
+| 8 Aug 2026  | v3.2       |     31 | Internal test       | Expanded backend integrations, personalized Daily Plans, and production-readiness improvements.  |
+| 12 Oct 2026 | **v3.2.1** | **32** | **Current version** | More reliable sign-in persistence, reminders, day rollover, privacy controls, and release tests. |
 
 ## Technical overview
 
@@ -223,3 +227,7 @@ must be assessed separately.
   and API restrictions in the provider console.
 - Report suspected vulnerabilities through the private process in
   [`SECURITY.md`](SECURITY.md), not a public issue.
+
+## License
+
+MamaAir is available under the [MIT License](LICENSE).
