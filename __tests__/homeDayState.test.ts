@@ -1,9 +1,62 @@
 import {
+  getHomeWeekDateKeys,
+  getMondayBasedDayIndex,
   HOME_CARE_ICONS,
   resolveHomeActiveWeek,
   resolveHomeCareIcons,
   resolveHomeDayState,
 } from '../src/utils/homeDayState';
+
+describe('Home calendar week mapping', () => {
+  it('uses local Monday-to-Sunday dates for the active week', () => {
+    const sunday = new Date(2026, 8, 27, 23, 59);
+
+    expect(getMondayBasedDayIndex(sunday)).toBe(6);
+    expect(
+      getHomeWeekDateKeys({
+        today: sunday,
+        activeWeek: 20,
+        weekNumber: 20,
+      }),
+    ).toEqual([
+      '2026-09-21',
+      '2026-09-22',
+      '2026-09-23',
+      '2026-09-24',
+      '2026-09-25',
+      '2026-09-26',
+      '2026-09-27',
+    ]);
+  });
+
+  it('moves the completed Sunday into the previous row after Monday begins', () => {
+    const monday = new Date(2026, 8, 28, 0, 1);
+
+    expect(getMondayBasedDayIndex(monday)).toBe(0);
+    expect(
+      getHomeWeekDateKeys({
+        today: monday,
+        activeWeek: 20,
+        weekNumber: 19,
+      }),
+    ).toEqual([
+      '2026-09-21',
+      '2026-09-22',
+      '2026-09-23',
+      '2026-09-24',
+      '2026-09-25',
+      '2026-09-26',
+      '2026-09-27',
+    ]);
+    expect(
+      getHomeWeekDateKeys({
+        today: monday,
+        activeWeek: 20,
+        weekNumber: 20,
+      })[0],
+    ).toBe('2026-09-28');
+  });
+});
 
 describe('Home care domains', () => {
   it('shows all four care categories in every day row', () => {

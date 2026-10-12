@@ -51,4 +51,12 @@ describe('legal documents', () => {
       visibleCopy.filter(text => visibleTerminologyPattern.test(text)),
     ).toEqual([]);
   });
+
+  it('does not claim that names are sent to an avatar-generation service', () => {
+    for (const documents of Object.values(legalDocuments)) {
+      expect(documents.privacy.sections[4].body).not.toMatch(
+        /avatar|génération d.avatar|picha ya wasifu/i,
+      );
+    }
+  });
 });

@@ -1,6 +1,6 @@
 # Google Play Release Readiness
 
-Audit date: 2026-10-06
+Audit date: 2026-10-10
 Package: `africa.mamaair.mobile`
 Current Android version: `versionCode 32`, `versionName 3.2.1`
 Current status: **NO-GO for production upload**
@@ -51,26 +51,38 @@ not submit to production until every item under "Release blockers" is closed.
 - Privacy Policy and Terms text are reachable in the app from authentication,
   consent, settings, and privacy screens.
 - Location access is preceded by an in-app explanation and is user initiated.
+- The adults-only policy is enforced across onboarding, profile editing,
+  restored-session routing, and plan readiness using the local calendar date.
+- Local profile photos remain on the device. Existing Google/backend avatar
+  URLs are preserved, but the app no longer sends a user's name to an external
+  avatar-generation service.
 - The old forced three-second ad interruption is not used. Ads are inline in
   Today after Daily Plan.
 
 ## Last local verification
 
-Verified on 2026-10-06 without Play Console credentials or a release signing
-key:
+Verified on 2026-10-10 without Play Console access; release-signing secrets
+were deliberately not loaded into the verification shell:
 
-- `npm run verify`: TypeScript and ESLint completed with zero errors; all 142
-  Jest suites and 613 tests passed. ESLint reports 39 non-blocking warnings.
-- A production Android Metro bundle completed successfully with the encrypted
-  storage bootstrap and secure-random native module included.
-- `:app:assembleDebug` reaches Google Services processing, then stops because
-  the checked-in `google-services.json` has no client for the new
-  `africa.mamaair.mobile` package. This replaces the previous successful-build
-  result and must be resolved by downloading the correctly registered file.
+- `npm run verify`: TypeScript and ESLint completed with zero errors; all 92
+  Jest suites and 403 tests passed. ESLint reports 39 non-blocking warnings.
+- A production-mode Android Metro bundle completed successfully after the
+  adults-only and avatar-privacy changes.
+- Real Google sign-in succeeded on the debug-signed emulator using the checked-
+  in Firebase configuration. The authenticated Home screen returned after two
+  consecutive force-stop/cold-start cycles, with no secure-storage recovery
+  screen or Android crash.
+- The encrypted-storage lifecycle smoke test is available in fresh-install and
+  authenticated-session modes. Fresh mode is restricted to disposable Android
+  emulators; session mode preserves the Play-installed app and its data.
 - CocoaPods verification is blocked on this machine because `Gemfile.lock`
   requires Bundler 4.0.2 while the system Ruby only provides Bundler 1.17.2.
 - `:app:lintRelease`: passed with 0 errors and 10 warnings; no `Aligned16KB`,
   adaptive-icon, or launcher-shape finding.
+- The standalone `3.2.1` / version-code `32` APK contains its Metro bundle,
+  passes `apksigner verify`, and is signed by the intended RSA-4096 MamaAir
+  upload certificate. Its SHA-256 is
+  `de18a348fcc422cf617961e9ccf1f7de4b72d5c237ab4c714a51c85204f9e934`.
 - `:app:mergeReleaseNativeLibs`: passed; direct `objdump` inspection found all
   20 arm64 ELF libraries aligned to at least `2^14` and no failures.
 - `npm audit --omit=dev` currently reports 34 dependency-tree advisories (5
@@ -78,12 +90,13 @@ key:
   tooling plus Reanimated/Worklets. Suggested automatic remediations include
   incompatible major-version changes, so they have not been applied as part
   of this privacy phase.
-- `:app:bundleRelease` without signing secrets: rejected immediately with the
-  intended release-signing guard; no unsigned or debug-signed AAB was emitted.
+- `:app:assembleRelease` without signing secrets: rejected immediately with the
+  intended release-signing guard; no unsigned or debug-signed APK was emitted.
 
-The signed release AAB is deliberately not generated until the organisation's
-upload key is created and configured. The Gradle release guard prevents a
-debug-signed artifact from being mistaken for a production release.
+Generate the next signed release AAB only from the final verified source with
+the organisation's upload-key secrets injected into that build environment.
+The Gradle release guard prevents a debug-signed artifact from being mistaken
+for a production release.
 
 ## Release blockers
 
@@ -103,7 +116,7 @@ debug-signed artifact from being mistaken for a production release.
      path where a user can request account and data deletion without reinstalling
      the app. The website root alone is not sufficient.
    - Publish both pages under the MamaAir domain and ensure wording matches the
-     app, backend retention, HERE processing, Google sign-in, and avatar service.
+     app, backend retention, HERE processing, and Google sign-in.
 
 3. **Upload signing key backup is not complete**
    - A dedicated RSA-4096 upload key has been generated locally and its
@@ -211,7 +224,7 @@ Complete these before the first Closed testing release:
 
 | Play data type | Current evidence | Collection/use to declare |
 | --- | --- | --- |
-| Name | Profile and Google sign-in; name may be sent to `ui-avatars.com` | Account management, app functionality, personalisation; confirm whether avatar processing counts as sharing under the provider contract |
+| Name | Profile and Google sign-in; no longer sent to an external avatar-generation service | Account management, app functionality and personalisation |
 | Email address | Email/Google authentication and profile | Account management, authentication, app functionality |
 | User IDs | Backend user ID, access/refresh session | Account management and security |
 | Precise and approximate location | Fine/coarse permissions, local queue, MamaAir movement upload, HERE reverse geocoding | App functionality and personalisation; sharing classification for HERE depends on the service-provider relationship |
@@ -265,10 +278,25 @@ Before upload:
 - Verify the AAB certificate is the intended upload certificate.
 - Re-run Android Studio APK Analyzer / the official ELF alignment check and
   confirm every `arm64-v8a` library is 16 KB compatible.
+- Install the standalone release APK on an emulator and exercise the exact
+  encrypted-storage cold-start lifecycle:
+
+  ```sh
+  npm run android:smoke:secure-storage:fresh -- \
+    --apk android/app/build/outputs/apk/release/app-release.apk
+  ```
+
+  Fresh mode is intentionally restricted to emulators because it uninstalls
+  the package and deletes its app data.
 - Upload first to Internal testing, not Production.
 - Download a Play-generated APK from App Bundle Explorer and smoke-test it on
   at least Android 7, Android 13, Android 15/16, a small phone, and a 16 KB
   page-size environment.
+- On an Internal testing installation, sign in with the durable release-test
+  account, then run `npm run android:smoke:secure-storage:session`. Confirm the
+  automated check passes and the app returns to the authenticated destination
+  after both force-stop/relaunch cycles. This mode preserves installed data and
+  does not replace the Play-delivered APK.
 
 ## Official references
 

@@ -138,7 +138,11 @@ jest.mock('../src/components/ui', () => {
         { testID: 'save-profile', onPress, disabled },
         ReactModule.createElement(NativeText, null, title),
       ),
-    DatePicker: () => null,
+    DatePicker: (props: any) =>
+      ReactModule.createElement(NativeView, {
+        ...props,
+        testID: 'profile-birthday-picker',
+      }),
     Dropdown: () => null,
     HeightWeightPicker: () => null,
     Input: ({ type, value, onChangeText }: any) =>
@@ -184,6 +188,7 @@ const changeName = (renderer: TestRenderer.ReactTestRenderer) => {
 describe('ProfileEditSheet save lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockProfile.birthday = '1994-06-12';
     mockSaveProfileEditPayloads.mockResolvedValue(saved);
   });
 
@@ -282,5 +287,30 @@ describe('ProfileEditSheet save lifecycle', () => {
       finishSave?.();
       await Promise.resolve();
     });
+  });
+
+  it('prevents an underage date of birth from being saved', async () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <ProfileEditSheet visible section="birthday" onClose={mockOnClose} />,
+      );
+    });
+
+    const picker = renderer!.root.findByProps({
+      testID: 'profile-birthday-picker',
+    });
+    const underageDate = new Date();
+    underageDate.setFullYear(underageDate.getFullYear() - 17);
+
+    act(() => picker.props.onConfirm(underageDate));
+
+    expect(
+      renderer!.root.findByProps({ testID: 'save-profile' }).props.disabled,
+    ).toBe(true);
+    expect(
+      renderer!.root.findAllByType(Text).map(node => node.props.children),
+    ).toContain('profile.age_requirement');
+    expect(mockSaveProfileEditPayloads).not.toHaveBeenCalled();
   });
 });

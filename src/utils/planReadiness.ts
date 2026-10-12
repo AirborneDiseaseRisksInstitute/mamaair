@@ -5,6 +5,7 @@ import type {
   PlanInputReadiness,
   PlanProfileStep,
 } from '../types/recommendationExperience';
+import { isEligibleAdultBirthDate } from './ageEligibility';
 
 export type { PlanInputReadiness, PlanProfileStep };
 
@@ -21,7 +22,7 @@ export const PLAN_PROFILE_REQUIREMENTS: PlanProfileRequirement[] = [
   {
     screen: 'IntroStep03',
     isComplete: profile =>
-      hasText(profile.birthday) &&
+      isEligibleAdultBirthDate(profile.birthday) &&
       isPositiveNumber(profile.height) &&
       isPositiveNumber(profile.weight),
   },

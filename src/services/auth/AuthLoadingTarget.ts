@@ -1,4 +1,5 @@
 import type { UserProfile } from '../../store/useUserStore';
+import { isEligibleAdultBirthDate } from '../../utils/ageEligibility';
 
 export type AuthLoadingTarget = 'Home' | 'Intro' | 'ConsentHome' | 'Auth';
 type CachedAuthLoadingTarget = Extract<
@@ -8,6 +9,7 @@ type CachedAuthLoadingTarget = Extract<
 type AuthLoadingProfile = Pick<
   UserProfile,
   | 'backendUserId'
+  | 'birthday'
   | 'pregnancyWeek'
   | 'pregnancyWeekConfirmed'
   | 'timezone'
@@ -23,7 +25,8 @@ export const resolveCompletedProfileTarget = (
   profile: AuthLoadingProfile,
 ): CachedAuthLoadingTarget | null => {
   const isOnboardingComplete = Boolean(
-    profile.pregnancyWeek &&
+    isEligibleAdultBirthDate(profile.birthday) &&
+      profile.pregnancyWeek &&
       profile.pregnancyWeekConfirmed &&
       profile.timezone &&
       profile.timeSpent &&

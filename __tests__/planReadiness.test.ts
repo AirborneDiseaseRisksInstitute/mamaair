@@ -82,6 +82,13 @@ describe('plan input readiness', () => {
     expect(nextMissingPlanProfileStep(profile, 'IntroStep07')).toBeNull();
   });
 
+  it('treats an underage birth date as incomplete profile data', () => {
+    const profile = completeProfile();
+    profile.birthday = '2999-01-01';
+
+    expect(missingPlanProfileSteps(profile)).toContain('IntroStep03');
+  });
+
   it('accepts an intentionally empty full check-in', () => {
     expect(isCheckInReadyForPlan(completeCheckIn())).toBe(true);
   });

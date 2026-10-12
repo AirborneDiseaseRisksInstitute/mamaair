@@ -15,6 +15,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
 import { IconProp } from '@fortawesome/fontawesome-svg-core';
 import { ms, vs } from '../../utils/responsive';
+import { formatLocalDate } from '../../utils/dateUtils';
 
 interface DatePickerProps {
   visible: boolean;
@@ -22,7 +23,44 @@ interface DatePickerProps {
   onConfirm: (date: Date) => void;
   initialDate?: Date;
   title?: string;
+  minimumDate?: Date;
+  maximumDate?: Date;
 }
+
+const atStartOfLocalDay = (date: Date): Date =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const clampDate = (
+  date: Date,
+  minimumDate?: Date,
+  maximumDate?: Date,
+): Date => {
+  const localDate = atStartOfLocalDay(date);
+  if (minimumDate && localDate < minimumDate) return new Date(minimumDate);
+  if (maximumDate && localDate > maximumDate) return new Date(maximumDate);
+  return localDate;
+};
+
+const isDateInRange = (
+  date: Date,
+  minimumDate?: Date,
+  maximumDate?: Date,
+): boolean =>
+  (!minimumDate || date >= minimumDate) &&
+  (!maximumDate || date <= maximumDate);
+
+const monthIntersectsRange = (
+  date: Date,
+  minimumDate?: Date,
+  maximumDate?: Date,
+): boolean => {
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  return (
+    (!minimumDate || lastDay >= minimumDate) &&
+    (!maximumDate || firstDay <= maximumDate)
+  );
+};
 
 export const DatePicker: React.FC<DatePickerProps> = ({
   visible,
@@ -30,6 +68,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   onConfirm,
   initialDate,
   title,
+  minimumDate,
+  maximumDate,
 }) => {
   const theme = useTheme();
   const { t, i18n } = useTranslation();
@@ -38,32 +78,37 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     : i18n.resolvedLanguage === 'sw'
       ? 'sw-KE'
       : 'en-US';
-  const [selectedDate, setSelectedDate] = useState<Date>(() => {
-    return initialDate ? new Date(initialDate) : new Date();
-  });
-  const selectedDateRef = useRef<Date>(initialDate || new Date());
+  const minimumDateTime = minimumDate?.getTime() ?? null;
+  const maximumDateTime = maximumDate?.getTime() ?? null;
+  const initialDateTime = initialDate?.getTime() ?? null;
+  const minimumBound = minimumDateTime === null
+    ? undefined
+    : atStartOfLocalDay(new Date(minimumDateTime));
+  const maximumBound = maximumDateTime === null
+    ? undefined
+    : atStartOfLocalDay(new Date(maximumDateTime));
+  const initialSelection = () =>
+    clampDate(
+      initialDateTime === null ? new Date() : new Date(initialDateTime),
+      minimumBound,
+      maximumBound,
+    );
+  const [selectedDate, setSelectedDate] = useState<Date>(initialSelection);
+  const selectedDateRef = useRef<Date>(initialSelection());
   const [markedDates, setMarkedDates] = useState<any>({});
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    return initialDate ? new Date(initialDate) : new Date();
+    return initialSelection();
   });
   const [showMonthYearPicker, setShowMonthYearPicker] = useState(false);
 
   useEffect(() => {
-    if (initialDate) {
-      const date = new Date(initialDate);
-      setSelectedDate(date);
-      selectedDateRef.current = date;
-      setCurrentMonth(date);
-      updateMarkedDates(date);
-    } else {
-      const today = new Date();
-      setSelectedDate(today);
-      selectedDateRef.current = today;
-      setCurrentMonth(today);
-      updateMarkedDates(today);
-    }
+    const nextSelection = initialSelection();
+    setSelectedDate(nextSelection);
+    selectedDateRef.current = nextSelection;
+    setCurrentMonth(nextSelection);
+    updateMarkedDates(nextSelection);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialDate]);
+  }, [initialDateTime, maximumDateTime, minimumDateTime]);
 
   useEffect(() => {
     updateMarkedDates(selectedDateRef.current);
@@ -84,7 +129,10 @@ export const DatePicker: React.FC<DatePickerProps> = ({
 
     const marked: any = {};
 
-    if (todayStr !== selectedStr) {
+    if (
+      todayStr !== selectedStr &&
+      isDateInRange(atStartOfLocalDay(today), minimumBound, maximumBound)
+    ) {
       marked[todayStr] = {
         customStyles: {
           container: {
@@ -130,6 +178,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const handleDayPress = (day: DateData) => {
     const [year, month, dayNum] = day.dateString.split('-').map(Number);
     const newDate = new Date(year, month - 1, dayNum);
+    if (!isDateInRange(newDate, minimumBound, maximumBound)) return;
     setSelectedDate(newDate);
     selectedDateRef.current = newDate;
     updateMarkedDates(newDate);
@@ -138,6 +187,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const goToPreviousMonth = () => {
     const newMonth = new Date(currentMonth);
     newMonth.setMonth(newMonth.getMonth() - 1);
+    if (!monthIntersectsRange(newMonth, minimumBound, maximumBound)) return;
     setCurrentMonth(newMonth);
     updateMarkedDates(selectedDate);
   };
@@ -145,6 +195,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const goToNextMonth = () => {
     const newMonth = new Date(currentMonth);
     newMonth.setMonth(newMonth.getMonth() + 1);
+    if (!monthIntersectsRange(newMonth, minimumBound, maximumBound)) return;
     setCurrentMonth(newMonth);
     updateMarkedDates(selectedDate);
   };
@@ -161,8 +212,14 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       selectedDate.getMonth() !== month
     ) {
       const day = Math.min(selectedDate.getDate(), new Date(year, month + 1, 0).getDate());
-      const updatedDate = new Date(year, month, day);
+      const updatedDate = clampDate(
+        new Date(year, month, day),
+        minimumBound,
+        maximumBound,
+      );
       setSelectedDate(updatedDate);
+      selectedDateRef.current = updatedDate;
+      setCurrentMonth(updatedDate);
       updateMarkedDates(updatedDate);
     } else {
       updateMarkedDates(selectedDate);
@@ -174,6 +231,27 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     onConfirm(selectedDate);
     onClose();
   };
+
+  const previousMonth = new Date(
+    currentMonth.getFullYear(),
+    currentMonth.getMonth() - 1,
+    1,
+  );
+  const nextMonth = new Date(
+    currentMonth.getFullYear(),
+    currentMonth.getMonth() + 1,
+    1,
+  );
+  const canGoToPreviousMonth = monthIntersectsRange(
+    previousMonth,
+    minimumBound,
+    maximumBound,
+  );
+  const canGoToNextMonth = monthIntersectsRange(
+    nextMonth,
+    minimumBound,
+    maximumBound,
+  );
 
   const handleCancel = () => {
     onClose();
@@ -277,8 +355,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         <View style={styles.calendarContainer}>
           <View style={styles.customHeader}>
             <TouchableOpacity
-              style={styles.arrowButton}
+              style={[styles.arrowButton, !canGoToPreviousMonth && styles.disabledControl]}
               onPress={goToPreviousMonth}
+              disabled={!canGoToPreviousMonth}
               activeOpacity={0.7}
             >
               <FontAwesomeIcon
@@ -302,8 +381,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.arrowButton}
+              style={[styles.arrowButton, !canGoToNextMonth && styles.disabledControl]}
               onPress={goToNextMonth}
+              disabled={!canGoToNextMonth}
               activeOpacity={0.7}
             >
               <FontAwesomeIcon
@@ -318,6 +398,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             key={`calendar-${currentMonth.getFullYear()}-${currentMonth.getMonth()}`}
             current={`${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(currentMonth.getDate()).padStart(2, '0')}`}
             onDayPress={handleDayPress}
+            minDate={minimumBound ? formatLocalDate(minimumBound) : undefined}
+            maxDate={maximumBound ? formatLocalDate(maximumBound) : undefined}
             markedDates={markedDates}
             theme={customTheme}
             enableSwipeMonths={false}
@@ -334,6 +416,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           <MonthYearPicker
             visible={showMonthYearPicker}
             currentDate={currentMonth}
+            minimumDate={minimumBound}
+            maximumDate={maximumBound}
             onSelect={handleMonthYearSelect}
             onClose={() => setShowMonthYearPicker(false)}
           />
@@ -358,6 +442,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                   },
                 ]}
                 onPress={handleConfirm}
+                testID="date-picker-confirm"
                 activeOpacity={0.8}
               >
                 <Text
@@ -419,6 +504,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: ms(44),
     minHeight: ms(44),
+  },
+  disabledControl: {
+    opacity: 0.35,
   },
   monthYearButton: {
     flexDirection: 'row',
@@ -498,6 +586,8 @@ interface MonthYearPickerProps {
   currentDate: Date;
   onSelect: (year: number, month: number) => void;
   onClose: () => void;
+  minimumDate?: Date;
+  maximumDate?: Date;
 }
 
 const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
@@ -505,6 +595,8 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
   currentDate,
   onSelect,
   onClose,
+  minimumDate,
+  maximumDate,
 }) => {
   const theme = useTheme();
   const { t, i18n } = useTranslation();
@@ -517,7 +609,13 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
   const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth());
 
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 100 }, (_, i) => currentYear - 50 + i);
+  const firstYear = minimumDate?.getFullYear() ??
+    (maximumDate ? maximumDate.getFullYear() - 120 : currentYear - 50);
+  const lastYear = maximumDate?.getFullYear() ?? currentYear + 49;
+  const years = Array.from(
+    { length: Math.max(1, lastYear - firstYear + 1) },
+    (_, i) => firstYear + i,
+  );
   const months = Array.from({ length: 12 }, (_, month) =>
     new Date(2024, month, 1).toLocaleDateString(locale, { month: 'long' }),
   );
@@ -532,6 +630,13 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
   const handleConfirm = () => {
     onSelect(selectedYear, selectedMonth);
   };
+
+  const isMonthAvailable = (year: number, month: number): boolean =>
+    monthIntersectsRange(
+      new Date(year, month, 1),
+      minimumDate,
+      maximumDate,
+    );
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -557,8 +662,10 @@ const MonthYearPicker: React.FC<MonthYearPickerProps> = ({
                     style={[
                       pickerStyles.item,
                       selectedMonth === index && { backgroundColor: theme.colors.orange500 },
+                      !isMonthAvailable(selectedYear, index) && pickerStyles.disabledItem,
                     ]}
                     onPress={() => setSelectedMonth(index)}
+                    disabled={!isMonthAvailable(selectedYear, index)}
                     activeOpacity={0.7}
                   >
                     <Text style={[pickerStyles.itemText, { color: selectedMonth === index ? '#FFFFFF' : theme.colors.textPrimary }]} allowFontScaling={false}>
@@ -656,6 +763,9 @@ const pickerStyles = StyleSheet.create({
     borderRadius: radius('sm'),
     marginBottom: spacing('xs'),
     alignItems: 'center',
+  },
+  disabledItem: {
+    opacity: 0.35,
   },
   itemText: {
     fontSize: 16,

@@ -46,16 +46,19 @@ import { locationAccessCoordinator } from '../services/tracking/LocationAccessCo
 import { SummaryService } from '../services/api/SummaryService';
 import { ProfileService } from '../services/api/ProfileService';
 import { getCurrentPregnancyWeek } from '../utils/pregnancyUtils';
-import { formatLocalDate } from '../utils/dateUtils';
+import { formatLocalDate, parseLocalDate } from '../utils/dateUtils';
 import { resolveBirthdayCardPresentation } from '../utils/birthdayCard';
 import { countCompletedActionsByDomain } from '../utils/dailyTaskProgress';
 import {
   resolveHomeActiveWeek,
   resolveHomeCareIcons,
   resolveHomeDayState,
+  getHomeWeekDateKeys,
+  getMondayBasedDayIndex,
   HOME_CARE_ICONS,
   type HomeCareIcon,
 } from '../utils/homeDayState';
+import { useCurrentLocalDate } from '../hooks/useCurrentLocalDate';
 import { useTranslation } from 'react-i18next';
 import { DEV_LOCAL_SESSION } from '../config/dev';
 import { useRecommendationExperienceStore } from '../store/useRecommendationExperienceStore';
@@ -1975,7 +1978,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     state => state.actionCompletions,
   );
   const checkIns = useRecommendationExperienceStore(state => state.checkIns);
-  const todayDateKey = formatLocalDate(new Date());
+  const todayDateKey = useCurrentLocalDate();
   const todayTaskCounts = useMemo(
     () => countCompletedActionsByDomain(actionCompletions[todayDateKey] ?? {}),
     [actionCompletions, todayDateKey],
@@ -2188,13 +2191,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     };
   }, [activeWeek, isAppActive, isFocused, locationPermissionStatus, t]);
 
-  // Get today's day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+  // Refreshes with todayDateKey after midnight and when the app becomes active.
   const getTodayDayOfWeek = useCallback((): number => {
-    const today = new Date();
-    const dayIndex = today.getDay();
-    // Convert to our format: Monday = 0, Tuesday = 1, ..., Sunday = 6
-    return dayIndex === 0 ? 6 : dayIndex - 1;
-  }, []);
+    const today = parseLocalDate(todayDateKey) ?? new Date();
+    return getMondayBasedDayIndex(today);
+  }, [todayDateKey]);
 
   const styles = useMemo(
     () =>
@@ -2552,15 +2553,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         'day_sat',
         'day_sun',
       ] as const;
-      const today = new Date();
-      const monday = new Date(today);
-      monday.setDate(today.getDate() - todayDayIndex);
+      const today = parseLocalDate(todayDateKey) ?? new Date();
+      const weekDateKeys = getHomeWeekDateKeys({
+        today,
+        activeWeek,
+        weekNumber,
+      });
       const updatedWeekDays = item.weekDays.map((dayData, dayIndex) => {
-        const dayDate = new Date(monday);
-        dayDate.setDate(
-          monday.getDate() + dayIndex + (weekNumber - activeWeek) * 7,
-        );
-        const dateKey = formatLocalDate(dayDate);
+        const dateKey = weekDateKeys[dayIndex];
         const localRecords = actionCompletions[dateKey] ?? {};
         const pathDay = selectWeekPathDay({
           pregnancyWeek: weekNumber,
@@ -2677,6 +2677,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       activeWeek,
       totalWeeks,
       getTodayDayOfWeek,
+      todayDateKey,
       t,
       getWeekDescKey,
       shouldAnimateHome,

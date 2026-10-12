@@ -97,7 +97,7 @@ const riskSummaryText = (
     changeLines.length === 0 &&
     careLine === null &&
     viewModel.trackedFactorCount > 0
-      ? translated(translate, 'weekly_summary.risk_factors_included', `${viewModel.trackedFactorCount} environmental health ${viewModel.trackedFactorCount === 1 ? 'factor was' : 'factors were'} identified in the latest reading.`, {
+      ? translated(translate, 'weekly_summary.risk_factors_included', `${viewModel.trackedFactorCount} environmental ${viewModel.trackedFactorCount === 1 ? 'factor was' : 'factors were'} identified in the latest reading.`, {
           count: viewModel.trackedFactorCount,
         })
       : null;
@@ -128,7 +128,7 @@ export const buildWeeklyReport = (
   const environmentalHealthSummary = riskSummaryText(summary, translate);
   const optionalLines = [
     environmentalHealthSummary
-      ? translated(translate, 'weekly_summary.report_environmental_section', `Environmental health\n${environmentalHealthSummary}\nEstimates reflect environmental exposure and are not a medical diagnosis.`, {
+      ? translated(translate, 'weekly_summary.report_environmental_section', `Environmental context\n${environmentalHealthSummary}\nEstimates reflect environmental exposure and are not a medical diagnosis.`, {
           summary: environmentalHealthSummary,
           disclaimer: translated(translate, 'weekly_summary.risk_disclaimer', 'Estimates reflect environmental exposure and are not a medical diagnosis.'),
         })

@@ -42,6 +42,10 @@ import {
   MAX_ACTIVE_HOURS,
   MAX_SLEEP_HOURS,
 } from '../../utils/lifestyleHours';
+import {
+  getLatestEligibleBirthDate,
+  isEligibleAdultBirthDate,
+} from '../../utils/ageEligibility';
 
 interface ProfileEditSheetProps {
   visible: boolean;
@@ -321,6 +325,9 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
     name: draft.name?.trim() || null,
     email: draft.email?.trim() || null,
   };
+  const isBirthdayEligible = isEligibleAdultBirthDate(
+    normalizedDraft.birthday,
+  );
   const isFormValid =
     section === 'identity'
       ? Boolean(
@@ -330,6 +337,8 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
         )
       : section === 'pregnancy'
       ? Boolean(normalizedDraft.pregnancyWeek)
+      : section === 'birthday'
+      ? isBirthdayEligible
       : section !== null;
 
   const handleSave = async () => {
@@ -531,6 +540,11 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
           </Text>
         </View>
       </TouchableOpacity>
+      {draft.birthday && !isBirthdayEligible ? (
+        <Text style={styles.saveError} accessibilityRole="alert">
+          {t('profile.age_requirement')}
+        </Text>
+      ) : null}
     </>
   );
 
@@ -821,6 +835,7 @@ export const ProfileEditSheet: React.FC<ProfileEditSheetProps> = ({
           setIsBirthdayPickerVisible(false);
         }}
         initialDate={birthdayDate ?? undefined}
+        maximumDate={getLatestEligibleBirthDate()}
       />
     </>
   );

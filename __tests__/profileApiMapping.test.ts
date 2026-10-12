@@ -74,17 +74,19 @@ describe('profile API mapping', () => {
   });
 
   it('sends only backend-supported field names and enum values', () => {
-    expect(
-      buildProfileApiPayload(profile(), {
-        trackingEnabled: true,
-        timezoneFallback: 'UTC',
-      }),
-    ).toMatchObject({
+    const payload = buildProfileApiPayload(profile(), {
+      trackingEnabled: true,
+      timezoneFallback: 'UTC',
+    });
+
+    expect(payload).toMatchObject({
       week_of_pregnancy: 24,
       pregnancy_number: 3,
       is_first_pregnancy: false,
       tracking_enabled: true,
     });
+    expect(payload).not.toHaveProperty('avatar_url');
+    expect(JSON.stringify(payload)).not.toContain('ui-avatars');
 
     const lifestyle = buildLifestyleApiPayload(profile());
     expect(lifestyle).toMatchObject({
@@ -96,5 +98,17 @@ describe('profile API mapping', () => {
     });
     expect(lifestyle).not.toHaveProperty('ventilation');
     expect(lifestyle).not.toHaveProperty('user');
+  });
+
+  it('preserves an existing trusted remote avatar URL', () => {
+    const value = profile();
+    value.photo = 'https://lh3.googleusercontent.com/avatar.jpg';
+
+    expect(
+      buildProfileApiPayload(value, {
+        trackingEnabled: false,
+        timezoneFallback: 'UTC',
+      }).avatar_url,
+    ).toBe(value.photo);
   });
 });

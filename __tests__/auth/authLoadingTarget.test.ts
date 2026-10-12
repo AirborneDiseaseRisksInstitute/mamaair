@@ -2,6 +2,7 @@ import { resolveCachedAuthLoadingTarget } from '../../src/services/auth/AuthLoad
 
 const completeProfile = {
   backendUserId: 'user-1',
+  birthday: '1994-06-20',
   pregnancyWeek: 7,
   pregnancyWeekConfirmed: true,
   timezone: 'Africa/Nairobi',
@@ -38,6 +39,15 @@ describe('cached auth loading target', () => {
       resolveCachedAuthLoadingTarget({
         ...completeProfile,
         pregnancyWeekConfirmed: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('does not skip onboarding when the stored birth date is under 18', () => {
+    expect(
+      resolveCachedAuthLoadingTarget({
+        ...completeProfile,
+        birthday: '2999-01-01',
       }),
     ).toBeNull();
   });

@@ -7,6 +7,7 @@ import { LifestyleService } from '../services/api/LifestyleService';
 import { ProfileService } from '../services/api/ProfileService';
 import { getDeviceTimezone } from '../utils/timezoneUtils';
 import { formatLocalDate } from '../utils/dateUtils';
+import { isEligibleAdultBirthDate } from '../utils/ageEligibility';
 import { useTheme } from '../theme';
 import {
   DEV_LOCAL_SESSION,
@@ -65,7 +66,9 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
 
         const localProfile = useUserStore.getState().profile;
         const isLocalOnboardingComplete =
-          localProfile.agreementAccepted && localProfile.pregnancyWeekConfirmed;
+          localProfile.agreementAccepted &&
+          localProfile.pregnancyWeekConfirmed &&
+          isEligibleAdultBirthDate(localProfile.birthday);
 
         onComplete(isLocalOnboardingComplete ? 'Home' : 'Intro');
         return;
@@ -240,6 +243,7 @@ export const AuthLoadingScreen: React.FC<AuthLoadingScreenProps> = ({
           !lifestyleData?.diet_type;
         const hasLocalData = !!(
           mergedProfile.name &&
+          isEligibleAdultBirthDate(mergedProfile.birthday) &&
           mergedProfile.pregnancyWeek &&
           mergedProfile.pregnancyWeekConfirmed
         );

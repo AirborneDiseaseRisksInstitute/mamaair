@@ -1,3 +1,5 @@
+import { isEligibleAdultBirthDate } from './ageEligibility';
+
 export type IntroFlowScreen =
   | 'IntroStep02'
   | 'IntroStep03'
@@ -66,7 +68,11 @@ export const INTRO_STEP_FLOW: IntroFlowStep[] = [
     fromIndex: 3,
     screen: 'IntroStep03',
     isComplete: profile =>
-      Boolean(profile.birthday && profile.height && profile.weight),
+      Boolean(
+        isEligibleAdultBirthDate(profile.birthday) &&
+          profile.height &&
+          profile.weight,
+      ),
   },
   {
     fromIndex: 5,

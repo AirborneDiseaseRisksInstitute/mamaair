@@ -23,8 +23,20 @@ import {
   getWeeklyBadges,
   resolvePregnancyProgression,
 } from '../../src/services/recommendationExperience/ProgressionRepository';
+import {
+  loadWeeklySummaryExperience,
+  selectWeekPathDay,
+} from '../../src/services/recommendationExperience/PresentationJourneyRepository';
 import { buildWeeklyReport } from '../../src/services/recommendationExperience/WeeklyReportRepository';
-import type { WeeklySummaryExperience } from '../../src/types/recommendationExperience';
+import {
+  resolveHomeCareIcons,
+  resolveHomeDayState,
+} from '../../src/utils/homeDayState';
+import type {
+  DailyActionCompletionRecord,
+  DailyActionDomain,
+  WeeklySummaryExperience,
+} from '../../src/types/recommendationExperience';
 
 const summary: WeeklySummaryExperience = {
   dataMode: 'recorded',
@@ -78,6 +90,102 @@ describe('progression and privacy-safe reports', () => {
       journeyPercent: 100,
       completed: true,
     });
+  });
+
+  it('keeps completed days in history and badges after the next week starts', () => {
+    const completed = (
+      domain: DailyActionDomain,
+      updatedAt: string,
+    ): DailyActionCompletionRecord => ({
+      state: 'completed',
+      completed: true,
+      domain,
+      kind: 'primary',
+      updatedAt,
+    });
+    const actionCompletions = {
+      '2026-09-25': {
+        breakfast: completed('diet', '2026-09-25T08:00:00.000Z'),
+      },
+      '2026-09-26': {
+        lunch: completed('diet', '2026-09-26T12:00:00.000Z'),
+      },
+      '2026-09-27': {
+        dinner: completed('diet', '2026-09-27T18:00:00.000Z'),
+        walk: completed('activity', '2026-09-27T19:00:00.000Z'),
+      },
+    };
+
+    const sundayPath = selectWeekPathDay({
+      pregnancyWeek: 19,
+      date: '2026-09-27',
+      actionRecords: actionCompletions['2026-09-27'],
+      usePresentation: false,
+    });
+    expect(sundayPath.active).toBe(true);
+    expect(resolveHomeCareIcons(sundayPath.domains)).toEqual([
+      'basket',
+      'running',
+    ]);
+    expect(
+      resolveHomeDayState({
+        weekNumber: 19,
+        activeWeek: 20,
+        dayIndex: 6,
+        todayDayIndex: 0,
+        hasRecordedActivity: sundayPath.active,
+      }),
+    ).toEqual({
+      isActive: true,
+      isStartDay: false,
+      isMissed: false,
+    });
+
+    const mondayPath = selectWeekPathDay({
+      pregnancyWeek: 20,
+      date: '2026-09-28',
+      actionRecords: {},
+      usePresentation: false,
+    });
+    expect(mondayPath).toEqual({ active: false, domains: [] });
+    expect(
+      resolveHomeDayState({
+        weekNumber: 20,
+        activeWeek: 20,
+        dayIndex: 0,
+        todayDayIndex: 0,
+        hasRecordedActivity: mondayPath.active,
+      }),
+    ).toEqual({
+      isActive: false,
+      isStartDay: true,
+      isMissed: false,
+    });
+
+    const historicalSummary = loadWeeklySummaryExperience({
+      identity: { backendUserId: 42 },
+      pregnancyWeek: 19,
+      endDate: '2026-09-27',
+      milestone: 'Week 19 milestone',
+      localData: {
+        checkIns: {},
+        actionCompletions,
+        restTimers: {},
+        dailyMoments: {},
+      },
+    });
+
+    expect(historicalSummary.activeDays).toBe(3);
+    expect(historicalSummary.primaryCompleted).toBe(4);
+    expect(historicalSummary.domainParticipation).toMatchObject({
+      diet: 3,
+      activity: 1,
+    });
+    expect(
+      getWeeklyBadges(historicalSummary)
+        .filter(badge => badge.earned)
+        .map(badge => badge.domain),
+    ).toEqual(['diet']);
   });
 
   it('earns only the documented Diet, Activity and Behaviour badges', () => {

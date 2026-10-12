@@ -188,16 +188,15 @@ export const buildProfileApiPayload = (
   },
 ): Record<string, unknown> => {
   const pregnancyNumber = pregnancyNumberToApi(profile.pregnancyNumber);
+  // Camera/library photos stay on the device until Mama Air has an approved
+  // upload endpoint. Preserve an avatar URL received from Google/the backend,
+  // but never send the user's name to an unrelated image-generation service.
   const avatarUrl =
-    profile.photo && profile.photo.startsWith('http')
-      ? profile.photo
-      : `https://ui-avatars.com/api/?name=${encodeURIComponent(
-          profile.name || 'Mama Air',
-        )}&background=FF8C00&color=fff`;
+    profile.photo && profile.photo.startsWith('http') ? profile.photo : null;
 
   return {
     name: profile.name || '',
-    avatar_url: avatarUrl,
+    ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
     date_of_birth: profile.birthday || null,
     height: profile.height,
     weight_pre_pregnancy: profile.weight,

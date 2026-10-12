@@ -141,6 +141,33 @@ This command performs TypeScript checking, ESLint validation, and the Jest test
 suite. GitHub Actions runs the same checks and builds an Android debug APK for
 every pull request and every push to `master` or `develop`.
 
+Before shipping an Android release, run the encrypted-storage lifecycle smoke
+test against the standalone release APK on an emulator:
+
+```bash
+npm run android:smoke:secure-storage:fresh -- \
+  --apk android/app/build/outputs/apk/release/app-release.apk
+```
+
+Fresh mode deliberately uninstalls MamaAir and deletes its app data, so the
+script refuses to run that mode on a physical device. To verify an existing
+signed-in session without deleting data, sign in first and run:
+
+```bash
+npm run android:smoke:secure-storage:session
+```
+
+The session test performs two force-stop/relaunch cycles and automatically
+fails for the secure-storage recovery screen, a missing app process, or an
+Android crash. After it passes, visually confirm that the authenticated account
+returned to the expected screen. The same command can test an Internal testing
+installation from Google Play without replacing its APK.
+
+An APK can optionally be supplied to session mode with `--apk`, but Android can
+preserve the installed data only when that APK uses the same signing identity
+as the installed version. Play-signed and locally upload-signed APKs normally
+do not match, so test the already installed Play build without `--apk`.
+
 ## Android release signing
 
 Release artifacts require a dedicated upload key. Configure these values

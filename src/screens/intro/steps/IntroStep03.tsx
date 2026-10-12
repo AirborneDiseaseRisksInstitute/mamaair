@@ -7,6 +7,11 @@ import { faCalendar, faUser } from '@fortawesome/free-solid-svg-icons';
 import { useUserStore } from '../../../store/useUserStore';
 import { useTranslation } from 'react-i18next';
 import { ms, vs, FIXED_BUTTON_AREA_HEIGHT, HEADER_CLEARANCE } from '../../../utils/responsive';
+import { parseLocalDate } from '../../../utils/dateUtils';
+import {
+  getLatestEligibleBirthDate,
+  isEligibleAdultBirthDate,
+} from '../../../utils/ageEligibility';
 
 const SHADOW_OFFSET = 4;
 const INPUT_HEIGHT = vs(54);
@@ -20,7 +25,9 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { setBirthday, setHeight, setWeight, profile } = useUserStore();
-  const [birthday, setBirthdayLocal] = useState<Date | null>(profile.birthday ? new Date(profile.birthday) : null);
+  const [birthday, setBirthdayLocal] = useState<Date | null>(
+    parseLocalDate(profile.birthday),
+  );
   const [height, setHeightLocal] = useState<number | null>(profile.height || null);
   const [weight, setWeightLocal] = useState<number | null>(profile.weight || null);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -43,7 +50,10 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
     return '';
   };
 
-  const isFormValid = birthday !== null && height !== null && weight !== null;
+  const isBirthdayEligible = isEligibleAdultBirthDate(birthday);
+  const isFormValid =
+    isBirthdayEligible && height !== null && weight !== null;
+  const latestEligibleBirthDate = getLatestEligibleBirthDate();
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
@@ -70,6 +80,7 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
     pickerInputText: { flex: 1, fontSize: 16, fontFamily: 'MPLUSRounded1c-Regular', color: birthday || (height && weight) ? theme.colors.textPrimary : theme.colors.neutral400, marginLeft: spacing('sm') },
     pickerIconContainer: { justifyContent: 'center', alignItems: 'center' },
     pickerIcon: { color: theme.colors.neutral600 },
+    validationError: { color: theme.colors.orange800, fontSize: 13, marginTop: spacing('sm') },
   }), [theme, birthday, height, weight]);
 
   return (
@@ -94,6 +105,11 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
                 </View>
               </View>
             </TouchableOpacity>
+            {birthday && !isBirthdayEligible ? (
+              <Text accessibilityRole="alert" style={styles.validationError}>
+                {t('intro.step03_age_requirement')}
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.inputContainer}>
@@ -115,7 +131,16 @@ export const IntroStep03: React.FC<IntroStep03Props> = ({ onNext, onBack }) => {
         <Button title={t('common.continue')} onPress={() => { if (isFormValid) { setBirthday(birthday); setHeight(height); setWeight(weight); onNext?.(); } }} disabled={!isFormValid} />
       </FixedButtonContainer>
 
-      <DatePicker visible={datePickerVisible} onClose={() => setDatePickerVisible(false)} onConfirm={(date) => { setBirthdayLocal(date); setDatePickerVisible(false); }} initialDate={birthday || undefined} />
+      <DatePicker
+        visible={datePickerVisible}
+        onClose={() => setDatePickerVisible(false)}
+        onConfirm={(date) => {
+          setBirthdayLocal(date);
+          setDatePickerVisible(false);
+        }}
+        initialDate={birthday || undefined}
+        maximumDate={latestEligibleBirthDate}
+      />
       <HeightWeightPicker visible={heightWeightPickerVisible} onClose={() => setHeightWeightPickerVisible(false)} onConfirm={(selectedHeight, selectedWeight) => { setHeightLocal(selectedHeight); setWeightLocal(selectedWeight); setHeightWeightPickerVisible(false); }} initialHeight={height || 175} initialWeight={weight || 70} />
     </SafeAreaView>
   );

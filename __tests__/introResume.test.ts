@@ -36,4 +36,18 @@ describe('intro resume', () => {
       }),
     ).toBe('IntroStep06');
   });
+
+  it('returns an underage saved profile to the date-of-birth step', () => {
+    expect(
+      resolveIntroEntryStep({
+        name: 'Mary',
+        email: 'mary@example.com',
+        birthday: '2999-01-01',
+        height: 168,
+        weight: 64,
+        language: 'en',
+        introLanguageConfirmed: true,
+      }),
+    ).toBe('IntroStep03');
+  });
 });

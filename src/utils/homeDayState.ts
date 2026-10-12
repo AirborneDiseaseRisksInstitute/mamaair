@@ -1,4 +1,5 @@
 import type { DailyActionDomain } from '../types/recommendationExperience';
+import { formatLocalDate } from './dateUtils';
 
 export type HomeCareIcon = 'heart' | 'basket' | 'running' | 'mental';
 
@@ -31,6 +32,43 @@ interface ResolveHomeActiveWeekParams {
 
 const clampPregnancyWeek = (week: number): number =>
   Math.max(1, Math.min(40, week));
+
+export const getMondayBasedDayIndex = (date: Date): number => {
+  const dayIndex = date.getDay();
+  return dayIndex === 0 ? 6 : dayIndex - 1;
+};
+
+/**
+ * Returns the local calendar dates shown by a pregnancy-week row on Home.
+ * Keeping this calculation outside the screen makes midnight/week-boundary
+ * behaviour deterministic and independently testable.
+ */
+export const getHomeWeekDateKeys = ({
+  today,
+  activeWeek,
+  weekNumber,
+}: {
+  today: Date;
+  activeWeek: number;
+  weekNumber: number;
+}): string[] => {
+  const monday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  monday.setDate(
+    monday.getDate() -
+      getMondayBasedDayIndex(today) +
+      (weekNumber - activeWeek) * 7,
+  );
+
+  return Array.from({ length: 7 }, (_, dayIndex) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + dayIndex);
+    return formatLocalDate(date);
+  });
+};
 
 /**
  * A week explicitly selected by the user is the source of truth. API data is
