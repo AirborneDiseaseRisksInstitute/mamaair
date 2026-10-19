@@ -860,7 +860,7 @@
     "notifications_disabled_message": "Pour recevoir des alertes en temps opportun, veuillez activer les notifications dans les paramètres de votre appareil.",
     "time_zone_description": "Sélectionnez votre fuseau horaire. Les rappels et les heures utiliseront ce paramètre.",
     "delete_account_confirm_title": "Supprimer votre compte ?",
-    "delete_account_confirm_message": "Cette action supprime définitivement votre compte Mama Air et ne peut pas être annulée.",
+    "delete_account_confirm_message": "Votre compte Mama Air et les données associées suivantes seront définitivement supprimés :\n\n• Informations de profil et de grossesse\n• Données de santé, bilans et historique d’activité\n• Données de localisation et d’exposition environnementale\n• Paramètres des rappels\n\nVous serez déconnectée et cette action est irréversible. Votre compte Google, si vous l’avez utilisé pour vous connecter, ne sera pas supprimé.",
     "delete_account_confirm_action": "Supprimer le compte",
     "deleting_account": "Suppression du compte...",
     "delete_account_failed_title": "Compte non supprimé",

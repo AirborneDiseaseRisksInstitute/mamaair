@@ -11,6 +11,8 @@ const mockDisplayNotification = jest.fn(
   async (_notification: { body?: string }) => undefined,
 );
 const mockStopForegroundService = jest.fn(async () => undefined);
+const mockClassify = jest.fn(async () => 'Outdoor');
+const mockInsertLocation = jest.fn();
 const mockStorage = new Map<string, string | boolean>();
 
 jest.mock('react-native-geolocation-service', () => ({
@@ -53,12 +55,12 @@ jest.mock('react-native-mmkv', () => ({
 
 jest.mock('../src/services/logic/IndoorOutdoorClassifier', () => ({
   IndoorOutdoorClassifier: {
-    getInstance: () => ({ classify: jest.fn() }),
+    getInstance: () => ({ classify: mockClassify }),
   },
 }));
 
 jest.mock('../src/services/database/DatabaseService', () => ({
-  databaseService: { insertLocation: jest.fn() },
+  databaseService: { insertLocation: mockInsertLocation },
 }));
 
 jest.mock('../src/store/useUserStore', () => ({
@@ -89,6 +91,7 @@ describe('LocationTracker permission flow', () => {
     PermissionsAndroid.check = mockCheck;
     PermissionsAndroid.requestMultiple = mockRequestMultiple;
     mockWatchPosition.mockReturnValue(17);
+    mockClassify.mockResolvedValue('Outdoor');
   });
 
   it('coalesces simultaneous activation into one Android permission request', async () => {
@@ -294,5 +297,82 @@ describe('LocationTracker permission flow', () => {
 
     const notification = mockDisplayNotification.mock.calls[0]?.[0];
     expect(notification?.body).not.toMatch(/Lat:|Lng:|\d+\.\d{4}/);
+  });
+
+  it('queues at most one outdoor location every five minutes across restarts', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-10-17T09:00:00.000Z'));
+    try {
+      mockCheck.mockResolvedValue(true);
+      const tracker = new LocationTracker();
+      const listener = jest.fn();
+      tracker.addListener(listener);
+      await tracker.requestAndStart();
+
+      expect(mockWatchPosition.mock.calls[0][2]).toMatchObject({
+        interval: 300_000,
+        fastestInterval: 300_000,
+      });
+
+      const firstPosition = mockWatchPosition.mock.calls[0][0] as (
+        position: {
+          coords: {
+            latitude: number;
+            longitude: number;
+            accuracy: number;
+            speed: number;
+          };
+          timestamp: number;
+        },
+      ) => Promise<void>;
+      await firstPosition({
+        coords: {
+          latitude: 35.7219,
+          longitude: 51.3347,
+          accuracy: 8,
+          speed: 0,
+        },
+        timestamp: Date.now(),
+      });
+
+      jest.setSystemTime(new Date('2026-10-17T09:04:59.999Z'));
+      const relaunchedTracker = new LocationTracker();
+      relaunchedTracker.addListener(listener);
+      await relaunchedTracker.resumeIfEnabled();
+      const secondPosition = mockWatchPosition.mock
+        .calls[1][0] as typeof firstPosition;
+      await secondPosition({
+        coords: {
+          latitude: 35.722,
+          longitude: 51.3348,
+          accuracy: 7,
+          speed: 0,
+        },
+        timestamp: Date.now(),
+      });
+
+      expect(mockInsertLocation).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenLastCalledWith(
+        expect.objectContaining({ queuedForUpload: false }),
+      );
+
+      jest.setSystemTime(new Date('2026-10-17T09:05:00.000Z'));
+      await secondPosition({
+        coords: {
+          latitude: 35.7221,
+          longitude: 51.3349,
+          accuracy: 6,
+          speed: 0,
+        },
+        timestamp: Date.now(),
+      });
+
+      expect(mockInsertLocation).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenLastCalledWith(
+        expect.objectContaining({ queuedForUpload: true }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

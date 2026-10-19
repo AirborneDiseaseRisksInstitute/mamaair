@@ -946,7 +946,7 @@
     "notifications_disabled_message": "To receive timely alerts, please enable notifications in your device settings.",
     "time_zone_description": "Select your time zone. Reminders and times will use this setting.",
     "delete_account_confirm_title": "Delete your account?",
-    "delete_account_confirm_message": "This permanently deletes your Mama Air account and cannot be undone.",
+    "delete_account_confirm_message": "Your Mama Air account and the following associated data will be permanently deleted:\n\n• Profile and pregnancy information\n• Health records, check-ins, and activity history\n• Location and environmental exposure records\n• Reminder settings\n\nYou will be signed out, and this cannot be undone. Your Google account, if you used Google to sign in, will not be deleted.",
     "delete_account_confirm_action": "Delete account",
     "deleting_account": "Deleting account...",
     "delete_account_failed_title": "Account not deleted",

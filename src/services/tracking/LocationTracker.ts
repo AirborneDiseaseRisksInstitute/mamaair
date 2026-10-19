@@ -11,6 +11,7 @@ import i18n from 'i18next';
 import { useUserStore } from '../../store/useUserStore';
 import { resolveLocationOwnerKeys } from '../privacy/LocationDataOwnership';
 import { createEncryptedMMKV } from '../storage/EncryptedStorage';
+import { LOCATION_UPLOAD_INTERVAL_MS } from './locationTrackingConfig';
 
 export type LocationPermissionStatus =
   | 'granted'
@@ -24,6 +25,29 @@ const permissionStorage = createEncryptedMMKV({
 const LOCATION_PERMISSION_GRANTED_KEY = 'location_permission_granted';
 const LOCATION_PERMISSION_STATUS_KEY = 'location_permission_status';
 const LOCATION_TRACKING_ENABLED_KEY = 'location_tracking_enabled';
+const LAST_QUEUED_LOCATION_BY_OWNER_KEY = 'last_queued_location_by_owner:v1';
+
+type LastQueuedLocationByOwner = Record<string, number>;
+
+const readLastQueuedLocationByOwner = (): LastQueuedLocationByOwner => {
+  const raw = permissionStorage.getString(LAST_QUEUED_LOCATION_BY_OWNER_KEY);
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, number] =>
+          typeof entry[1] === 'number' && Number.isFinite(entry[1]),
+      ),
+    );
+  } catch {
+    return {};
+  }
+};
 
 const normalizeIosPermission = (status: string): LocationPermissionStatus => {
   if (status === 'granted') return 'granted';
@@ -41,6 +65,7 @@ export class LocationTracker {
   private watchGeneration = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryDelayMs = 15000;
+  private lastQueuedLocationByOwner = readLastQueuedLocationByOwner();
   private trackingStateListeners = new Set<(active: boolean) => void>();
   private lastKnownPermissionStatus: LocationPermissionStatus | null =
     (permissionStorage.getString(LOCATION_PERMISSION_STATUS_KEY) as
@@ -55,6 +80,7 @@ export class LocationTracker {
     state: string;
     speed: number;
     accuracy: number;
+    queuedForUpload: boolean;
   }) => void)[] = [];
 
   public addListener(
@@ -64,6 +90,7 @@ export class LocationTracker {
       state: string;
       speed: number;
       accuracy: number;
+      queuedForUpload: boolean;
     }) => void,
   ) {
     this.listeners.push(callback);
@@ -214,6 +241,8 @@ export class LocationTracker {
     this.stopTracking();
     permissionStorage.remove(LOCATION_PERMISSION_STATUS_KEY);
     permissionStorage.remove(LOCATION_PERMISSION_GRANTED_KEY);
+    permissionStorage.remove(LAST_QUEUED_LOCATION_BY_OWNER_KEY);
+    this.lastQueuedLocationByOwner = {};
     this.lastKnownPermissionStatus = null;
   }
 
@@ -281,8 +310,8 @@ export class LocationTracker {
         {
           enableHighAccuracy: true,
           distanceFilter: 10,
-          interval: 5000,
-          fastestInterval: 2000,
+          interval: LOCATION_UPLOAD_INTERVAL_MS,
+          fastestInterval: LOCATION_UPLOAD_INTERVAL_MS,
           showLocationDialog: true,
           forceRequestLocation: true,
           useSignificantChanges: false,
@@ -311,6 +340,7 @@ export class LocationTracker {
 
     if (__DEV__) console.log(`Classified location as: ${state}`);
 
+    let queuedForUpload = false;
     if (state === 'Outdoor') {
       const profile = useUserStore.getState().profile;
       const [ownerKey] = resolveLocationOwnerKeys({
@@ -320,7 +350,7 @@ export class LocationTracker {
 
       // Never create an uploadable location record without a stable account
       // owner. Live classification still works while profile data is loading.
-      if (ownerKey) {
+      if (ownerKey && this.reserveUploadSlot(ownerKey)) {
         databaseService.insertLocation({
           ownerKey,
           latitude,
@@ -330,6 +360,7 @@ export class LocationTracker {
           timestamp,
           isOutdoor: 1,
         });
+        queuedForUpload = true;
       }
     }
 
@@ -340,8 +371,27 @@ export class LocationTracker {
         state,
         speed: speed || 0,
         accuracy,
+        queuedForUpload,
       }),
     );
+  }
+
+  private reserveUploadSlot(ownerKey: string, now = Date.now()): boolean {
+    const lastQueuedAt = this.lastQueuedLocationByOwner[ownerKey];
+    if (
+      lastQueuedAt !== undefined &&
+      now >= lastQueuedAt &&
+      now - lastQueuedAt < LOCATION_UPLOAD_INTERVAL_MS
+    ) {
+      return false;
+    }
+
+    this.lastQueuedLocationByOwner[ownerKey] = now;
+    permissionStorage.set(
+      LAST_QUEUED_LOCATION_BY_OWNER_KEY,
+      JSON.stringify(this.lastQueuedLocationByOwner),
+    );
+    return true;
   }
 
   private async startForegroundService() {

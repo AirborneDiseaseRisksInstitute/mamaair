@@ -209,4 +209,50 @@ describe('BackgroundSync', () => {
       jest.useRealTimers();
     }
   });
+
+  it('uploads at most one queued point per five-minute interval', async () => {
+    const firstTimestamp = Date.parse('2026-10-17T09:00:00.000Z');
+    mockGetLocationsForOwners.mockReturnValue([
+      {
+        id: 11,
+        latitude: 35,
+        longitude: 51,
+        timestamp: firstTimestamp,
+        isOutdoor: 1,
+      },
+      {
+        id: 12,
+        latitude: 35.1,
+        longitude: 51.1,
+        timestamp: firstTimestamp + 60_000,
+        isOutdoor: 1,
+      },
+      {
+        id: 13,
+        latitude: 35.2,
+        longitude: 51.2,
+        timestamp: firstTimestamp + 300_000,
+        isOutdoor: 1,
+      },
+    ]);
+    const sync = new BackgroundSync();
+
+    await sync.performSync();
+
+    expect(mockUploadMovementsJson).toHaveBeenCalledWith([
+      {
+        latitude: 35,
+        longitude: 51,
+        timestamp: '2026-10-17T09:00:00.000Z',
+        indoor: false,
+      },
+      {
+        latitude: 35.2,
+        longitude: 51.2,
+        timestamp: '2026-10-17T09:05:00.000Z',
+        indoor: false,
+      },
+    ]);
+    expect(mockDeleteLocations).toHaveBeenCalledWith([11, 12, 13]);
+  });
 });

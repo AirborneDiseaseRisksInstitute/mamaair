@@ -860,7 +860,7 @@
     "notifications_disabled_message": "Ili kupokea arifa kwa wakati, tafadhali wezesha arifa katika mipangilio ya kifaa chako.",
     "time_zone_description": "Chagua saa za eneo lako. Vikumbusho na nyakati zitatumia mpangilio huu.",
     "delete_account_confirm_title": "Ufute akaunti yako?",
-    "delete_account_confirm_message": "Hatua hii itafuta kabisa akaunti yako ya Mama Air na haiwezi kutenduliwa.",
+    "delete_account_confirm_message": "Akaunti yako ya Mama Air na data zifuatazo zinazohusiana nayo zitafutwa kabisa:\n\n• Taarifa za wasifu na ujauzito\n• Rekodi za afya, taarifa ulizoweka na historia ya shughuli\n• Rekodi za mahali na mazingira uliyokabiliwa nayo\n• Mipangilio ya vikumbusho\n\nUtaondolewa kwenye akaunti na hatua hii haiwezi kutenduliwa. Akaunti yako ya Google, ikiwa uliitumia kuingia, haitafutwa.",
     "delete_account_confirm_action": "Futa akaunti",
     "deleting_account": "Inafuta akaunti...",
     "delete_account_failed_title": "Akaunti haikufutwa",

@@ -4,6 +4,27 @@ import { MovementsService } from '../api/MovementsService';
 import { storage, useAuthStore } from '../../store/useAuthStore';
 import { useUserStore } from '../../store/useUserStore';
 import { resolveLocationOwnerKeys } from '../privacy/LocationDataOwnership';
+import { LOCATION_UPLOAD_INTERVAL_MS } from '../tracking/locationTrackingConfig';
+
+const sampleLocationsForUpload = <T extends { timestamp: number }>(
+  locations: T[],
+): T[] => {
+  let lastSampledAt: number | null = null;
+
+  return [...locations]
+    .sort((first, second) => first.timestamp - second.timestamp)
+    .filter(location => {
+      if (
+        lastSampledAt !== null &&
+        location.timestamp - lastSampledAt < LOCATION_UPLOAD_INTERVAL_MS
+      ) {
+        return false;
+      }
+
+      lastSampledAt = location.timestamp;
+      return true;
+    });
+};
 
 const FOREGROUND_SYNC_DELAY_MS = 15_000;
 
@@ -117,8 +138,11 @@ export class BackgroundSync {
     try {
       // JSON is the backend's preferred mobile upload format. Snapshot the
       // current rows so points collected during this request remain queued.
+      // Older app versions may have queued denser samples, so enforce the
+      // five-minute cadence again at the API boundary.
+      const sampledLocations = sampleLocationsForUpload(locations);
       await MovementsService.uploadMovementsJson(
-        locations.map(location => ({
+        sampledLocations.map(location => ({
           latitude: location.latitude,
           longitude: location.longitude,
           timestamp: new Date(location.timestamp).toISOString(),

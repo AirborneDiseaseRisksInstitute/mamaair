@@ -25,7 +25,7 @@ const AppInner: React.FC = () => {
       });
 
     return locationAccessCoordinator.addLocationListener(location => {
-      if (location.state === 'Outdoor') {
+      if (location.queuedForUpload) {
         backgroundSync.scheduleSync();
       }
     });

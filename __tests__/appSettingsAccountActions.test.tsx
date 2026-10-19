@@ -99,6 +99,11 @@ describe('App Settings account actions', () => {
       findAction(renderer!, 'settings.delete_account')!.props.onPress(),
     );
     expect(mockDeleteAccount).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenLastCalledWith(
+      'settings.delete_account_confirm_title',
+      'settings.delete_account_confirm_message',
+      expect.any(Array),
+    );
 
     mockDeleteAccount.mockRejectedValueOnce(new Error('network'));
     await act(async () => alertSpy.mock.calls[0][2][1].onPress());
