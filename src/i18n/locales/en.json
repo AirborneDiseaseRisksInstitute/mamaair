@@ -985,7 +985,7 @@
     "enable": "Enable location",
     "tracking_notification_channel": "Location tracking",
     "tracking_notification_title": "Mama Air location tracking",
-    "tracking_notification_body": "Location is active for local air and weather guidance."
+    "tracking_notification_body": "Location is active to support guidance on pregnancy complications."
   },
   "notifications": {
     "from": "From",

@@ -899,7 +899,7 @@
     "enable": "Activer la localisation",
     "tracking_notification_channel": "Suivi de localisation",
     "tracking_notification_title": "Suivi de localisation Mama Air",
-    "tracking_notification_body": "La localisation est active pour les informations locales sur l'air et la météo."
+    "tracking_notification_body": "La localisation est active pour fournir des conseils sur les complications de la grossesse."
   },
   "notifications": {
     "from": "De",
