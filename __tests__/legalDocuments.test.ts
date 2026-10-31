@@ -26,7 +26,7 @@ describe('legal documents', () => {
     expect(Object.keys(legalDocuments).sort()).toEqual(['en', 'fr', 'sw']);
     for (const documents of Object.values(legalDocuments)) {
       expect(Object.keys(documents).sort()).toEqual(['privacy', 'terms']);
-      expect(documents.privacy.sections).toHaveLength(8);
+      expect(documents.privacy.sections).toHaveLength(12);
       expect(documents.terms.sections).toHaveLength(7);
       for (const document of Object.values(documents)) {
         expect(document.title).toBeTruthy();
@@ -54,9 +54,31 @@ describe('legal documents', () => {
 
   it('does not claim that names are sent to an avatar-generation service', () => {
     for (const documents of Object.values(legalDocuments)) {
-      expect(documents.privacy.sections[4].body).not.toMatch(
+      const providerSection = documents.privacy.sections.find(section =>
+        /provider|prestataire|watoa huduma/i.test(section.title),
+      );
+      expect(providerSection?.body).not.toMatch(
         /avatar|génération d.avatar|picha ya wasifu/i,
       );
+    }
+  });
+
+  it('includes the public policy, account-deletion and privacy-contact paths', () => {
+    for (const documents of Object.values(legalDocuments)) {
+      const privacyCopy = collectStrings(documents.privacy).join(' ');
+      expect(privacyCopy).toContain('https://api.mamaair.work/privacy-policy');
+      expect(privacyCopy).toContain('https://api.mamaair.work/delete-account');
+      expect(privacyCopy).toContain('service@mamaair.work');
+    }
+  });
+
+  it('discloses location providers, retention, deletion and the adult-only rule', () => {
+    for (const documents of Object.values(legalDocuments)) {
+      const privacyCopy = collectStrings(documents.privacy).join(' ');
+      expect(privacyCopy).toContain('HERE');
+      expect(privacyCopy).toContain('OpenWeather');
+      expect(privacyCopy).toMatch(/30 (days|jours)|siku 30/i);
+      expect(privacyCopy).toMatch(/18/);
     }
   });
 });
