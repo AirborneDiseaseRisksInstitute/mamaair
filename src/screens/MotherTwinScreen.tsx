@@ -63,6 +63,13 @@ import {
   type EnvironmentalRiskLoadError,
 } from '../services/recommendationExperience/EnvironmentalRiskCardPresenter';
 import type { ApiFailureKind } from '../utils/apiErrors';
+import { resolveLocationOwnerKeys } from '../services/privacy/LocationDataOwnership';
+import {
+  movementHistoryRepository,
+  type WeeklyMovementSummary,
+} from '../services/tracking/MovementHistoryRepository';
+import { recordedDistanceMeters } from '../utils/movementSummary';
+import { WeeklyMovementChart } from '../components/mother/WeeklyMovementChart';
 
 const ENVIRONMENTAL_RISK_FAILURE_REASON_KEYS: Record<
   ApiFailureKind,
@@ -270,6 +277,10 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
     }),
     [profile.backendUserId, profile.email],
   );
+  const movementOwnerKeys = useMemo(
+    () => resolveLocationOwnerKeys(identity),
+    [identity],
+  );
   const [backendSummary, setBackendSummary] = useState<SummaryResponse | null>(
     null,
   );
@@ -297,6 +308,13 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
       ),
     [currentWeek, profile.pregnancyWeek, profile.pregnancyWeekSetDate],
   );
+  const [movementSummary, setMovementSummary] =
+    useState<WeeklyMovementSummary>(() =>
+      movementHistoryRepository.getWeeklySummary(
+        movementOwnerKeys,
+        weekDates,
+      ),
+    );
 
   const updateChartViewportWidth = useCallback(
     (viewport: ChartViewport, event: LayoutChangeEvent): void => {
@@ -322,6 +340,15 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         const value = await SummaryService.getSummary();
         if (!isActive()) return;
         setBackendSummary(value ?? null);
+        const todayDistance = recordedDistanceMeters(value);
+        const [primaryMovementOwner] = movementOwnerKeys;
+        if (primaryMovementOwner && todayDistance !== null) {
+          movementHistoryRepository.mergeDailyDistance(
+            primaryMovementOwner,
+            currentDate,
+            todayDistance,
+          );
+        }
         const trend = await loadExposureTrend({
           summary: value ?? null,
           endDate: currentDate,
@@ -336,7 +363,7 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         if (isActive()) setIsLoadingRisk(false);
       }
     },
-    [currentDate, currentWeek],
+    [currentDate, currentWeek, movementOwnerKeys],
   );
 
   const refreshHydration = useCallback(
@@ -363,6 +390,22 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
         active = false;
       };
     }, [refreshHydration, refreshSummary]),
+  );
+  useFocusEffect(
+    useCallback(() => {
+      const refreshMovementSummary = (): void => {
+        setMovementSummary(
+          movementHistoryRepository.getWeeklySummary(
+            movementOwnerKeys,
+            weekDates,
+          ),
+        );
+      };
+      refreshMovementSummary();
+      return movementHistoryRepository.addChangeListener(ownerKey => {
+        if (movementOwnerKeys.includes(ownerKey)) refreshMovementSummary();
+      });
+    }, [movementOwnerKeys, weekDates]),
   );
   const journeySummary = useMemo(
     () =>
@@ -1395,6 +1438,13 @@ export const MotherTwinScreen: React.FC<MotherTwinScreenProps> = ({
               </View>
             </View>
           </View>
+
+          <WeeklyMovementChart
+            summary={movementSummary}
+            weekDates={weekDates}
+            currentDate={currentDate}
+            locale={locale}
+          />
 
           {/* Statistics Card */}
           <View style={styles.statsCard}>

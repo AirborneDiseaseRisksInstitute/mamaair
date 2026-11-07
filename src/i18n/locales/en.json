@@ -971,7 +971,14 @@
     "unavailable": "Today’s recorded distance could not be loaded.",
     "stale": "Last update failed.",
     "refresh": "Refresh today’s movement",
-    "enable": "Enable location tracking"
+    "enable": "Enable location tracking",
+    "history_title": "Movement history",
+    "history_description": "Your recorded outdoor distance for each day this week.",
+    "history_today": "Today",
+    "history_week_total": "This week",
+    "history_daily_distance": "Daily distance (km)",
+    "history_empty": "No movement has been recorded for this week yet.",
+    "history_note": "Based on outdoor locations recorded on this device. It may include travel by vehicle and is not a step count."
   },
   "location": {
     "sheet_title": "Allow location tracking?",

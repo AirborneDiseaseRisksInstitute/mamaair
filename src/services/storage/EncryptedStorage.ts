@@ -28,10 +28,13 @@ export const LEGACY_MMKV_IDS = [
 ] as const;
 
 export const ENCRYPTED_LOCATION_STORAGE_ID = 'mamaair-location-queue';
+export const ENCRYPTED_MOVEMENT_HISTORY_STORAGE_ID =
+  'mamaair-movement-history';
 
 const ALL_SECURE_STORAGE_IDS = [
   ...LEGACY_MMKV_IDS,
   ENCRYPTED_LOCATION_STORAGE_ID,
+  ENCRYPTED_MOVEMENT_HISTORY_STORAGE_ID,
 ] as const;
 
 interface StoredEncryptionKey {

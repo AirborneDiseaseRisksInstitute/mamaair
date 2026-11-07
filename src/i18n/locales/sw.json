@@ -885,7 +885,14 @@
     "unavailable": "Umbali uliorekodiwa leo haukuweza kupakiwa.",
     "stale": "Usasishaji wa mwisho umeshindwa.",
     "refresh": "Sasisha mwendo wa leo",
-    "enable": "Washa ufuatiliaji wa eneo"
+    "enable": "Washa ufuatiliaji wa eneo",
+    "history_title": "Historia ya mwendo",
+    "history_description": "Umbali wako wa nje uliorekodiwa kwa kila siku ya wiki hii.",
+    "history_today": "Leo",
+    "history_week_total": "Wiki hii",
+    "history_daily_distance": "Umbali wa kila siku (km)",
+    "history_empty": "Bado hakuna mwendo uliorekodiwa kwa wiki hii.",
+    "history_note": "Inategemea maeneo ya nje yaliyorekodiwa kwenye kifaa hiki. Inaweza kujumuisha safari kwa gari na si hesabu ya hatua."
   },
   "location": {
     "sheet_title": "Ruhusu ufuatiliaji wa eneo?",

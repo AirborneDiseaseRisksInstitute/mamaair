@@ -10,6 +10,7 @@ import { locationAccessCoordinator } from '../services/tracking/LocationAccessCo
 import { classifyApiFailure, type ApiFailure } from '../utils/apiErrors';
 import { recordedDistanceMeters } from '../utils/movementSummary';
 import { DEV_LOCAL_SESSION } from '../config/dev';
+import { movementHistoryRepository } from '../services/tracking/MovementHistoryRepository';
 
 interface MovementReading {
   scope: string;
@@ -19,6 +20,8 @@ interface MovementReading {
   failure: ApiFailure | null;
 }
 
+const EMPTY_MOVEMENT_OWNER_KEYS: string[] = [];
+
 const emptyReading = (scope: string): MovementReading => ({
   scope,
   distanceMeters: null,
@@ -27,7 +30,11 @@ const emptyReading = (scope: string): MovementReading => ({
   failure: null,
 });
 
-export const useTodayMovement = (date: string, owner: string) => {
+export const useTodayMovement = (
+  date: string,
+  owner: string,
+  movementOwnerKeys: string[] = EMPTY_MOVEMENT_OWNER_KEYS,
+) => {
   const scope = `${owner}:${date}`;
   const [reading, setReading] = useState(() => emptyReading(scope));
   const [trackingActive, setTrackingActive] = useState(() =>
@@ -45,21 +52,29 @@ export const useTodayMovement = (date: string, owner: string) => {
     }));
     return (summary: SummaryResponse | null, failure: ApiFailure | null) => {
       if (version !== requestVersion.current) return;
+      const distanceMeters = recordedDistanceMeters(summary);
+      const [primaryOwnerKey] = movementOwnerKeys;
+      if (!failure && primaryOwnerKey && distanceMeters !== null) {
+        movementHistoryRepository.mergeDailyDistance(
+          primaryOwnerKey,
+          date,
+          distanceMeters,
+        );
+      }
       setReading(current => {
         const previous =
           current.scope === scope ? current : emptyReading(scope);
-        return failure
-          ? { ...previous, loading: false, failure }
-          : {
-              scope,
-              distanceMeters: recordedDistanceMeters(summary),
-              fetchedAt: Date.now(),
-              loading: false,
-              failure: null,
-            };
+        if (failure) return { ...previous, loading: false, failure };
+        return {
+          scope,
+          distanceMeters,
+          fetchedAt: Date.now(),
+          loading: false,
+          failure: null,
+        };
       });
     };
-  }, [scope]);
+  }, [date, movementOwnerKeys, scope]);
 
   const refresh = useCallback(async () => {
     if (DEV_LOCAL_SESSION) return;

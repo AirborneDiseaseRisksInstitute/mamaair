@@ -9,6 +9,9 @@ import {
   formatMovementDistance,
 } from '../src/utils/movementSummary';
 
+const mockMergeDailyDistance = jest.fn();
+const movementOwnerKeys = ['owner:v1:today'];
+
 jest.mock('@react-navigation/native', () => ({
   useFocusEffect: (callback: () => () => void) => {
     require('react').useEffect(callback, [callback]);
@@ -25,6 +28,12 @@ jest.mock('../src/services/tracking/LocationAccessCoordinator', () => ({
   locationAccessCoordinator: {
     isTracking: jest.fn(() => true),
     addTrackingStateListener: jest.fn(() => jest.fn()),
+  },
+}));
+jest.mock('../src/services/tracking/MovementHistoryRepository', () => ({
+  movementHistoryRepository: {
+    mergeDailyDistance: (...args: unknown[]) =>
+      mockMergeDailyDistance(...args),
   },
 }));
 
@@ -89,6 +98,66 @@ describe('Today movement data', () => {
       loading: false,
       failure: { kind: 'server', status: 503 },
     });
+  });
+
+  it('keeps a successful current-day distance in local history', () => {
+    let historyMovement: ReturnType<typeof useTodayMovement>;
+    const HistoryHarness = () => {
+      historyMovement = useTodayMovement(
+        '2026-09-29',
+        '7',
+        movementOwnerKeys,
+      );
+      return null;
+    };
+    let historyRenderer: TestRenderer.ReactTestRenderer;
+    act(() => {
+      historyRenderer = TestRenderer.create(<HistoryHarness />);
+    });
+    act(() => {
+      historyMovement.beginLoad()(
+        { today_journey: { distance_m: 860 } },
+        null,
+      );
+    });
+    expect(mockMergeDailyDistance).toHaveBeenCalledWith(
+      'owner:v1:today',
+      '2026-09-29',
+      860,
+    );
+    act(() => historyRenderer!.unmount());
+  });
+
+  it('does not persist a stale summary after a newer movement response', () => {
+    let historyMovement: ReturnType<typeof useTodayMovement>;
+    const HistoryHarness = () => {
+      historyMovement = useTodayMovement(
+        '2026-09-29',
+        '7',
+        movementOwnerKeys,
+      );
+      return null;
+    };
+    let historyRenderer: TestRenderer.ReactTestRenderer;
+    act(() => {
+      historyRenderer = TestRenderer.create(<HistoryHarness />);
+    });
+    let first: ReturnType<typeof historyMovement.beginLoad>;
+    let second: ReturnType<typeof historyMovement.beginLoad>;
+    act(() => {
+      first = historyMovement.beginLoad();
+      second = historyMovement.beginLoad();
+    });
+    act(() => second({ today_journey: { distance_m: 900 } }, null));
+    act(() => first({ today_journey: { distance_m: 200 } }, null));
+
+    expect(mockMergeDailyDistance).toHaveBeenCalledTimes(1);
+    expect(mockMergeDailyDistance).toHaveBeenCalledWith(
+      'owner:v1:today',
+      '2026-09-29',
+      900,
+    );
+    act(() => historyRenderer!.unmount());
   });
 
   it('does not let an older request replace a newer reading', () => {

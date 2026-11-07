@@ -5,6 +5,7 @@ const mockClearPending = jest.fn();
 const mockDeleteLocations = jest.fn();
 const mockResetLocation = jest.fn();
 const mockClearNotifications = jest.fn(async () => undefined);
+const mockClearMovementHistory = jest.fn();
 
 jest.mock('../src/services/api/AuthService', () => ({
   AuthService: { deleteAccount: (...args: unknown[]) => mockDeleteAccount(...args) },
@@ -39,6 +40,11 @@ jest.mock('../src/services/tracking/LocationAccessCoordinator', () => ({
     resetForSignedOutSession: () => mockResetLocation(),
   },
 }));
+jest.mock('../src/services/tracking/MovementHistoryRepository', () => ({
+  movementHistoryRepository: {
+    clearAll: () => mockClearMovementHistory(),
+  },
+}));
 jest.mock('../src/services/NotificationService', () => ({
   clearUserNotifications: () => mockClearNotifications(),
 }));
@@ -52,6 +58,7 @@ const expectLocalDataCleared = () => {
     email: 'user@example.com',
   });
   expect(mockDeleteLocations).toHaveBeenCalledTimes(1);
+  expect(mockClearMovementHistory).toHaveBeenCalledTimes(1);
   expect(mockResetLocation).toHaveBeenCalledTimes(1);
   expect(mockClearSession).toHaveBeenCalledTimes(1);
   expect(mockClearNotifications).toHaveBeenCalledTimes(1);

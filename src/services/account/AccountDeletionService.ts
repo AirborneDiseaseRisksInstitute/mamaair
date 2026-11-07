@@ -3,6 +3,7 @@ import { databaseService } from '../database/DatabaseService';
 import { clearUserNotifications } from '../NotificationService';
 import { ProductAnalytics } from '../recommendationExperience/ProductAnalytics';
 import { locationAccessCoordinator } from '../tracking/LocationAccessCoordinator';
+import { movementHistoryRepository } from '../tracking/MovementHistoryRepository';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useRecommendationExperienceStore } from '../../store/useRecommendationExperienceStore';
 import { useUserStore } from '../../store/useUserStore';
@@ -28,6 +29,7 @@ const clearDeletedAccountData = async (): Promise<void> => {
   useRecommendationExperienceStore.getState().clearCurrentOwnerData();
   ProductAnalytics.clearPending(identity);
   databaseService.deleteAllLocations();
+  movementHistoryRepository.clearAll();
   locationAccessCoordinator.resetForSignedOutSession();
   await useAuthStore.getState().clearSession().catch(() => {});
   await clearUserNotifications();

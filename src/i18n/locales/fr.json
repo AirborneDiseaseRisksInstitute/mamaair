@@ -885,7 +885,14 @@
     "unavailable": "La distance enregistrée aujourd’hui n’a pas pu être chargée.",
     "stale": "Dernière mise à jour échouée.",
     "refresh": "Actualiser les déplacements du jour",
-    "enable": "Activer le suivi de localisation"
+    "enable": "Activer le suivi de localisation",
+    "history_title": "Historique des déplacements",
+    "history_description": "Votre distance extérieure enregistrée pour chaque jour de cette semaine.",
+    "history_today": "Aujourd’hui",
+    "history_week_total": "Cette semaine",
+    "history_daily_distance": "Distance quotidienne (km)",
+    "history_empty": "Aucun déplacement n’a encore été enregistré cette semaine.",
+    "history_note": "Basé sur les positions extérieures enregistrées sur cet appareil. Peut inclure les trajets en véhicule ; ce n’est pas un nombre de pas."
   },
   "location": {
     "sheet_title": "Autoriser le suivi de localisation ?",

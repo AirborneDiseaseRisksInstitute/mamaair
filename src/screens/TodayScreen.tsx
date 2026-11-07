@@ -115,6 +115,7 @@ import {
 } from '../utils/apiErrors';
 import { useCurrentLocalDate } from '../hooks/useCurrentLocalDate';
 import { useTodayMovement } from '../hooks/useTodayMovement';
+import { resolveLocationOwnerKeys } from '../services/privacy/LocationDataOwnership';
 import { TodayMovementCard } from '../components/today/TodayMovementCard';
 import { TodayGreeting } from '../components/today/TodayGreeting';
 import {
@@ -343,9 +344,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = React.memo(
       }),
       [profile.backendUserId, profile.email],
     );
+    const movementOwnerKeys = useMemo(
+      () => resolveLocationOwnerKeys(identity),
+      [identity],
+    );
     const movement = useTodayMovement(
       date,
       String(identity.backendUserId ?? identity.email ?? 'signed-out'),
+      movementOwnerKeys,
     );
     const beginMovementLoad = movement.beginLoad;
     const currentWeek =

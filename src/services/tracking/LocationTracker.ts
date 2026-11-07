@@ -12,6 +12,7 @@ import { useUserStore } from '../../store/useUserStore';
 import { resolveLocationOwnerKeys } from '../privacy/LocationDataOwnership';
 import { createEncryptedMMKV } from '../storage/EncryptedStorage';
 import { LOCATION_UPLOAD_INTERVAL_MS } from './locationTrackingConfig';
+import { movementHistoryRepository } from './MovementHistoryRepository';
 
 export type LocationPermissionStatus =
   | 'granted'
@@ -199,6 +200,7 @@ export class LocationTracker {
   public stopTracking() {
     this.watchGeneration += 1;
     this.setTrackingEnabled(false);
+    movementHistoryRepository.resetTrackingSession();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     this.retryDelayMs = 15000;
@@ -359,6 +361,11 @@ export class LocationTracker {
           speed: speed || 0,
           timestamp,
           isOutdoor: 1,
+        });
+        movementHistoryRepository.recordLocation(ownerKey, {
+          latitude,
+          longitude,
+          timestamp,
         });
         queuedForUpload = true;
       }

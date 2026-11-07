@@ -13,6 +13,8 @@ const mockDisplayNotification = jest.fn(
 const mockStopForegroundService = jest.fn(async () => undefined);
 const mockClassify = jest.fn(async () => 'Outdoor');
 const mockInsertLocation = jest.fn();
+const mockRecordMovementLocation = jest.fn();
+const mockResetMovementTrackingSession = jest.fn();
 const mockStorage = new Map<string, string | boolean>();
 
 jest.mock('react-native-geolocation-service', () => ({
@@ -61,6 +63,13 @@ jest.mock('../src/services/logic/IndoorOutdoorClassifier', () => ({
 
 jest.mock('../src/services/database/DatabaseService', () => ({
   databaseService: { insertLocation: mockInsertLocation },
+}));
+
+jest.mock('../src/services/tracking/MovementHistoryRepository', () => ({
+  movementHistoryRepository: {
+    recordLocation: (...args: unknown[]) => mockRecordMovementLocation(...args),
+    resetTrackingSession: () => mockResetMovementTrackingSession(),
+  },
 }));
 
 jest.mock('../src/store/useUserStore', () => ({
@@ -299,6 +308,42 @@ describe('LocationTracker permission flow', () => {
     expect(notification?.body).not.toMatch(/Lat:|Lng:|\d+\.\d{4}/);
   });
 
+  it('does not queue or aggregate a non-outdoor location', async () => {
+    mockCheck.mockResolvedValue(true);
+    mockClassify.mockResolvedValueOnce('Indoor');
+    const tracker = new LocationTracker();
+    const listener = jest.fn();
+    tracker.addListener(listener);
+    await tracker.requestAndStart();
+
+    const positionCallback = mockWatchPosition.mock.calls[0][0] as (
+      position: {
+        coords: {
+          latitude: number;
+          longitude: number;
+          accuracy: number;
+          speed: number;
+        };
+        timestamp: number;
+      },
+    ) => Promise<void>;
+    await positionCallback({
+      coords: {
+        latitude: 35.7219,
+        longitude: 51.3347,
+        accuracy: 8,
+        speed: 0,
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(mockInsertLocation).not.toHaveBeenCalled();
+    expect(mockRecordMovementLocation).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: 'Indoor', queuedForUpload: false }),
+    );
+  });
+
   it('queues at most one outdoor location every five minutes across restarts', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-10-17T09:00:00.000Z'));
@@ -368,6 +413,15 @@ describe('LocationTracker permission flow', () => {
       });
 
       expect(mockInsertLocation).toHaveBeenCalledTimes(2);
+      expect(mockRecordMovementLocation).toHaveBeenCalledTimes(2);
+      expect(mockRecordMovementLocation).toHaveBeenLastCalledWith(
+        expect.stringMatching(/^owner:v1:/),
+        {
+          latitude: 35.7221,
+          longitude: 51.3349,
+          timestamp: Date.now(),
+        },
+      );
       expect(listener).toHaveBeenLastCalledWith(
         expect.objectContaining({ queuedForUpload: true }),
       );
